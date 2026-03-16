@@ -1,0 +1,66 @@
+import type { ProjectPlan } from "./plan";
+
+export const samplePrompts = [
+    "30-second cafe promo reel with a warm morning mood and a soft female voiceover",
+    "Explain a productivity app in a fast 20-second social video",
+    "Create a cosmetics product teaser with a premium opening shot",
+] as const;
+
+export const sampleCafePlan: ProjectPlan = {
+    version: 1,
+    title: "Warm Cafe Reel",
+    sourcePrompt: samplePrompts[0],
+    aspectRatio: "9:16",
+    budgetMode: "standard",
+    monthlyCapUsd: 30,
+    scenes: [
+        {
+            id: "scene-01",
+            title: "Morning Hook",
+            prompt: "Steam rises from a fresh latte in a quiet, sunlit cafe window, premium hero shot",
+            durationSec: 4,
+            priority: 5,
+            humanRealism: 4,
+            nativeAudioNeed: 2,
+            canUseStillImage: false,
+            subtitleText: "Start your day with a calmer rhythm.",
+            routeHint: "sora2",
+        },
+        {
+            id: "scene-02",
+            title: "Signature Menu",
+            prompt: "Close-up of pastries and signature drinks on a textured wooden table, warm editorial styling",
+            durationSec: 5,
+            priority: 3,
+            humanRealism: 2,
+            nativeAudioNeed: 1,
+            canUseStillImage: true,
+            subtitleText: "Handmade coffee, fresh pastry, zero rush.",
+            routeHint: "local",
+        },
+        {
+            id: "scene-03",
+            title: "Mood Space",
+            prompt: "Customers reading and chatting softly in a cozy neighborhood cafe, cinematic background motion",
+            durationSec: 6,
+            priority: 4,
+            humanRealism: 3,
+            nativeAudioNeed: 2,
+            canUseStillImage: false,
+            subtitleText: "Stay for the mood, not just the caffeine.",
+            routeHint: "local",
+        },
+        {
+            id: "scene-04",
+            title: "Call To Action",
+            prompt: "Cafe exterior signage at sunset with subtle city motion, welcoming and polished",
+            durationSec: 4,
+            priority: 4,
+            humanRealism: 2,
+            nativeAudioNeed: 1,
+            canUseStillImage: true,
+            subtitleText: "Visit today and make it your new routine.",
+            routeHint: "local",
+        },
+    ],
+};

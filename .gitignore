@@ -1,0 +1,10 @@
+node_modules/
+.env
+.env.*
+storage/cache/
+storage/inputs/
+storage/renders/
+*.pyc
+__pycache__/
+dist/
+.vite/

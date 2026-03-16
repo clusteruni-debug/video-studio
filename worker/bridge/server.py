@@ -1,0 +1,228 @@
+from __future__ import annotations
+
+import json
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+from worker.media.model_router import ProviderAvailability, route_project_plan, summarize_cost
+from worker.planner.sample_plan import build_sample_project_plan
+from worker.planner.save_plan import save_project_bundle
+from worker.render.compose import compose_smoke_render
+from worker.runtime.tools import probe_tools
+
+BRIDGE_HOST = "127.0.0.1"
+BRIDGE_PORT = 5161
+PROJECT_ROOT = Path.cwd()
+PYTHON_PATH = PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
+
+
+def _json_bytes(payload: dict) -> bytes:
+    return json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+
+def _provider_availability(payload: dict) -> ProviderAvailability:
+    availability = payload.get("availability", {})
+    premium_enabled = bool(availability.get("premiumEnabled", False))
+    return ProviderAvailability(
+        sora2=bool(availability.get("sora2", False)),
+        veo3=bool(availability.get("veo3", False)),
+        premium_enabled=premium_enabled,
+    )
+
+
+class BridgeHandler(BaseHTTPRequestHandler):
+    server_version = "VideoStudioPythonBridge/0.1"
+
+    def _send_json(self, status_code: int, payload: dict) -> None:
+        encoded = _json_bytes(payload)
+        self.send_response(status_code)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+    def _read_json(self) -> dict:
+        length = int(self.headers.get("Content-Length", "0"))
+        raw = self.rfile.read(length) if length else b"{}"
+        return json.loads(raw.decode("utf-8"))
+
+    def do_OPTIONS(self) -> None:  # noqa: N802
+        self.send_response(HTTPStatus.NO_CONTENT)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path != "/api/health":
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            return
+
+        python_ready = PYTHON_PATH.exists()
+        tools = probe_tools(PROJECT_ROOT)
+        payload = {
+            "ok": python_ready,
+            "service": "video-studio-local-bridge",
+            "port": BRIDGE_PORT,
+            "projectRoot": str(PROJECT_ROOT),
+            "pythonPath": str(PYTHON_PATH),
+            "tools": {name: tool.to_dict() for name, tool in tools.items()},
+        }
+        self._send_json(HTTPStatus.OK if python_ready else HTTPStatus.INTERNAL_SERVER_ERROR, payload)
+
+    def do_POST(self) -> None:  # noqa: N802
+        try:
+            body = self._read_json()
+            if self.path == "/api/route-plan":
+                self._handle_route_plan(body)
+                return
+
+            if self.path == "/api/save-project":
+                self._handle_save_project(body)
+                return
+
+            if self.path == "/api/render-smoke":
+                self._handle_render_smoke(body)
+                return
+
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+        except Exception as error:  # pragma: no cover - exercised via smoke script
+            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(error)})
+
+    def log_message(self, format: str, *args) -> None:  # noqa: A003
+        return
+
+    def _handle_route_plan(self, body: dict) -> None:
+        prompt = str(body.get("prompt", "")).strip()
+        budget_mode = body.get("budgetMode")
+        if not prompt:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "prompt is required"})
+            return
+
+        if budget_mode not in {"free", "standard", "premium"}:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "budgetMode must be free, standard, or premium"},
+            )
+            return
+
+        availability = _provider_availability(body)
+        plan = build_sample_project_plan(prompt, budget_mode=budget_mode)
+        decisions = route_project_plan(plan, availability)
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "plan": plan.to_dict(),
+                "routes": [decision.to_dict() for decision in decisions],
+                "estimatedTotalCostUsd": summarize_cost(decisions),
+            },
+        )
+
+    def _handle_save_project(self, body: dict) -> None:
+        prompt = str(body.get("prompt", "")).strip()
+        budget_mode = body.get("budgetMode")
+        project_id = str(body.get("projectId", "")).strip()
+        if not prompt:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "prompt is required"})
+            return
+
+        if budget_mode not in {"free", "standard", "premium"}:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "budgetMode must be free, standard, or premium"},
+            )
+            return
+
+        if not project_id:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "projectId is required"})
+            return
+
+        payload = save_project_bundle(
+            prompt=prompt,
+            budget_mode=budget_mode,
+            availability=_provider_availability(body),
+            project_id=project_id,
+            project_root=PROJECT_ROOT,
+        )
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "ok": True,
+                "saveResult": payload["saveResult"],
+                "plan": payload["plan"],
+                "routes": payload["routes"],
+                "manifest": payload["manifest"],
+            },
+        )
+
+    def _handle_render_smoke(self, body: dict) -> None:
+        prompt = str(body.get("prompt", "")).strip()
+        budget_mode = body.get("budgetMode")
+        project_id = str(body.get("projectId", "")).strip()
+        if not prompt:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "prompt is required"})
+            return
+
+        if budget_mode not in {"free", "standard", "premium"}:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "budgetMode must be free, standard, or premium"},
+            )
+            return
+
+        if not project_id:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "projectId is required"})
+            return
+
+        payload = save_project_bundle(
+            prompt=prompt,
+            budget_mode=budget_mode,
+            availability=_provider_availability(body),
+            project_id=project_id,
+            project_root=PROJECT_ROOT,
+        )
+        render_result = compose_smoke_render(
+            manifest_path=Path(payload["saveResult"]["manifestPath"]),
+            project_root=PROJECT_ROOT,
+        )
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "ok": True,
+                "saveResult": payload["saveResult"],
+                "plan": payload["plan"],
+                "routes": payload["routes"],
+                "manifest": payload["manifest"],
+                "renderResult": render_result.to_dict(),
+            },
+        )
+
+
+def serve() -> None:
+    server = ThreadingHTTPServer((BRIDGE_HOST, BRIDGE_PORT), BridgeHandler)
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "service": "video-studio-local-bridge",
+                "port": BRIDGE_PORT,
+                "projectRoot": str(PROJECT_ROOT),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    server.serve_forever()
+
+
+def main() -> int:
+    serve()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
