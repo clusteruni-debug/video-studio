@@ -69,6 +69,8 @@ def _run_ffmpeg(ffmpeg_path: str, args: list[str], log_lines: list[str], cwd: Pa
         command,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         creationflags=CREATE_NO_WINDOW,
         cwd=str(cwd) if cwd else None,
         check=False,
@@ -519,15 +521,19 @@ def _synthesize_edge_tts(
     prompt_file.write_text(text.strip(), encoding="utf-8")
 
     context = AdapterExecutionContext(
+        adapterKey="edge-tts",
         sceneId=output_path.stem,
         sceneTitle="",
+        prompt=text.strip(),
+        durationSec=0,
         projectRoot=str(project_root),
+        cacheDir=str(scene_cache_dir),
+        route="edge-tts",
+        manifestPath="",
         promptPath=str(prompt_file),
         outputPath=str(output_path),
         requestPath=str(scene_cache_dir / f"{output_path.stem}.tts-request.json"),
         logPath=str(scene_cache_dir / f"{output_path.stem}.tts-log.txt"),
-        durationSec=0,
-        route="edge-tts",
     )
     result = run_local_media_adapter("edge-tts", context, project_root=project_root)
     return result.succeeded is True and output_path.exists()

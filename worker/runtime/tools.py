@@ -139,6 +139,8 @@ def _run_probe(executable: str, name: str) -> subprocess.CompletedProcess[str]:
         [executable, *_probe_args(name)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=8,
         creationflags=CREATE_NO_WINDOW,
         check=False,

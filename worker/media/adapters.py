@@ -453,6 +453,7 @@ def run_local_media_adapter(
             command,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             errors="replace",
             cwd=context.projectRoot,
             timeout=_timeout_seconds(),

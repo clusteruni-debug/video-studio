@@ -2,6 +2,7 @@ import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { BudgetMode } from "../../../shared/contracts/plan";
 import {
     fetchBridgeHealth,
+    generateImageWithBridge,
     renderSmokeWithSSE,
     routePlanWithBridge,
     saveProjectWithBridge,
@@ -131,6 +132,9 @@ export default function App() {
 
     const selectedProjectRef = useRef(selectedProject);
     selectedProjectRef.current = selectedProject;
+
+    const bridgeStatusRef = useRef(bridgeStatus);
+    bridgeStatusRef.current = bridgeStatus;
 
     const premiumSceneCount = useMemo(
         () => selectedProject?.routes.filter((route) => route.route !== "local").length ?? 0,
@@ -482,6 +486,14 @@ export default function App() {
                     setIsGeneratingSceneImages(false);
                     setSceneImageProgress("");
                 },
+                bridgeGenerateImage: async (input) => {
+                    if (bridgeStatusRef.current !== "connected") return null;
+                    try {
+                        const result = await generateImageWithBridge(input);
+                        if (result.ok) return { imageBase64: result.imageBase64, mimeType: result.mimeType };
+                    } catch { /* bridge failed */ }
+                    return null;
+                },
             });
         }
         return imageQueueRef.current;
@@ -575,22 +587,88 @@ export default function App() {
             startBatchGeneration();
             return;
         }
-        const normalized = prompt.trim();
-        if (!normalized || isGeneratingImage) return;
+        const normalized = (stylePrefix.trim() ? `${stylePrefix.trim()}, ` : "") + prompt.trim();
+        if (!prompt.trim() || isGeneratingImage) return;
         setIsGeneratingImage(true);
-        setImageStatus({ status: "idle", message: "" });
+        setImageStatus({ status: "idle", message: "이미지 생성 중..." });
         try {
             const size = IMAGE_SIZES[imageSizeIndex];
             const engine = IMAGE_ENGINES[imageEngineIndex];
             const id = crypto.randomUUID();
-            const encoded = encodeURIComponent(normalized);
-            const apiUrl = `https://image.pollinations.ai/prompt/${encoded}?width=${size.width}&height=${size.height}&model=${engine.key}&nologo=true&seed=${Date.now()}`;
             imageGenAbortRef.current = new AbortController();
-            const response = await fetch(apiUrl, {
-                signal: imageGenAbortRef.current.signal,
-            });
-            if (!response.ok) throw new Error(`이미지 생성 실패 (${response.status})`);
-            const blob = await response.blob();
+            const timeoutSignal = AbortSignal.timeout(120_000);
+            const signal = AbortSignal.any([imageGenAbortRef.current.signal, timeoutSignal]);
+
+            // Try with model fallback chain: selected engine → flux → sana
+            const modelsToTry = [...new Set([engine.key, "sana", "zimage"])];
+            let blob: Blob | null = null;
+            let usedEngine = engine.key;
+
+            for (const model of modelsToTry) {
+                for (let attempt = 0; attempt < 3; attempt++) {
+                    const encoded = encodeURIComponent(normalized);
+                    const apiUrl = `https://image.pollinations.ai/prompt/${encoded}?width=${size.width}&height=${size.height}&model=${model}&nologo=true&seed=${Date.now()}`;
+                    try {
+                        const response = await fetch(apiUrl, { signal });
+                        if (response.ok) {
+                            const result = await response.blob();
+                            if (result.size < 1000) {
+                                const text = await result.text();
+                                if (text.includes('"error"')) throw new Error("서버 오류 응답");
+                            }
+                            blob = result;
+                            usedEngine = model;
+                            break;
+                        }
+                        if (response.status === 429) {
+                            const backoffMs = 8000 * Math.pow(2, attempt);
+                            setImageStatus({ status: "idle", message: `대기 중... (${Math.round(backoffMs / 1000)}초 후 재시도)` });
+                            await new Promise((r) => setTimeout(r, backoffMs));
+                            continue;
+                        }
+                        if (response.status === 500) {
+                            let body: { message?: string } = {};
+                            try { body = await response.json(); } catch { /* ignore */ }
+                            if ((body.message ?? "").includes("No active") || (body.message ?? "").includes("servers available")) break;
+                            const backoffMs = 8000 * Math.pow(2, attempt);
+                            setImageStatus({ status: "idle", message: `서버 오류, ${Math.round(backoffMs / 1000)}초 후 재시도...` });
+                            await new Promise((r) => setTimeout(r, backoffMs));
+                            continue;
+                        }
+                        throw new Error(`HTTP ${response.status}`);
+                    } catch (error) {
+                        if (error instanceof DOMException && (error.name === "AbortError" || error.name === "TimeoutError")) throw error;
+                        if (attempt < 2) {
+                            setImageStatus({ status: "idle", message: `오류 발생, 재시도 중...` });
+                            await new Promise((r) => setTimeout(r, 8000 * Math.pow(2, attempt)));
+                        }
+                    }
+                }
+                if (blob) break;
+            }
+
+            // All direct API attempts failed — try bridge proxy
+            if (!blob && bridgeStatus === "connected") {
+                setImageStatus({ status: "idle", message: "직접 API 실패, 브리지 프록시 시도 중..." });
+                try {
+                    const bridgeResult = await generateImageWithBridge({
+                        prompt: normalized,
+                        width: size.width,
+                        height: size.height,
+                        model: engine.key,
+                    });
+                    if (bridgeResult.ok) {
+                        const raw = atob(bridgeResult.imageBase64);
+                        const binary = new Uint8Array(raw.length);
+                        for (let i = 0; i < raw.length; i++) binary[i] = raw.charCodeAt(i);
+                        blob = new Blob([binary], { type: bridgeResult.mimeType });
+                        usedEngine = bridgeResult.model;
+                    }
+                } catch { /* bridge also failed */ }
+            }
+
+            if (!blob) throw new Error("모든 모델에서 생성 실패 — Pollinations API 상태를 확인하세요");
+
             const mimeType = blob.type || "image/png";
             const ext = mimeType.includes("jpeg") || mimeType.includes("jpg") ? "jpg" : mimeType.includes("webp") ? "webp" : "png";
             const file = new File([blob], `image-${id}.${ext}`, { type: mimeType });
@@ -602,7 +680,7 @@ export default function App() {
                 file,
                 width: size.width,
                 height: size.height,
-                engine: engine.key,
+                engine: usedEngine,
                 createdAt: new Date().toISOString(),
             };
             setGeneratedImages((prev) => {
@@ -614,10 +692,12 @@ export default function App() {
                 return next;
             });
             setSelectedImageId(newImage.id);
-            setImageStatus({ status: "success", message: "이미지 생성 완료" });
+            setImageStatus({ status: "success", message: `이미지 생성 완료 (${usedEngine})` });
         } catch (error) {
             if (error instanceof DOMException && error.name === "AbortError") {
                 setImageStatus({ status: "idle", message: "이미지 생성이 취소되었습니다." });
+            } else if (error instanceof DOMException && error.name === "TimeoutError") {
+                setImageStatus({ status: "error", message: "타임아웃 (120초) — 네트워크나 API 상태를 확인하세요" });
             } else {
                 setImageStatus({ status: "error", message: error instanceof Error ? error.message : "이미지 생성에 실패했습니다." });
             }

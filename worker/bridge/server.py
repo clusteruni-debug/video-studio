@@ -10,6 +10,10 @@ from dotenv import load_dotenv
 # Load .env before any adapter/tool probe reads os.environ
 load_dotenv(Path.cwd() / ".env", override=False)
 
+import base64
+import tempfile
+import subprocess
+
 from worker.media.adapters import probe_local_media_adapters
 from worker.media.model_router import ProviderAvailability, route_project_plan, summarize_cost
 from worker.planner.ollama_planner import build_project_plan, probe_planner_runtime
@@ -110,6 +114,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 self._handle_render_smoke(body)
                 return
 
+            if self.path == "/api/generate-image":
+                self._handle_generate_image(body)
+                return
+
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
         except Exception as error:  # pragma: no cover - exercised via smoke script
             self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(error)})
@@ -189,6 +197,82 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 "manifest": payload["manifest"],
             },
         )
+
+    _ALLOWED_MODELS = {"sana", "zimage", "flux"}
+    _MAX_IMAGE_DIM = 4096
+
+    def _handle_generate_image(self, body: dict) -> None:
+        """Proxy image generation through the Python pollinations_flux.py script."""
+        prompt_text = str(body.get("prompt", "")).strip()
+        if not prompt_text:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "prompt is required"})
+            return
+
+        try:
+            width = max(64, min(int(body.get("width", 1024)), self._MAX_IMAGE_DIM))
+            height = max(64, min(int(body.get("height", 1024)), self._MAX_IMAGE_DIM))
+        except (TypeError, ValueError):
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid width/height"})
+            return
+
+        model = str(body.get("model", "sana")).strip()
+        if model not in self._ALLOWED_MODELS:
+            model = "sana"
+
+        script_path = PROJECT_ROOT / "scripts" / "pollinations_flux.py"
+        if not script_path.exists():
+            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "pollinations_flux.py not found"})
+            return
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prompt_file = Path(tmpdir) / "prompt.txt"
+            output_file = Path(tmpdir) / "output.png"
+            prompt_file.write_text(prompt_text, encoding="utf-8")
+
+            cmd = [
+                str(PYTHON_PATH),
+                str(script_path),
+                "--prompt-path", str(prompt_file),
+                "--output-path", str(output_file),
+                "--width", str(width),
+                "--height", str(height),
+                "--model", str(model),
+            ]
+
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=150,
+                    cwd=str(PROJECT_ROOT),
+                )
+
+                if result.returncode != 0:
+                    error_msg = result.stderr.strip() or "Image generation failed"
+                    self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": error_msg})
+                    return
+
+                if not output_file.exists():
+                    self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "No output image produced"})
+                    return
+
+                image_bytes = output_file.read_bytes()
+                image_b64 = base64.b64encode(image_bytes).decode("ascii")
+
+                self._send_json(HTTPStatus.OK, {
+                    "ok": True,
+                    "imageBase64": image_b64,
+                    "mimeType": "image/png",
+                    "width": width,
+                    "height": height,
+                    "model": model,
+                    "bytes": len(image_bytes),
+                })
+            except subprocess.TimeoutExpired:
+                self._send_json(HTTPStatus.GATEWAY_TIMEOUT, {"error": "Image generation timed out (150s)"})
+            except Exception as exc:
+                self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
 
     def _handle_render_smoke(self, body: dict) -> None:
         prompt = str(body.get("prompt", "")).strip()

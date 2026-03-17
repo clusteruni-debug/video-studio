@@ -233,6 +233,28 @@ export async function renderSmokeWithBridge(input: {
     });
 }
 
+export interface BridgeImageResult {
+    ok: boolean;
+    imageBase64: string;
+    mimeType: string;
+    width: number;
+    height: number;
+    model: string;
+    bytes: number;
+}
+
+export async function generateImageWithBridge(input: {
+    prompt: string;
+    width: number;
+    height: number;
+    model: string;
+}): Promise<BridgeImageResult> {
+    return request<BridgeImageResult>("/api/generate-image", {
+        method: "POST",
+        body: JSON.stringify(input),
+    });
+}
+
 export interface RenderProgressEvent {
     phase: "save" | "scene" | string;
     message: string;
@@ -272,6 +294,7 @@ export async function renderSmokeWithSSE(
 
     const decoder = new TextDecoder();
     let buffer = "";
+    let eventType = "";
     let finalResult: BridgeRenderProjectResult | null = null;
 
     while (true) {
@@ -282,7 +305,6 @@ export async function renderSmokeWithSSE(
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
 
-        let eventType = "";
         for (const line of lines) {
             if (line.startsWith("event: ")) {
                 eventType = line.slice(7).trim();
@@ -295,6 +317,7 @@ export async function renderSmokeWithSSE(
                 } else if (eventType === "error") {
                     throw new BridgeRequestError(data.error || "Render failed");
                 }
+                eventType = "";
             }
         }
     }

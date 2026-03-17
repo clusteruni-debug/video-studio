@@ -35,7 +35,6 @@ export type ImageEngine = { key: string; label: string; description: string };
 export const IMAGE_ENGINES: ImageEngine[] = [
     { key: "sana", label: "Sana", description: "Pollinations 기본 — 고품질 범용" },
     { key: "zimage", label: "ZImage", description: "디테일 강화 모델" },
-    { key: "turbo", label: "Turbo", description: "빠른 생성, 낮은 품질" },
 ];
 
 export type GeneratedImage = {
