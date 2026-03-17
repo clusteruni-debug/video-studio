@@ -41,7 +41,7 @@ Current status:
 - runtime health now resolves FFmpeg and Ollama from common Windows install locations and reports probe failures clearly
 - the UI now lets the operator attach per-scene images/videos and audio files before save or render
 - FLUX/Wan now have command-backed adapter skeletons that emit per-scene request JSON and can switch from placeholder fallback to real model execution through env-configured commands
-- Piper and Whisper job execution are still placeholders
+- TTS now uses Edge TTS (previously Piper placeholder); Whisper job execution is still a placeholder
 
 ## Phase 3 — Composition
 - add FFmpeg-driven assembly
@@ -57,7 +57,7 @@ Current status:
 - FFmpeg command previews are now emitted in both the UI and Python render manifest output
 - the bridge can now run a draft FFmpeg render that uses uploaded scene assets when present, otherwise tries the local FLUX/Wan adapter skeletons and falls back to scene cards plus local Windows TTS if those adapters stay in `stub` mode or fail
 - save now writes `local-media-plan.json`, render now writes `local-media-report.json`, and the bridge/UI surface generated/uploaded/placeholder scene summaries
-- real FLUX/Wan/Piper/Whisper-generated media still depends on the operator wiring actual adapter commands and model runtimes behind the new skeleton
+- real FLUX/Wan/Whisper-generated media still depends on the operator wiring actual adapter commands and model runtimes behind the new skeleton (TTS is now handled by Edge TTS)
 
 ## Phase 4 — Paid Premium Routing
 - add per-scene Sora 2 adapter

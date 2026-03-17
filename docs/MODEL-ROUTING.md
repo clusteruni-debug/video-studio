@@ -48,24 +48,21 @@ Use free providers by default. Upgrade only the scenes that justify the extra co
 
 ## Provider Selection Rules
 
-```python
-def select_provider(category, scene_id, adapters, budget_mode, approvals):
-    # 1. Free providers first
-    for key in preference_order[category]:
-        adapter = adapters.get(key)
-        if adapter and adapter.cost_tier == "free" and adapter.ready:
-            return key
+Provider selection follows a free-first preference order defined in
+`worker/media/provider_policy.py` (`DEFAULT_PREFERENCE`):
 
-    # 2. Paid providers only with explicit approval
-    if budget_mode != "free" and approvals.get(scene_id, {}).get(category):
-        for key in preference_order[category]:
-            adapter = adapters.get(key)
-            if adapter and adapter.cost_tier != "free" and adapter.ready:
-                return key
-
-    # 3. Fallback to first free provider (even if not ready)
-    return default_free[category]
 ```
+image: pollinations → flux → dalle3 → imagen3
+video: wan → sora2 → veo3 → runway
+tts:   edge-tts → windows-tts → elevenlabs → openai-tts
+bgm:   local-bgm → suno
+sfx:   local-sfx → freesound
+```
+
+The compose pipeline (`worker/render/compose.py`) currently uses a hardcoded
+fallback chain for TTS (Edge TTS → Windows Speech → sine tone) rather than
+dynamic dispatch via provider selection. Per-scene provider selection UI is
+planned but not yet implemented (see `docs/CODEX-TASKS.md` CX-5).
 
 ## Video Route Selection (Legacy)
 

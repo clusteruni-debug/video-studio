@@ -125,11 +125,11 @@ export function buildRenderManifest(input: {
             id: audioAssetId,
             sceneId: scene.id,
             role: "audio",
-            provider: audioKind === "native" ? route : "piper",
+            provider: audioKind === "native" ? route : "edge-tts",
             kind: audioKind,
             prompt: scene.subtitleText,
             durationSec: scene.durationSec,
-            outputPath: `${sceneCacheDir}/${scene.id}.${audioKind === "native" ? "wav" : "wav"}`,
+            outputPath: `${sceneCacheDir}/${scene.id}.wav`,
         });
         assetIds.push(audioAssetId);
 
