@@ -3,6 +3,9 @@ import type { AspectRatio, ProjectPlan, RouteHint } from "./plan";
 export type RenderAssetRole = "visual" | "audio" | "subtitle";
 export type VisualKind = "image" | "video";
 export type AudioKind = "voiceover" | "native" | "none";
+export type AssetSourceOrigin = "generated" | "uploaded";
+export type MotionPreset = "zoom_in" | "zoom_out" | "pan_left" | "pan_right" | "drift_up" | "drift_down" | "random" | "none";
+export type TransitionType = "fade" | "dissolve" | "wipeleft" | "none";
 
 export interface RenderAssetSpec {
     id: string;
@@ -13,6 +16,10 @@ export interface RenderAssetSpec {
     prompt: string;
     durationSec: number;
     outputPath: string;
+    sourceOrigin?: AssetSourceOrigin;
+    sourcePath?: string;
+    sourceLabel?: string;
+    sourceMimeType?: string;
 }
 
 export interface RenderSceneSpec {
@@ -27,6 +34,7 @@ export interface RenderSceneSpec {
     subtitleText: string;
     cacheDir: string;
     assetIds: string[];
+    motionPreset: MotionPreset;
 }
 
 export interface RenderManifest {
@@ -43,6 +51,8 @@ export interface RenderManifest {
     outputPath: string;
     totalDurationSec: number;
     estimatedCostUsd: number;
+    transitionType: TransitionType;
+    transitionDuration: number;
     scenes: RenderSceneSpec[];
     assets: RenderAssetSpec[];
     composeCommandPreview: string;
@@ -152,6 +162,7 @@ export function buildRenderManifest(input: {
             subtitleText: scene.subtitleText,
             cacheDir: sceneCacheDir,
             assetIds,
+            motionPreset: visualKind === "image" ? "random" : "none",
         };
     });
 
@@ -173,6 +184,8 @@ export function buildRenderManifest(input: {
         outputPath,
         totalDurationSec: Number(cursor.toFixed(2)),
         estimatedCostUsd: Number(input.estimatedCostUsd.toFixed(2)),
+        transitionType: "fade",
+        transitionDuration: 0.5,
         scenes,
         assets,
         composeCommandPreview,

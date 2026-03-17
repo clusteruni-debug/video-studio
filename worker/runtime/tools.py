@@ -134,26 +134,46 @@ def _probe_args(name: str) -> list[str]:
     return ["--version"]
 
 
+def _run_probe(executable: str, name: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [executable, *_probe_args(name)],
+        capture_output=True,
+        text=True,
+        timeout=8,
+        creationflags=CREATE_NO_WINDOW,
+        check=False,
+    )
+
+
 def probe_tool(name: str, project_root: Path | str = PROJECT_ROOT) -> ToolResolution:
     resolution = resolve_tool(name, project_root=project_root)
     if not resolution.path:
         return resolution
 
+    probe_candidates = [resolution.path]
+    if resolution.resolvedPath and resolution.resolvedPath != resolution.path:
+        probe_candidates.append(resolution.resolvedPath)
+
+    last_error: OSError | None = None
+    completed: subprocess.CompletedProcess[str] | None = None
+
     try:
-        completed = subprocess.run(
-            [resolution.path, *_probe_args(name)],
-            capture_output=True,
-            text=True,
-            timeout=8,
-            creationflags=CREATE_NO_WINDOW,
-            check=False,
-        )
-    except OSError as error:
-        resolution.detail = str(error)
-        resolution.ready = False
-        return resolution
+        for candidate in probe_candidates:
+            try:
+                completed = _run_probe(candidate, name)
+                if candidate == resolution.resolvedPath:
+                    resolution.path = candidate
+                break
+            except OSError as error:
+                last_error = error
+                continue
     except subprocess.TimeoutExpired:
         resolution.detail = "probe timed out after 8 seconds"
+        resolution.ready = False
+        return resolution
+
+    if completed is None:
+        resolution.detail = str(last_error) if last_error else "probe failed before execution"
         resolution.ready = False
         return resolution
 

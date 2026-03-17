@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Literal
 
 from worker.media.model_router import ProviderAvailability, RouteDecision, route_project_plan, summarize_cost
-from worker.planner.sample_plan import AspectRatio, ProjectPlan, build_sample_project_plan
+from worker.planner.ollama_planner import build_project_plan
+from worker.planner.sample_plan import AspectRatio, ProjectPlan
 
 RenderAssetRole = Literal["visual", "audio", "subtitle"]
 VisualKind = Literal["image", "video"]
@@ -25,6 +26,10 @@ class RenderAssetSpec:
     prompt: str
     durationSec: float
     outputPath: str
+    sourceOrigin: str | None = None
+    sourcePath: str | None = None
+    sourceLabel: str | None = None
+    sourceMimeType: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -211,13 +216,19 @@ def build_render_manifest(
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Build a local render manifest for a sample project plan.")
-    parser.add_argument("--prompt", required=True, help="Prompt to convert into a sample project plan")
+    parser = argparse.ArgumentParser(description="Build a local render manifest for a project plan.")
+    parser.add_argument("--prompt", required=True, help="Prompt to convert into a project plan")
     parser.add_argument(
         "--budget-mode",
         default="free",
         choices=["free", "standard", "premium"],
         help="Budget mode to apply to the project plan",
+    )
+    parser.add_argument(
+        "--planner-mode",
+        default="auto",
+        choices=["auto", "ollama", "sample"],
+        help="Planner backend preference. auto uses Ollama first and falls back safely.",
     )
     parser.add_argument("--project-id", default="project-sample", help="Project id for storage and output paths")
     parser.add_argument("--storage-root", default="storage", help="Relative storage root to use in the manifest")
@@ -230,7 +241,11 @@ def main() -> int:
     parser = _build_parser()
     args = parser.parse_args()
 
-    plan = build_sample_project_plan(args.prompt, budget_mode=args.budget_mode)
+    plan, _planner = build_project_plan(
+        args.prompt,
+        budget_mode=args.budget_mode,
+        planner_mode=args.planner_mode,
+    )
     availability = ProviderAvailability(
         sora2=args.sora2,
         veo3=args.veo3,

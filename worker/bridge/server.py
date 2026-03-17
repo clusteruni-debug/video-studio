@@ -5,8 +5,9 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from worker.media.adapters import probe_local_media_adapters
 from worker.media.model_router import ProviderAvailability, route_project_plan, summarize_cost
-from worker.planner.sample_plan import build_sample_project_plan
+from worker.planner.ollama_planner import build_project_plan, probe_planner_runtime
 from worker.planner.save_plan import save_project_bundle
 from worker.render.compose import compose_smoke_render
 from worker.runtime.tools import probe_tools
@@ -31,13 +32,21 @@ def _provider_availability(payload: dict) -> ProviderAvailability:
     )
 
 
+def _planner_mode(payload: dict) -> str:
+    planner_mode = str(payload.get("plannerMode", "auto")).strip().lower()
+    if planner_mode in {"auto", "ollama", "sample"}:
+        return planner_mode
+    return "auto"
+
+
 class BridgeHandler(BaseHTTPRequestHandler):
     server_version = "VideoStudioPythonBridge/0.1"
+    _MAX_BODY_SIZE = 64 * 1024 * 1024  # 64 MB
 
     def _send_json(self, status_code: int, payload: dict) -> None:
         encoded = _json_bytes(payload)
         self.send_response(status_code)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1:5160")
         self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -47,12 +56,14 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
     def _read_json(self) -> dict:
         length = int(self.headers.get("Content-Length", "0"))
+        if length > self._MAX_BODY_SIZE:
+            raise ValueError(f"request body too large ({length} bytes, max {self._MAX_BODY_SIZE})")
         raw = self.rfile.read(length) if length else b"{}"
         return json.loads(raw.decode("utf-8"))
 
     def do_OPTIONS(self) -> None:  # noqa: N802
         self.send_response(HTTPStatus.NO_CONTENT)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1:5160")
         self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
@@ -71,6 +82,11 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "projectRoot": str(PROJECT_ROOT),
             "pythonPath": str(PYTHON_PATH),
             "tools": {name: tool.to_dict() for name, tool in tools.items()},
+            "planner": probe_planner_runtime().to_dict(),
+            "media": {
+                name: adapter.to_dict()
+                for name, adapter in probe_local_media_adapters(PROJECT_ROOT).items()
+            },
         }
         self._send_json(HTTPStatus.OK if python_ready else HTTPStatus.INTERNAL_SERVER_ERROR, payload)
 
@@ -94,7 +110,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(error)})
 
     def log_message(self, format: str, *args) -> None:  # noqa: A003
-        return
+        import sys
+        sys.stderr.write(f"[bridge] {self.address_string()} {format % args}\n")
 
     def _handle_route_plan(self, body: dict) -> None:
         prompt = str(body.get("prompt", "")).strip()
@@ -111,12 +128,17 @@ class BridgeHandler(BaseHTTPRequestHandler):
             return
 
         availability = _provider_availability(body)
-        plan = build_sample_project_plan(prompt, budget_mode=budget_mode)
+        plan, planner = build_project_plan(
+            prompt,
+            budget_mode=budget_mode,
+            planner_mode=_planner_mode(body),
+        )
         decisions = route_project_plan(plan, availability)
         self._send_json(
             HTTPStatus.OK,
             {
                 "plan": plan.to_dict(),
+                "planner": planner.to_dict(),
                 "routes": [decision.to_dict() for decision in decisions],
                 "estimatedTotalCostUsd": summarize_cost(decisions),
             },
@@ -145,14 +167,17 @@ class BridgeHandler(BaseHTTPRequestHandler):
             prompt=prompt,
             budget_mode=budget_mode,
             availability=_provider_availability(body),
+            planner_mode=_planner_mode(body),
             project_id=project_id,
             project_root=PROJECT_ROOT,
+            scene_assets=body.get("sceneAssets"),
         )
         self._send_json(
             HTTPStatus.OK,
             {
                 "ok": True,
                 "saveResult": payload["saveResult"],
+                "planner": payload["planner"],
                 "plan": payload["plan"],
                 "routes": payload["routes"],
                 "manifest": payload["manifest"],
@@ -182,8 +207,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
             prompt=prompt,
             budget_mode=budget_mode,
             availability=_provider_availability(body),
+            planner_mode=_planner_mode(body),
             project_id=project_id,
             project_root=PROJECT_ROOT,
+            scene_assets=body.get("sceneAssets"),
         )
         render_result = compose_smoke_render(
             manifest_path=Path(payload["saveResult"]["manifestPath"]),
@@ -194,6 +221,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             {
                 "ok": True,
                 "saveResult": payload["saveResult"],
+                "planner": payload["planner"],
                 "plan": payload["plan"],
                 "routes": payload["routes"],
                 "manifest": payload["manifest"],
@@ -216,7 +244,12 @@ def serve() -> None:
             indent=2,
         )
     )
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
 
 
 def main() -> int:

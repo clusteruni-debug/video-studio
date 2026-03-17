@@ -1,15 +1,15 @@
 export const samplePrompts = [
-    "30-second cafe promo reel with a warm morning mood and a soft female voiceover",
-    "Explain a productivity app in a fast 20-second social video",
-    "Create a cosmetics product teaser with a premium opening shot",
-    "Launch a Korean bakery reel with one premium hero scene and the rest local"
+    "따뜻한 아침 분위기의 카페 홍보 릴스 30초, 부드러운 여성 나레이션",
+    "생산성 앱의 장점을 20초 안에 빠르게 설명하는 쇼츠",
+    "첫 장면만 고급스럽게 쓰는 화장품 제품 티저 영상",
+    "대표 장면 하나만 프리미엄으로 쓰고 나머지는 로컬로 만드는 베이커리 릴스",
 ];
 
 export const operatorSteps = [
-    "Run npm run bridge before expecting in-app route/save actions to work.",
-    "Keep FFmpeg on PATH for composition and preview exports.",
-    "Use Ollama for local planning drafts before OpenClaw integration.",
-    "Use worker.planner.save_plan to write project files under storage/ before real rendering.",
-    "Keep premium routing rare: one hero scene per project by default.",
-    "Store secrets outside source; the UI only reflects routing intent."
+    "브리지 저장과 렌더 버튼을 쓰려면 먼저 npm run bridge가 떠 있어야 합니다.",
+    "FFmpeg는 최종 합성과 샘플 렌더를 맡으니 설치 상태를 먼저 확인해 두는 편이 좋습니다.",
+    "OpenClaw를 붙이기 전까지는 Ollama를 로컬 기획 초안 작성용으로 두는 구성이 현실적입니다.",
+    "실제 생성 전에는 worker.planner.save_plan으로 storage 아래 파일 구조가 먼저 잡히는지 확인합니다.",
+    "프리미엄 라우팅은 기본적으로 프로젝트당 핵심 장면 1개 정도만 쓰는 편이 비용 관리에 유리합니다.",
+    "비밀값은 소스가 아니라 로컬 환경 변수에 두고, UI에는 라우팅 의도만 반영합니다.",
 ];

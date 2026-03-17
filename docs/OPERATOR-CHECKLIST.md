@@ -9,8 +9,7 @@
 
 ## What You Must Do Manually
 - install local tools on the machine
-- create provider accounts
-- accept gated model terms where required
+- create provider accounts (only for premium features)
 - store API keys in local environment variables
 - decide budget limits and provider usage rules
 
@@ -20,63 +19,99 @@
 - install or keep Python 3.14 x64
 - install FFmpeg and ensure `ffmpeg -version` works
 - install Ollama and confirm the local service runs
+- pull the default planner model with `ollama pull qwen2.5:7b`
 - keep enough free disk space for model weights and cache
 
 For this project, "installed" is not enough. The tools must also be callable from the shell that runs the app. Verify:
 - `npm run bridge`
 - `ffmpeg -version`
 - `ollama --version`
-- `hf --help`
-- `powershell -ExecutionPolicy Bypass -File scripts/verify-phase1.ps1`
-- `powershell -ExecutionPolicy Bypass -File scripts/verify-phase2.ps1`
-- `powershell -ExecutionPolicy Bypass -File scripts/verify-bridge.ps1`
-- `powershell -ExecutionPolicy Bypass -File scripts/verify-render.ps1`
+- `ollama list`
 
 If `ffmpeg` is installed via WinGet, the bridge may resolve it from the WinGet link location even when a plain shell `where ffmpeg` result is inconsistent. Trust the bridge health output over PATH-only checks.
 
-### 2. Hugging Face Setup
-- create or sign in to a Hugging Face account
-- request access to:
-  - FLUX.1-schnell
-  - Wan2.1-T2V-1.3B-Diffusers
-- create a personal access token with read scope
-- log in locally with `hf auth login`
+### 2. Zero-Cost Quick Start
+With no API keys at all, the tool produces real content using:
+- **Pollinations FLUX** for images (free, no key needed)
+- **Edge TTS** for narration (`pip install edge-tts` in project venv)
+- **Local BGM** library from `assets/bgm/`
+- **FFmpeg** for composition with Ken Burns motion + xfade transitions
 
-Do **not** send the token value in chat.
+Set these in your environment or `.env`:
+```
+VIDEO_STUDIO_POLLINATIONS_MODE=command
+VIDEO_STUDIO_EDGE_TTS_MODE=command
+VIDEO_STUDIO_LOCAL_BGM_MODE=command
+```
 
-### 3. Optional Paid Providers
-- OpenAI:
-  - create or use an existing project
-  - enable billing
-  - create an API key for Sora 2 usage
-  - set a low spend limit first
-- Google:
-  - enable Gemini API billing
-  - create an API key only if Veo 3 is actually needed
-  - keep Veo 3 disabled by default until a real premium use case exists
+See `.env.example` for full command templates.
 
-Do **not** send secret values in chat.
+### 3. Provider Setup by Category
 
-### 4. Local Paths to Prepare
+#### Image Providers
+| Provider | Env Var | Setup |
+|----------|---------|-------|
+| Pollinations FLUX | (none needed) | Default free path, auto-detects |
+| Local FLUX.1-schnell | `VIDEO_STUDIO_FLUX_MODE=command` | Requires HF model download |
+| DALL-E 3 | `OPENAI_API_KEY` | OpenAI billing required |
+| Imagen 3 | `GOOGLE_API_KEY` | Google AI billing required |
+
+#### Video Providers
+| Provider | Env Var | Setup |
+|----------|---------|-------|
+| Local Wan2.1 | `VIDEO_STUDIO_WAN_MODE=command` | Requires HF model download |
+| Sora 2 | `OPENAI_API_KEY` | OpenAI billing, ~$0.10/sec |
+| Veo 3 | `GOOGLE_API_KEY` | Google billing, ~$0.15/sec |
+
+#### TTS Providers
+| Provider | Env Var | Setup |
+|----------|---------|-------|
+| Edge TTS | (none needed) | `pip install edge-tts`, free |
+| Windows TTS | (none needed) | Windows only, built-in |
+| ElevenLabs | `ELEVENLABS_API_KEY` | ElevenLabs account |
+| OpenAI TTS | `OPENAI_API_KEY` | OpenAI billing |
+
+#### BGM Providers
+| Provider | Env Var | Setup |
+|----------|---------|-------|
+| Local library | (none needed) | Place .mp3/.wav in `assets/bgm/` |
+| Suno | `SUNO_API_KEY` | [UNCERTAIN] Suno subscription |
+
+### 4. Cost Management
+- **Free mode**: all providers use free tier, $0.00 cost
+- **Standard mode**: free default, paid on per-scene approval
+- **Premium mode**: paid providers preferred for high-priority scenes
+- UI shows cost preview before render — paid scenes require explicit approval
+- Monthly cap can be set in the UI budget controls
+
+### 5. Local Paths to Prepare
 - choose a stable model cache root, for example `C:\AI\models`
-- choose a render root, for example `C:\AI\renders`
-- decide whether the project should keep cache inside `projects/video-studio-app/storage/` or outside the repo
-- confirm the sample output under `storage/inputs/verify-project-save/` is readable from the same shell
+- render outputs go to `storage/renders/<project-id>/`
+- scene asset files selected in the browser are copied into `storage/inputs/<project-id>/uploads/` when save/render triggers
+- save writes `storage/cache/<project-id>/local-media-plan.json`
+- render writes `storage/renders/<project-id>/local-media-report.json`
 
-### 5. Decisions to Send Back
+### 6. Verification Commands
+```
+npm run bridge          # start local Python bridge on port 5161
+npm run dev             # build and serve UI on port 5160
+ffmpeg -version         # confirm FFmpeg
+ollama --version        # confirm Ollama
+```
+
+### 7. Decisions to Send Back
 Reply with status values only:
 - `Python314`: done / not done
 - `FFmpeg`: done / not done
 - `Ollama`: done / not done
-- `HF access`: done / pending
-- `OpenAI Sora2`: yes / no
-- `Google Veo3`: yes / no
+- `Edge TTS`: done / not done
+- `OpenAI key`: yes / no
+- `Google key`: yes / no
+- `ElevenLabs key`: yes / no
 - `Monthly budget`: number in USD
 - `Priority`: speed / cost / quality
 
-If a tool is installed but not found on PATH, report it as `partial`.
-
 ## Recommended First Budget Rule
-- default mode: local only
-- premium allowance: one Sora 2 hero scene per project
-- Veo 3: disabled unless a specific scene needs it
+- default mode: free only (Pollinations + Edge TTS + local BGM)
+- premium allowance: one paid image or video scene per project
+- Sora 2 / Veo 3: disabled unless a specific scene needs it

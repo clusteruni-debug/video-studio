@@ -4,15 +4,35 @@ import argparse
 import json
 import os
 import subprocess
+import textwrap
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from worker.runtime.tools import ToolResolution, probe_tool
+from worker.media.runtime import (
+    generate_local_visual_asset,
+    summarize_generation_results,
+    write_local_media_plan,
+    write_local_media_report,
+)
+from worker.render.motion import zoompan_filter
+from worker.render.transitions import (
+    build_xfade_filter_complex,
+    gradient_source_filter,
+)
+from worker.runtime.tools import probe_tool
+from worker.runtime.windows_tts import synthesize_windows_voiceover
+
+BGM_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
+BGM_VOLUME = 0.12  # BGM volume relative to narration
 
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 FRAME_SIZE = "1080x1920"
 FRAME_RATE = "30"
+VIDEO_FILTER = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,format=yuv420p"
 SCENE_COLORS = ["#183153", "#3f5c7a", "#7c4d3a", "#556b2f", "#5f4b8b", "#7b3f61"]
+DEFAULT_MOTION_PRESET = "random"
+DEFAULT_TRANSITION_TYPE = "fade"
+DEFAULT_TRANSITION_DURATION = 0.5
 
 
 @dataclass(slots=True)
@@ -26,6 +46,10 @@ class SmokeRenderResult:
     logPath: str
     ffmpeg: dict
     sceneClipPaths: list[str]
+    localMediaPlanPath: str
+    localMediaReportPath: str
+    localMediaSummary: dict
+    localMedia: list[dict]
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -79,54 +103,147 @@ def _asset_lookup(manifest: dict, scene_id: str, role: str) -> dict:
     raise KeyError(f"Missing asset for scene={scene_id} role={role}")
 
 
-def _create_visual_asset(
+def _resolved_manifest_path(project_root: Path, relative_path: str | None) -> Path | None:
+    if not relative_path:
+        return None
+    candidate = project_root / relative_path
+    return candidate if candidate.exists() else None
+
+
+def _ffmpeg_filter_path(path: Path) -> str:
+    return path.resolve().as_posix().replace(":", r"\:")
+
+
+def _ass_escape(value: str) -> str:
+    return _safe_text(value).replace("\\", r"\\").replace("{", r"\{").replace("}", r"\}")
+
+
+def _wrap_ass_text(value: str, width: int) -> str:
+    escaped = _ass_escape(value)
+    wrapped = textwrap.wrap(escaped, width=width, break_long_words=False, break_on_hyphens=False)
+    return r"\N".join(wrapped) if wrapped else escaped
+
+
+def _write_scene_card_ass(
+    path: Path,
+    scene_index: int,
+    scene_title: str,
+    prompt_text: str,
+    subtitle_text: str,
+    route_label: str,
+) -> None:
+    title = _wrap_ass_text(scene_title, 18)
+    body = _wrap_ass_text(prompt_text, 26)
+    caption = _wrap_ass_text(subtitle_text, 28)
+    meta = _ass_escape(f"장면 {scene_index:02d} · {route_label}")
+    content = "\n".join(
+        [
+            "[Script Info]",
+            "ScriptType: v4.00+",
+            "PlayResX: 1080",
+            "PlayResY: 1920",
+            "WrapStyle: 2",
+            "ScaledBorderAndShadow: yes",
+            "",
+            "[V4+ Styles]",
+            "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding",
+            "Style: Meta,Malgun Gothic,26,&H00F5F0E8,&H000000FF,&H7F000000,&H28000000,-1,0,0,0,100,100,0,0,1,1,0,7,96,96,110,1",
+            "Style: Title,Malgun Gothic,72,&H00FFF8F0,&H000000FF,&H6F000000,&H22000000,-1,0,0,0,100,100,0,0,1,2,0,7,92,92,208,1",
+            "Style: Body,Malgun Gothic,30,&H00EFE7DA,&H000000FF,&H5F000000,&H22000000,0,0,0,0,100,100,0,0,1,1,0,7,98,98,430,1",
+            "Style: Caption,Malgun Gothic,34,&H00FFF8F4,&H000000FF,&H76000000,&H22000000,-1,0,0,0,100,100,0,0,1,2,0,2,108,108,190,1",
+            "",
+            "[Events]",
+            "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text",
+            f"Dialogue: 0,0:00:00.00,0:00:20.00,Meta,,0,0,0,,{meta}",
+            f"Dialogue: 0,0:00:00.00,0:00:20.00,Title,,0,0,0,,{title}",
+            f"Dialogue: 0,0:00:00.00,0:00:20.00,Body,,0,0,0,,{body}",
+            f"Dialogue: 0,0:00:00.00,0:00:20.00,Caption,,0,0,0,,{caption}",
+        ]
+    )
+    _write_text(path, content)
+
+
+def _create_scene_poster_gradient(
     ffmpeg_path: str,
-    visual_kind: str,
     output_path: Path,
-    duration_sec: float,
-    color: str,
+    ass_path: Path,
+    color_index: int,
     log_lines: list[str],
 ) -> None:
+    """Create a poster image with a gradient background + ASS text overlay."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    if visual_kind == "image":
-        _run_ffmpeg(
-            ffmpeg_path,
-            [
-                "-y",
-                "-f",
-                "lavfi",
-                "-i",
-                f"color=c={color}:s={FRAME_SIZE}",
-                "-frames:v",
-                "1",
-                str(output_path),
-            ],
-            log_lines,
-        )
-        return
-
+    gradient_src = gradient_source_filter(color_index, size=FRAME_SIZE)
     _run_ffmpeg(
         ffmpeg_path,
         [
             "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            f"color=c={color}:s={FRAME_SIZE}:r={FRAME_RATE}",
-            "-t",
-            f"{duration_sec:.2f}",
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-an",
+            "-f", "lavfi",
+            "-i", gradient_src,
+            "-vf", f"subtitles='{_ffmpeg_filter_path(ass_path)}'",
+            "-frames:v", "1",
             str(output_path),
         ],
         log_lines,
     )
 
 
-def _create_audio_asset(
+def _create_visual_clip_from_poster(
+    ffmpeg_path: str,
+    poster_path: Path,
+    output_path: Path,
+    duration_sec: float,
+    motion_preset: str = DEFAULT_MOTION_PRESET,
+    log_lines: list[str] | None = None,
+) -> None:
+    """Create a video clip from a still poster, optionally with motion."""
+    if log_lines is None:
+        log_lines = []
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    motion_filter = zoompan_filter(
+        preset=motion_preset,
+        duration_sec=duration_sec,
+        fps=int(FRAME_RATE),
+        width=1080,
+        height=1920,
+    )
+
+    if motion_filter:
+        # zoompan produces video from a single image — no -loop needed
+        vf = f"{motion_filter},format=yuv420p"
+        _run_ffmpeg(
+            ffmpeg_path,
+            [
+                "-y",
+                "-i", str(poster_path),
+                "-vf", vf,
+                "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
+                "-an",
+                str(output_path),
+            ],
+            log_lines,
+        )
+    else:
+        _run_ffmpeg(
+            ffmpeg_path,
+            [
+                "-y",
+                "-loop", "1",
+                "-framerate", FRAME_RATE,
+                "-t", f"{duration_sec:.2f}",
+                "-i", str(poster_path),
+                "-vf", VIDEO_FILTER,
+                "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
+                "-an",
+                str(output_path),
+            ],
+            log_lines,
+        )
+
+
+def _create_fallback_audio(
     ffmpeg_path: str,
     output_path: Path,
     duration_sec: float,
@@ -138,14 +255,33 @@ def _create_audio_asset(
         ffmpeg_path,
         [
             "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            f"sine=frequency={frequency}:sample_rate=48000",
-            "-t",
-            f"{duration_sec:.2f}",
-            "-c:a",
-            "pcm_s16le",
+            "-f", "lavfi",
+            "-i", f"sine=frequency={frequency}:sample_rate=48000",
+            "-t", f"{duration_sec:.2f}",
+            "-c:a", "pcm_s16le",
+            str(output_path),
+        ],
+        log_lines,
+    )
+
+
+def _normalize_audio_duration(
+    ffmpeg_path: str,
+    input_path: Path,
+    output_path: Path,
+    duration_sec: float,
+    log_lines: list[str],
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    _run_ffmpeg(
+        ffmpeg_path,
+        [
+            "-y",
+            "-i", str(input_path),
+            "-af", f"apad=pad_dur={duration_sec:.2f},atrim=0:{duration_sec:.2f}",
+            "-ar", "48000",
+            "-ac", "1",
+            "-c:a", "pcm_s16le",
             str(output_path),
         ],
         log_lines,
@@ -159,19 +295,47 @@ def _create_scene_clip(
     audio_path: Path,
     clip_path: Path,
     duration_sec: float,
-    log_lines: list[str],
+    motion_preset: str = DEFAULT_MOTION_PRESET,
+    log_lines: list[str] | None = None,
 ) -> None:
+    if log_lines is None:
+        log_lines = []
     clip_path.parent.mkdir(parents=True, exist_ok=True)
+
     if visual_kind == "image":
+        motion_filter = zoompan_filter(
+            preset=motion_preset,
+            duration_sec=duration_sec,
+            fps=int(FRAME_RATE),
+            width=1080,
+            height=1920,
+        )
+
+        if motion_filter:
+            # zoompan reads image once and produces video frames
+            _run_ffmpeg(
+                ffmpeg_path,
+                [
+                    "-y",
+                    "-i", str(visual_path),
+                    "-i", str(audio_path),
+                    "-vf", f"{motion_filter},format=yuv420p",
+                    "-t", f"{duration_sec:.2f}",
+                    "-c:v", "libx264",
+                    "-pix_fmt", "yuv420p",
+                    "-c:a", "aac",
+                    str(clip_path),
+                ],
+                log_lines,
+            )
+            return
+
+        # Fallback: static loop (no motion)
         input_args = [
-            "-loop",
-            "1",
-            "-framerate",
-            FRAME_RATE,
-            "-t",
-            f"{duration_sec:.2f}",
-            "-i",
-            str(visual_path),
+            "-loop", "1",
+            "-framerate", FRAME_RATE,
+            "-t", f"{duration_sec:.2f}",
+            "-i", str(visual_path),
         ]
     else:
         input_args = ["-i", str(visual_path)]
@@ -181,17 +345,12 @@ def _create_scene_clip(
         [
             "-y",
             *input_args,
-            "-i",
-            str(audio_path),
-            "-vf",
-            "scale=1080:1920,format=yuv420p",
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-c:a",
-            "aac",
-            "-shortest",
+            "-i", str(audio_path),
+            "-t", f"{duration_sec:.2f}",
+            "-vf", VIDEO_FILTER,
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
             str(clip_path),
         ],
         log_lines,
@@ -231,14 +390,102 @@ def _write_concat_file(path: Path, clip_paths: list[Path]) -> None:
     _write_text(path, "\n".join(lines) + "\n")
 
 
+def _resolve_ffmpeg_executable(project_root: Path) -> tuple[str, dict]:
+    ffmpeg = probe_tool("ffmpeg", project_root=project_root)
+    executable = ffmpeg.resolvedPath or ffmpeg.path
+    if not executable:
+        raise RuntimeError(ffmpeg.detail or "FFmpeg is not available for local rendering")
+    return executable, ffmpeg.to_dict()
+
+
+def _get_scene_motion_preset(scene: dict) -> str:
+    """Read motionPreset from the scene dict, defaulting to random."""
+    return scene.get("motionPreset") or DEFAULT_MOTION_PRESET
+
+
+def _find_bgm_track(project_root: Path) -> Path | None:
+    """Find a BGM track from the local assets/bgm/ library."""
+    import random as _random
+    bgm_dir = project_root / "assets" / "bgm"
+    if not bgm_dir.is_dir():
+        return None
+    tracks = [f for f in bgm_dir.iterdir() if f.is_file() and f.suffix.lower() in BGM_EXTENSIONS]
+    if not tracks:
+        return None
+    return _random.choice(tracks)
+
+
+def _prepare_bgm_track(
+    ffmpeg_path: str,
+    bgm_source: Path,
+    output_path: Path,
+    duration_sec: float,
+    volume: float,
+    log_lines: list[str],
+) -> None:
+    """Trim BGM to duration and lower volume, output as WAV for mixing."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    _run_ffmpeg(
+        ffmpeg_path,
+        [
+            "-y",
+            "-i", str(bgm_source),
+            "-af", f"volume={volume},aloop=loop=-1:size=2e+09,atrim=0:{duration_sec:.2f},afade=t=out:st={max(0, duration_sec - 2):.2f}:d=2",
+            "-ar", "48000",
+            "-ac", "2",
+            "-c:a", "pcm_s16le",
+            "-t", f"{duration_sec:.2f}",
+            str(output_path),
+        ],
+        log_lines,
+    )
+
+
+def _mix_bgm_into_output(
+    ffmpeg_path: str,
+    video_path: Path,
+    bgm_path: Path,
+    output_path: Path,
+    log_lines: list[str],
+) -> None:
+    """Mix BGM track into the final video at lower volume."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    _run_ffmpeg(
+        ffmpeg_path,
+        [
+            "-y",
+            "-i", str(video_path),
+            "-i", str(bgm_path),
+            "-filter_complex", "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+            "-map", "0:v",
+            "-map", "[aout]",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-movflags", "+faststart",
+            str(output_path),
+        ],
+        log_lines,
+    )
+
+
+def _get_manifest_transition(manifest: dict) -> tuple[str, float]:
+    """Read transition settings from the manifest, with defaults."""
+    transition_type = manifest.get("transitionType") or DEFAULT_TRANSITION_TYPE
+    transition_duration = manifest.get("transitionDuration", DEFAULT_TRANSITION_DURATION)
+    return transition_type, float(transition_duration)
+
+
 def compose_smoke_render(manifest_path: Path | str, project_root: Path | str = ".") -> SmokeRenderResult:
     resolved_project_root = Path(project_root).resolve()
     resolved_manifest_path = Path(manifest_path).resolve()
     manifest = _load_manifest(resolved_manifest_path)
+    local_media_plan = write_local_media_plan(
+        manifest=manifest,
+        manifest_path=resolved_manifest_path,
+        project_root=resolved_project_root,
+    )
 
-    ffmpeg = probe_tool("ffmpeg", project_root=resolved_project_root)
-    if not ffmpeg.path or not ffmpeg.ready:
-        raise RuntimeError(ffmpeg.detail or "FFmpeg is not ready for local rendering")
+    ffmpeg_path, ffmpeg_info = _resolve_ffmpeg_executable(resolved_project_root)
 
     render_dir = resolved_project_root / manifest["renderDir"]
     render_dir.mkdir(parents=True, exist_ok=True)
@@ -247,8 +494,18 @@ def compose_smoke_render(manifest_path: Path | str, project_root: Path | str = "
     output_path = resolved_project_root / manifest["outputPath"]
     log_path = render_dir / "ffmpeg-smoke.log"
 
-    log_lines: list[str] = [f"project_id={manifest['projectId']}", f"manifest={resolved_manifest_path}", ""]
+    transition_type, transition_duration = _get_manifest_transition(manifest)
+
+    log_lines: list[str] = [
+        f"project_id={manifest['projectId']}",
+        f"manifest={resolved_manifest_path}",
+        f"transition_type={transition_type}",
+        f"transition_duration={transition_duration}",
+        "",
+    ]
     scene_clip_paths: list[Path] = []
+    scene_durations: list[float] = []
+    local_media_results = []
 
     for index, scene in enumerate(manifest["scenes"]):
         scene_id = scene["sceneId"]
@@ -261,72 +518,220 @@ def compose_smoke_render(manifest_path: Path | str, project_root: Path | str = "
         visual_path = resolved_project_root / visual_asset["outputPath"]
         audio_path = resolved_project_root / audio_asset["outputPath"]
         subtitle_path = resolved_project_root / subtitle_asset["outputPath"]
+        source_audio_path = _resolved_manifest_path(resolved_project_root, audio_asset.get("sourcePath"))
         clip_path = scene_cache_dir / f"{scene_id}.segment.mp4"
+        poster_path = visual_path if scene["visualKind"] == "image" else scene_cache_dir / f"{scene_id}.poster.png"
+        ass_path = scene_cache_dir / f"{scene_id}.card.ass"
+        raw_tts_path = scene_cache_dir / f"{scene_id}.tts.raw.wav"
 
-        color = SCENE_COLORS[index % len(SCENE_COLORS)]
+        motion_preset = _get_scene_motion_preset(scene)
         frequency = 440 + (index * 70)
 
-        _create_visual_asset(
-            ffmpeg_path=ffmpeg.path,
-            visual_kind=scene["visualKind"],
-            output_path=visual_path,
-            duration_sec=scene["durationSec"],
-            color=color,
-            log_lines=log_lines,
+        local_media_result = generate_local_visual_asset(
+            manifest=manifest,
+            manifest_path=resolved_manifest_path,
+            scene=scene,
+            project_root=resolved_project_root,
+            adapters=local_media_plan.adapters,
         )
-        _create_audio_asset(
-            ffmpeg_path=ffmpeg.path,
-            output_path=audio_path,
-            duration_sec=scene["durationSec"],
-            frequency=frequency,
-            log_lines=log_lines,
-        )
+        local_media_results.append(local_media_result)
+
+        if local_media_result.status == "uploaded":
+            visual_input_path = Path(local_media_result.outputPath)
+            log_lines.append(f"visual_source=uploaded path={visual_input_path}")
+            log_lines.append("")
+        elif local_media_result.status == "generated":
+            visual_input_path = Path(local_media_result.outputPath)
+            log_lines.append(
+                f"visual_source=generated adapter={local_media_result.adapterKey} path={visual_input_path}"
+            )
+            if local_media_result.logPath:
+                log_lines.append(f"visual_log={local_media_result.logPath}")
+            log_lines.append("")
+        else:
+            log_lines.append(
+                f"visual_source=placeholder adapter={local_media_result.adapterKey} detail={local_media_result.detail}"
+            )
+            if local_media_result.logPath:
+                log_lines.append(f"visual_log={local_media_result.logPath}")
+            log_lines.append("")
+            _write_scene_card_ass(
+                path=ass_path,
+                scene_index=index + 1,
+                scene_title=scene["title"],
+                prompt_text=visual_asset["prompt"],
+                subtitle_text=scene["subtitleText"],
+                route_label=scene["route"].upper(),
+            )
+            # Use gradient background instead of flat color
+            _create_scene_poster_gradient(
+                ffmpeg_path=ffmpeg_path,
+                output_path=poster_path,
+                ass_path=ass_path,
+                color_index=index,
+                log_lines=log_lines,
+            )
+
+            if scene["visualKind"] == "video":
+                _create_visual_clip_from_poster(
+                    ffmpeg_path=ffmpeg_path,
+                    poster_path=poster_path,
+                    output_path=visual_path,
+                    duration_sec=scene["durationSec"],
+                    motion_preset=motion_preset,
+                    log_lines=log_lines,
+                )
+
+                visual_input_path = visual_path
+            else:
+                visual_input_path = poster_path
+
+        if source_audio_path and source_audio_path.exists():
+            log_lines.append(f"audio_source=uploaded path={source_audio_path}")
+            log_lines.append("")
+            _normalize_audio_duration(
+                ffmpeg_path=ffmpeg_path,
+                input_path=source_audio_path,
+                output_path=audio_path,
+                duration_sec=scene["durationSec"],
+                log_lines=log_lines,
+            )
+        else:
+            tts_result = synthesize_windows_voiceover(
+                text=scene["subtitleText"],
+                output_path=raw_tts_path,
+                working_dir=scene_cache_dir,
+            )
+            log_lines.append(f"tts_backend=windows-speech ok={tts_result.ok} voice={tts_result.voiceName} detail={tts_result.detail}")
+            log_lines.append("")
+
+            if tts_result.ok and raw_tts_path.exists():
+                _normalize_audio_duration(
+                    ffmpeg_path=ffmpeg_path,
+                    input_path=raw_tts_path,
+                    output_path=audio_path,
+                    duration_sec=scene["durationSec"],
+                    log_lines=log_lines,
+                )
+            else:
+                _create_fallback_audio(
+                    ffmpeg_path=ffmpeg_path,
+                    output_path=audio_path,
+                    duration_sec=scene["durationSec"],
+                    frequency=frequency,
+                    log_lines=log_lines,
+                )
+
         _write_scene_subtitle(
             path=subtitle_path,
             subtitle_text=scene["subtitleText"],
             duration_sec=scene["durationSec"],
         )
         _create_scene_clip(
-            ffmpeg_path=ffmpeg.path,
+            ffmpeg_path=ffmpeg_path,
             visual_kind=scene["visualKind"],
-            visual_path=visual_path,
+            visual_path=visual_input_path,
             audio_path=audio_path,
             clip_path=clip_path,
             duration_sec=scene["durationSec"],
+            motion_preset=motion_preset,
             log_lines=log_lines,
         )
         scene_clip_paths.append(clip_path)
+        scene_durations.append(scene["durationSec"])
 
     _write_project_subtitles(subtitle_file_path, manifest["scenes"])
     _write_concat_file(concat_file_path, scene_clip_paths)
 
-    _run_ffmpeg(
-        ffmpeg.path,
-        [
-            "-y",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            concat_file_path.name,
-            "-vf",
-            f"subtitles={subtitle_file_path.name},scale=1080:1920,format=yuv420p",
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-c:a",
-            "aac",
-            "-movflags",
-            "+faststart",
-            output_path.name,
-        ],
-        log_lines,
-        cwd=render_dir,
+    # Final concatenation: use xfade transitions or simple concat
+    xfade_result = build_xfade_filter_complex(
+        clip_paths=scene_clip_paths,
+        durations=scene_durations,
+        transition_type=transition_type,
+        transition_duration=transition_duration,
+        subtitle_file=subtitle_file_path,
+        output_scale="1080:1920",
     )
 
+    if xfade_result:
+        input_args, filter_complex = xfade_result
+        log_lines.append(f"concatenation=xfade transition={transition_type} duration={transition_duration}")
+        log_lines.append("")
+        _run_ffmpeg(
+            ffmpeg_path,
+            [
+                "-y",
+                *input_args,
+                "-filter_complex", filter_complex,
+                "-map", "[vout]",
+                "-map", "[amerged]",
+                "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac",
+                "-movflags", "+faststart",
+                str(output_path),
+            ],
+            log_lines,
+        )
+    else:
+        log_lines.append("concatenation=simple-concat (no transitions)")
+        log_lines.append("")
+        _run_ffmpeg(
+            ffmpeg_path,
+            [
+                "-y",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", concat_file_path.name,
+                "-vf", f"subtitles={subtitle_file_path.name},scale=1080:1920,format=yuv420p",
+                "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac",
+                "-movflags", "+faststart",
+                output_path.name,
+            ],
+            log_lines,
+            cwd=render_dir,
+        )
+
+    # BGM mixing: find a local track and mix it under the narration
+    bgm_track = _find_bgm_track(resolved_project_root)
+    if bgm_track:
+        bgm_prepared = render_dir / "bgm-prepared.wav"
+        total_duration = manifest.get("totalDurationSec", sum(scene_durations))
+        log_lines.append(f"bgm_source={bgm_track}")
+        _prepare_bgm_track(
+            ffmpeg_path=ffmpeg_path,
+            bgm_source=bgm_track,
+            output_path=bgm_prepared,
+            duration_sec=total_duration,
+            volume=BGM_VOLUME,
+            log_lines=log_lines,
+        )
+        if bgm_prepared.exists():
+            video_without_bgm = render_dir / "pre-bgm.mp4"
+            output_path.rename(video_without_bgm)
+            _mix_bgm_into_output(
+                ffmpeg_path=ffmpeg_path,
+                video_path=video_without_bgm,
+                bgm_path=bgm_prepared,
+                output_path=output_path,
+                log_lines=log_lines,
+            )
+            log_lines.append("bgm_status=mixed")
+        else:
+            log_lines.append("bgm_status=skipped (preparation failed)")
+    else:
+        log_lines.append("bgm_status=none (no tracks in assets/bgm/)")
+    log_lines.append("")
+
     _write_text(log_path, "\n".join(log_lines))
+    local_media_summary = summarize_generation_results(local_media_results)
+    local_media_report_path = write_local_media_report(
+        render_dir=render_dir,
+        plan=local_media_plan,
+        results=local_media_results,
+    )
 
     return SmokeRenderResult(
         ok=True,
@@ -336,13 +741,17 @@ def compose_smoke_render(manifest_path: Path | str, project_root: Path | str = "
         concatFilePath=str(concat_file_path),
         subtitleFilePath=str(subtitle_file_path),
         logPath=str(log_path),
-        ffmpeg=ffmpeg.to_dict(),
+        ffmpeg=ffmpeg_info,
         sceneClipPaths=[str(path) for path in scene_clip_paths],
+        localMediaPlanPath=local_media_plan.planPath,
+        localMediaReportPath=local_media_report_path,
+        localMediaSummary=local_media_summary,
+        localMedia=[result.to_dict() for result in local_media_results],
     )
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run a placeholder FFmpeg smoke render for a saved project bundle.")
+    parser = argparse.ArgumentParser(description="Run a local draft render for a saved project bundle.")
     parser.add_argument("--project-id", required=True, help="Project id under storage/inputs/<project-id>")
     parser.add_argument("--project-root", default=".", help="Project root where storage/ lives")
     parser.add_argument("--manifest-path", help="Optional explicit manifest path")

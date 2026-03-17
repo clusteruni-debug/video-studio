@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { BudgetMode } from "../../../shared/contracts/plan";
 import {
     fetchBridgeHealth,
@@ -6,77 +6,35 @@ import {
     routePlanWithBridge,
     saveProjectWithBridge,
     type BridgeHealth,
-    type BridgeToolStatus,
+    type SceneAssetUploadPayload,
 } from "./lib/bridge";
-import { operatorSteps, samplePrompts } from "./lib/sample-data";
+import { samplePrompts } from "./lib/sample-data";
 import {
-    buildComposeCommand,
-    buildSavePlanCommand,
     buildStudioProjectRecord,
     buildStudioProjectRecordFromWorker,
-    buildWorkerCommand,
     type ProviderAvailability,
-    type RouteDecision,
     type StudioProjectRecord,
 } from "./lib/planner";
 import { loadStoredProjects, saveStoredProjects } from "./lib/storage";
-
-type CopyTarget = "route" | "save" | "compose";
-type CopyState = { target: CopyTarget | null; state: "idle" | "copied" | "failed" };
-type BridgeStatus = "checking" | "connected" | "offline" | "error";
-type SaveState = { status: "idle" | "saving" | "saved" | "failed"; message: string };
-type RenderState = { status: "idle" | "rendering" | "rendered" | "failed"; message: string };
-
-function formatDate(value: string): string {
-    return new Intl.DateTimeFormat("en", {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-    }).format(new Date(value));
-}
-
-function routeLabel(route: RouteDecision["route"]): string {
-    if (route === "sora2") return "Sora 2";
-    if (route === "veo3") return "Veo 3";
-    return "Local";
-}
-
-function copyLabel(copyState: CopyState, target: CopyTarget): string {
-    if (copyState.target !== target) return "Copy";
-    if (copyState.state === "copied") return "Copied";
-    if (copyState.state === "failed") return "Copy failed";
-    return "Copy";
-}
-
-function bridgeSummary(status: BridgeStatus, health: BridgeHealth | null): string {
-    if (status === "checking") return "Checking local bridge";
-    if (status === "connected" && health) return `Connected on ${health.port}`;
-    if (status === "error") return "Bridge error, browser fallback";
-    return "Bridge offline";
-}
-
-function toolSummary(tool: BridgeToolStatus | null | undefined): string {
-    if (!tool) return "not checked";
-    if (tool.ready) {
-        const source = tool.source ? `via ${tool.source}` : "ready";
-        return `${tool.version ?? "ready"} (${source})`;
-    }
-
-    return tool.detail ?? tool.path ?? "not available";
-}
-
-function toolPath(tool: BridgeToolStatus | null | undefined): string {
-    return tool?.resolvedPath ?? tool?.path ?? "not detected";
-}
-
-function providerAvailabilityFromRecord(record: StudioProjectRecord): ProviderAvailability {
-    return {
-        premiumEnabled: record.routes.some((route) => route.route !== "local"),
-        sora2: record.routes.some((route) => route.route === "sora2"),
-        veo3: record.routes.some((route) => route.route === "veo3"),
-    };
-}
+import ComposerPanel from "./components/ComposerPanel";
+import StoryboardPanel from "./components/StoryboardPanel";
+import ExecutionPanel from "./components/ExecutionPanel";
+import {
+    assetKey,
+    createPreviewUrl,
+    fileToBase64,
+    localMediaPlanSummaryLabel,
+    localMediaRenderSummaryLabel,
+    plannerLabel,
+    providerAvailabilityFromRecord,
+    type BridgeStatus,
+    type CopyState,
+    type CopyTarget,
+    type LocalSceneAsset,
+    type RenderState,
+    type SaveState,
+    type SceneAssetRole,
+} from "./components/shared";
 
 export default function App() {
     const [prompt, setPrompt] = useState(samplePrompts[0]);
@@ -93,24 +51,41 @@ export default function App() {
     const [copyState, setCopyState] = useState<CopyState>({ target: null, state: "idle" });
     const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>("checking");
     const [bridgeHealth, setBridgeHealth] = useState<BridgeHealth | null>(null);
-    const [bridgeMessage, setBridgeMessage] = useState("Checking local bridge");
+    const [bridgeMessage, setBridgeMessage] = useState("로컬 브리지 상태를 확인하고 있습니다.");
     const [isGenerating, setIsGenerating] = useState(false);
     const [saveState, setSaveState] = useState<SaveState>({ status: "idle", message: "" });
     const [renderState, setRenderState] = useState<RenderState>({ status: "idle", message: "" });
+    const [sceneAssets, setSceneAssets] = useState<Record<string, LocalSceneAsset>>({});
+    const [clearedAssetKeys, setClearedAssetKeys] = useState<Record<string, true>>({});
+
+    const initializedRef = useRef(false);
 
     useEffect(() => {
         const stored = loadStoredProjects();
         setProjects(stored);
         setSelectedProjectId(stored[0]?.id ?? null);
+        initializedRef.current = true;
     }, []);
 
     useEffect(() => {
-        saveStoredProjects(projects);
+        if (initializedRef.current) {
+            saveStoredProjects(projects);
+        }
     }, [projects]);
 
     useEffect(() => {
         void refreshBridgeHealth();
     }, []);
+
+    useEffect(() => {
+        return () => {
+            Object.values(sceneAssets).forEach((asset) => {
+                if (asset.previewUrl) {
+                    URL.revokeObjectURL(asset.previewUrl);
+                }
+            });
+        };
+    }, [sceneAssets]);
 
     const selectedProject = useMemo(
         () => projects.find((project) => project.id === selectedProjectId) ?? null,
@@ -122,19 +97,77 @@ export default function App() {
         [selectedProject],
     );
 
+    const selectedProjectAssetCount = useMemo(() => {
+        if (!selectedProject) return 0;
+        const prefix = `${selectedProject.id}::`;
+        return Object.keys(sceneAssets).filter((key) => key.startsWith(prefix)).length;
+    }, [sceneAssets, selectedProject]);
+
     async function refreshBridgeHealth(): Promise<void> {
         setBridgeStatus("checking");
-        setBridgeMessage("Checking local bridge");
+        setBridgeMessage("로컬 브리지 연결 상태를 다시 확인합니다.");
         try {
             const health = await fetchBridgeHealth();
             setBridgeHealth(health);
             setBridgeStatus("connected");
-            setBridgeMessage(`Bridge connected on ${health.port}`);
+            setBridgeMessage(`브리지 연결 완료 · ${health.port} 포트에서 작업기를 사용할 수 있습니다.`);
         } catch (error) {
             setBridgeHealth(null);
             setBridgeStatus("offline");
-            setBridgeMessage(error instanceof Error ? error.message : "Bridge offline");
+            setBridgeMessage(error instanceof Error ? error.message : "브리지에 연결하지 못했습니다.");
         }
+    }
+
+    function selectSceneAsset(projectId: string, sceneId: string, role: SceneAssetRole, file: File | null): void {
+        const key = assetKey(projectId, sceneId, role);
+        setSceneAssets((current) => {
+            const next = { ...current };
+            const previous = next[key];
+            if (previous?.previewUrl) {
+                URL.revokeObjectURL(previous.previewUrl);
+            }
+            if (!file) {
+                delete next[key];
+                return next;
+            }
+            next[key] = { role, file, previewUrl: createPreviewUrl(file, role) };
+            return next;
+        });
+        setClearedAssetKeys((current) => {
+            const next = { ...current };
+            delete next[key];
+            return next;
+        });
+    }
+
+    function clearSceneAsset(projectId: string, sceneId: string, role: SceneAssetRole): void {
+        const key = assetKey(projectId, sceneId, role);
+        setSceneAssets((current) => {
+            const next = { ...current };
+            const previous = next[key];
+            if (previous?.previewUrl) {
+                URL.revokeObjectURL(previous.previewUrl);
+            }
+            delete next[key];
+            return next;
+        });
+        setClearedAssetKeys((current) => ({ ...current, [key]: true }));
+    }
+
+    async function serializeSceneAssets(projectId: string): Promise<SceneAssetUploadPayload[]> {
+        const entries = Object.entries(sceneAssets).filter(([key]) => key.startsWith(`${projectId}::`));
+        return Promise.all(
+            entries.map(async ([key, asset]) => {
+                const [, sceneId, role] = key.split("::");
+                return {
+                    sceneId,
+                    role: role as SceneAssetRole,
+                    fileName: asset.file.name,
+                    mimeType: asset.file.type || "application/octet-stream",
+                    base64: await fileToBase64(asset.file),
+                };
+            }),
+        );
     }
 
     async function generateProject(): Promise<void> {
@@ -157,17 +190,18 @@ export default function App() {
                     });
                     nextRecord = buildStudioProjectRecordFromWorker({
                         projectId: `project-${Date.now()}`,
+                        planner: payload.planner,
                         plan: payload.plan,
                         routes: payload.routes,
                         estimatedCostUsd: payload.estimatedTotalCostUsd,
                     });
-                    setBridgeMessage("Storyboard drafted through the bridge");
+                    setBridgeMessage(`브리지를 통해 장면 설계를 받아왔습니다. 기획 엔진: ${plannerLabel(payload.planner)}`);
                 } catch (error) {
                     setBridgeStatus("error");
                     setBridgeMessage(
                         error instanceof Error
-                            ? `${error.message} — browser planner fallback`
-                            : "Bridge failed — browser planner fallback",
+                            ? `${error.message} · 브라우저 임시 플래너로 대체합니다.`
+                            : "브리지 호출에 실패해 브라우저 임시 플래너로 대체합니다.",
                     );
                     nextRecord = buildStudioProjectRecord({
                         prompt: normalized,
@@ -197,12 +231,28 @@ export default function App() {
 
     function removeProject(projectId: string): void {
         const nextProjects = projects.filter((project) => project.id !== projectId);
+        const prefix = `${projectId}::`;
         startTransition(() => {
             setProjects(nextProjects);
             setSelectedProjectId((current) => (current === projectId ? nextProjects[0]?.id ?? null : current));
             setCopyState({ target: null, state: "idle" });
             setSaveState({ status: "idle", message: "" });
             setRenderState({ status: "idle", message: "" });
+            setSceneAssets((current) => {
+                const next = { ...current };
+                Object.entries(next).forEach(([key, asset]) => {
+                    if (key.startsWith(prefix)) {
+                        if (asset.previewUrl) {
+                            URL.revokeObjectURL(asset.previewUrl);
+                        }
+                        delete next[key];
+                    }
+                });
+                return next;
+            });
+            setClearedAssetKeys((current) =>
+                Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(prefix))),
+            );
         });
     }
 
@@ -228,23 +278,42 @@ export default function App() {
     async function saveProjectThroughBridge(): Promise<void> {
         if (!selectedProject || bridgeStatus !== "connected") return;
 
-        setSaveState({ status: "saving", message: "Saving project files through the bridge" });
+        setSaveState({ status: "saving", message: "프로젝트 파일을 storage 폴더에 저장하는 중입니다." });
         try {
+            const sceneAssetPayload = await serializeSceneAssets(selectedProject.id);
             const response = await saveProjectWithBridge({
                 prompt: selectedProject.plan.sourcePrompt,
                 budgetMode: selectedProject.plan.budgetMode,
                 projectId: selectedProject.id,
+                sceneAssets: sceneAssetPayload,
                 availability: providerAvailabilityFromRecord(selectedProject),
+            });
+            const nextRecord = buildStudioProjectRecordFromWorker({
+                projectId: selectedProject.id,
+                planner: response.planner,
+                plan: response.plan,
+                routes: response.routes,
+                estimatedCostUsd: response.saveResult.estimatedTotalCostUsd,
+                manifest: response.manifest,
+            });
+            startTransition(() => {
+                setProjects((current) =>
+                    current.map((project) => (project.id === selectedProject.id ? nextRecord : project)),
+                );
             });
             setSaveState({
                 status: "saved",
-                message: `Saved into ${response.saveResult.inputDir}`,
+                message:
+                    `저장 완료 · ${response.saveResult.inputDir} · 업로드 자산 ${response.saveResult.uploadedAssets?.length ?? 0}개` +
+                    ` · ${localMediaPlanSummaryLabel(response.saveResult.localMediaSummary)}`,
             });
-            setBridgeMessage(`Bridge saved ${response.saveResult.projectId}`);
+            setBridgeMessage(
+                `프로젝트 ${response.saveResult.projectId} 저장이 끝났습니다. 기획 엔진: ${plannerLabel(response.planner)} · ${localMediaPlanSummaryLabel(response.saveResult.localMediaSummary)}`,
+            );
         } catch (error) {
             setSaveState({
                 status: "failed",
-                message: error instanceof Error ? error.message : "Bridge save failed",
+                message: error instanceof Error ? error.message : "프로젝트 저장에 실패했습니다.",
             });
         }
     }
@@ -252,343 +321,107 @@ export default function App() {
     async function renderProjectThroughBridge(): Promise<void> {
         if (!selectedProject || bridgeStatus !== "connected") return;
 
-        setRenderState({ status: "rendering", message: "Running FFmpeg smoke render through the bridge" });
+        setRenderState({ status: "rendering", message: "실제 초안 렌더를 실행하는 중입니다." });
         try {
+            const sceneAssetPayload = await serializeSceneAssets(selectedProject.id);
             const response = await renderSmokeWithBridge({
                 prompt: selectedProject.plan.sourcePrompt,
                 budgetMode: selectedProject.plan.budgetMode,
                 projectId: selectedProject.id,
+                sceneAssets: sceneAssetPayload,
                 availability: providerAvailabilityFromRecord(selectedProject),
+            });
+            const nextRecord = buildStudioProjectRecordFromWorker({
+                projectId: selectedProject.id,
+                planner: response.planner,
+                plan: response.plan,
+                routes: response.routes,
+                estimatedCostUsd: response.saveResult.estimatedTotalCostUsd,
+                manifest: response.manifest,
+            });
+            startTransition(() => {
+                setProjects((current) =>
+                    current.map((project) => (project.id === selectedProject.id ? nextRecord : project)),
+                );
             });
             setRenderState({
                 status: "rendered",
-                message: `Rendered ${response.renderResult.outputPath}`,
+                message:
+                    `렌더 완료 · ${response.renderResult.outputPath}` +
+                    ` · ${localMediaRenderSummaryLabel(response.renderResult.localMediaSummary)}`,
             });
-            setBridgeMessage(`Smoke render complete for ${response.renderResult.projectId}`);
+            setBridgeMessage(
+                `초안 렌더가 완료되었습니다. ${response.renderResult.projectId} · 기획 엔진: ${plannerLabel(response.planner)} · ${localMediaRenderSummaryLabel(response.renderResult.localMediaSummary)}`,
+            );
         } catch (error) {
             setRenderState({
                 status: "failed",
-                message: error instanceof Error ? error.message : "Bridge render failed",
+                message: error instanceof Error ? error.message : "초안 렌더 실행에 실패했습니다.",
             });
         }
+    }
+
+    function handleSelectProject(projectId: string): void {
+        setSelectedProjectId(projectId);
+        setCopyState({ target: null, state: "idle" });
+        setSaveState({ status: "idle", message: "" });
+        setRenderState({ status: "idle", message: "" });
     }
 
     return (
         <div className="studio-shell">
             <div className="studio-glow studio-glow-left" />
             <div className="studio-glow studio-glow-right" />
+            <div className="studio-noise" />
 
-            <header className="hero">
-                <div className="hero-kicker">Video Studio / Local + Premium Routing</div>
-                <div className="hero-grid">
-                    <div>
-                        <h1>Shape the storyboard before you burn GPU time.</h1>
-                        <p className="hero-copy">
-                            This runtime can now plan through a local bridge, map scenes into storage,
-                            and save worker-ready project files without leaving the app.
-                        </p>
-                    </div>
-                    <div className="hero-signal">
-                        <div className="signal-card">
-                            <span className="signal-label">Bridge lane</span>
-                            <strong>{bridgeSummary(bridgeStatus, bridgeHealth)}</strong>
-                        </div>
-                        <div className="signal-card">
-                            <span className="signal-label">Premium scenes</span>
-                            <strong>{premiumSceneCount}</strong>
-                        </div>
-                        <div className="signal-card">
-                            <span className="signal-label">Timeline length</span>
-                            <strong>{selectedProject?.manifest.totalDurationSec.toFixed(1) ?? "0.0"}s</strong>
-                        </div>
-                    </div>
-                </div>
-            </header>
+            <ComposerPanel
+                prompt={prompt}
+                onPromptChange={setPrompt}
+                budgetMode={budgetMode}
+                onBudgetModeChange={setBudgetMode}
+                monthlyCapUsd={monthlyCapUsd}
+                onMonthlyCapUsdChange={setMonthlyCapUsd}
+                availability={availability}
+                onAvailabilityChange={setAvailability}
+                preferBridge={preferBridge}
+                onPreferBridgeChange={setPreferBridge}
+                bridgeStatus={bridgeStatus}
+                bridgeHealth={bridgeHealth}
+                bridgeMessage={bridgeMessage}
+                premiumSceneCount={premiumSceneCount}
+                selectedProjectAssetCount={selectedProjectAssetCount}
+                selectedProject={selectedProject}
+                isGenerating={isGenerating}
+                onRefreshBridge={() => void refreshBridgeHealth()}
+                onGenerate={() => void generateProject()}
+            />
 
             <main className="workspace">
-                <section className="panel composer-panel">
-                    <div className="panel-header">
-                        <span className="panel-index">01</span>
-                        <div>
-                            <h2>Prompt Composer</h2>
-                            <p>Draft in-browser, or let the local bridge call the Python worker directly.</p>
-                        </div>
-                    </div>
+                <StoryboardPanel
+                    selectedProject={selectedProject}
+                    sceneAssets={sceneAssets}
+                    clearedAssetKeys={clearedAssetKeys}
+                    onSelectAsset={selectSceneAsset}
+                    onClearAsset={clearSceneAsset}
+                />
 
-                    <label className="field">
-                        <span>Prompt</span>
-                        <textarea
-                            value={prompt}
-                            onChange={(event) => setPrompt(event.target.value)}
-                            rows={7}
-                            placeholder="Describe the short-form video you want to create"
-                        />
-                    </label>
-
-                    <div className="chip-row">
-                        {samplePrompts.map((item) => (
-                            <button key={item} className="chip" type="button" onClick={() => setPrompt(item)}>
-                                {item}
-                            </button>
-                        ))}
-                    </div>
-
-                    <div className="control-grid">
-                        <label className="field compact">
-                            <span>Budget mode</span>
-                            <select value={budgetMode} onChange={(event) => setBudgetMode(event.target.value as BudgetMode)}>
-                                <option value="free">Free</option>
-                                <option value="standard">Standard</option>
-                                <option value="premium">Premium</option>
-                            </select>
-                        </label>
-
-                        <label className="field compact">
-                            <span>Monthly cap (USD)</span>
-                            <input
-                                type="number"
-                                min={0}
-                                step={5}
-                                value={monthlyCapUsd}
-                                onChange={(event) => setMonthlyCapUsd(Number(event.target.value))}
-                            />
-                        </label>
-                    </div>
-
-                    <div className="toggle-grid">
-                        <label className="toggle">
-                            <input type="checkbox" checked={preferBridge} onChange={(event) => setPreferBridge(event.target.checked)} />
-                            <span>Use local bridge when reachable</span>
-                        </label>
-                        <label className="toggle">
-                            <input
-                                type="checkbox"
-                                checked={availability.premiumEnabled}
-                                onChange={(event) => setAvailability((current) => ({ ...current, premiumEnabled: event.target.checked }))}
-                            />
-                            <span>Premium routing enabled</span>
-                        </label>
-                        <label className="toggle">
-                            <input
-                                type="checkbox"
-                                checked={availability.sora2}
-                                onChange={(event) => setAvailability((current) => ({ ...current, sora2: event.target.checked }))}
-                            />
-                            <span>Sora 2 available</span>
-                        </label>
-                        <label className="toggle">
-                            <input
-                                type="checkbox"
-                                checked={availability.veo3}
-                                onChange={(event) => setAvailability((current) => ({ ...current, veo3: event.target.checked }))}
-                            />
-                            <span>Veo 3 available</span>
-                        </label>
-                    </div>
-
-                    <div className="bridge-banner">
-                        <div>
-                            <span className="summary-label">Bridge status</span>
-                            <strong>{bridgeSummary(bridgeStatus, bridgeHealth)}</strong>
-                        </div>
-                        <button className="subtle-button" type="button" onClick={() => void refreshBridgeHealth()}>
-                            Refresh bridge
-                        </button>
-                    </div>
-
-                    <p className="bridge-message">{bridgeMessage}</p>
-
-                    <button className="action-button" type="button" onClick={() => void generateProject()}>
-                        {isGenerating ? "Generating..." : "Generate storyboard draft"}
-                    </button>
-                </section>
-
-                <section className="panel storyboard-panel">
-                    <div className="panel-header">
-                        <span className="panel-index">02</span>
-                        <div>
-                            <h2>Storyboard Preview</h2>
-                            <p>Review the routed scene plan before you touch FLUX, Wan, Sora 2, or Veo 3.</p>
-                        </div>
-                    </div>
-
-                    {selectedProject ? (
-                        <>
-                            <div className="summary-strip">
-                                <div><span className="summary-label">Aspect</span><strong>{selectedProject.plan.aspectRatio}</strong></div>
-                                <div><span className="summary-label">Budget mode</span><strong>{selectedProject.plan.budgetMode}</strong></div>
-                                <div><span className="summary-label">Est. premium cost</span><strong>${selectedProject.estimatedCostUsd.toFixed(2)}</strong></div>
-                                <div><span className="summary-label">Render output</span><strong>{selectedProject.manifest.outputPath}</strong></div>
-                            </div>
-
-                            <div className="scene-list">
-                                {selectedProject.plan.scenes.map((scene) => {
-                                    const route = selectedProject.routes.find((item) => item.sceneId === scene.id);
-                                    const manifestScene = selectedProject.manifest.scenes.find((item) => item.sceneId === scene.id);
-
-                                    return (
-                                        <article key={scene.id} className="scene-card">
-                                            <div className="scene-meta">
-                                                <span className={`route-badge route-${route?.route ?? "local"}`}>{routeLabel(route?.route ?? "local")}</span>
-                                                <span>{scene.durationSec.toFixed(1)}s</span>
-                                            </div>
-                                            <h3>{scene.title}</h3>
-                                            <p>{scene.prompt}</p>
-                                            <div className="scene-scores">
-                                                <span>Priority {scene.priority}</span>
-                                                <span>Realism {scene.humanRealism}</span>
-                                                <span>Audio {scene.nativeAudioNeed}</span>
-                                            </div>
-                                            <div className="scene-pipeline">
-                                                <span>{manifestScene?.visualKind ?? "video"} visual</span>
-                                                <span>{manifestScene?.audioKind ?? "voiceover"} audio</span>
-                                                <span>{manifestScene?.cacheDir ?? "storage/cache"}</span>
-                                            </div>
-                                            <div className="scene-footer">
-                                                <strong>{scene.subtitleText}</strong>
-                                                <small>{route?.reason}</small>
-                                            </div>
-                                        </article>
-                                    );
-                                })}
-                            </div>
-                        </>
-                    ) : (
-                        <div className="empty-panel">
-                            <p>No storyboard yet. Generate a draft to preview route decisions and per-scene cost.</p>
-                        </div>
-                    )}
-                </section>
-
-                <section className="panel diagnostics-panel">
-                    <div className="panel-header">
-                        <span className="panel-index">03</span>
-                        <div>
-                            <h2>Control Room</h2>
-                            <p>Bridge health, tool visibility, storage actions, and draft history live here.</p>
-                        </div>
-                    </div>
-
-                    <div className="diag-block">
-                        <div className="diag-title">Shell readiness</div>
-                        <ul className="status-list">
-                            <li><span className={`status-dot ${bridgeStatus === "connected" ? "status-ok" : "status-warn"}`} />Local bridge: {bridgeSummary(bridgeStatus, bridgeHealth)}</li>
-                            <li><span className={`status-dot ${bridgeHealth?.tools.ffmpeg?.ready ? "status-ok" : "status-warn"}`} />FFmpeg: {toolSummary(bridgeHealth?.tools.ffmpeg)}<br />{toolPath(bridgeHealth?.tools.ffmpeg)}</li>
-                            <li><span className={`status-dot ${bridgeHealth?.tools.ollama?.ready ? "status-ok" : "status-warn"}`} />Ollama: {toolSummary(bridgeHealth?.tools.ollama)}<br />{toolPath(bridgeHealth?.tools.ollama)}</li>
-                            <li><span className={`status-dot ${bridgeHealth?.tools.hf?.ready ? "status-ok" : "status-warn"}`} />Hugging Face CLI: {toolSummary(bridgeHealth?.tools.hf)}<br />{toolPath(bridgeHealth?.tools.hf)}</li>
-                        </ul>
-                    </div>
-
-                    <div className="diag-block">
-                        <div className="diag-title">Operator notes</div>
-                        <ul className="operator-list">
-                            {operatorSteps.map((step) => (
-                                <li key={step}>{step}</li>
-                            ))}
-                        </ul>
-                    </div>
-
-                    <div className="diag-block">
-                        <div className="diag-title">Bridge actions</div>
-                        {selectedProject ? (
-                            <>
-                                <div className="button-row">
-                                    <button className="subtle-button" type="button" onClick={() => void saveProjectThroughBridge()} disabled={bridgeStatus !== "connected" || saveState.status === "saving"}>
-                                        {saveState.status === "saving" ? "Saving..." : "Save to storage now"}
-                                    </button>
-                                    <button className="subtle-button" type="button" onClick={() => void renderProjectThroughBridge()} disabled={bridgeStatus !== "connected" || renderState.status === "rendering"}>
-                                        {renderState.status === "rendering" ? "Rendering..." : "Run FFmpeg smoke render"}
-                                    </button>
-                                    <button className="subtle-button" type="button" onClick={() => void refreshBridgeHealth()}>
-                                        Refresh bridge
-                                    </button>
-                                </div>
-                                {saveState.message ? <p className={`bridge-message bridge-${saveState.status}`}>{saveState.message}</p> : null}
-                                {renderState.message ? (
-                                    <p className={`bridge-message ${renderState.status === "rendered" ? "bridge-saved" : renderState.status === "failed" ? "bridge-failed" : ""}`}>
-                                        {renderState.message}
-                                    </p>
-                                ) : null}
-                            </>
-                        ) : (
-                            <div className="empty-history">Generate a draft first to unlock bridge save actions.</div>
-                        )}
-                    </div>
-
-                    <div className="diag-block">
-                        <div className="diag-title">Worker handoff</div>
-                        {selectedProject ? (
-                            <>
-                                <div className="command-stack">
-                                    <div className="command-card">
-                                        <span className="summary-label">Route preview</span>
-                                        <code className="command-preview">{buildWorkerCommand(selectedProject)}</code>
-                                        <button className="subtle-button" type="button" onClick={() => void copyCommand("route", buildWorkerCommand(selectedProject))}>{copyLabel(copyState, "route")}</button>
-                                    </div>
-                                    <div className="command-card">
-                                        <span className="summary-label">Save project files</span>
-                                        <code className="command-preview">{buildSavePlanCommand(selectedProject)}</code>
-                                        <button className="subtle-button" type="button" onClick={() => void copyCommand("save", buildSavePlanCommand(selectedProject))}>{copyLabel(copyState, "save")}</button>
-                                    </div>
-                                    <div className="command-card">
-                                        <span className="summary-label">Compose preview</span>
-                                        <code className="command-preview">{buildComposeCommand(selectedProject)}</code>
-                                        <button className="subtle-button" type="button" onClick={() => void copyCommand("compose", buildComposeCommand(selectedProject))}>{copyLabel(copyState, "compose")}</button>
-                                    </div>
-                                </div>
-                                <div className="button-row">
-                                    <button className="subtle-button" type="button" onClick={() => void exportJson(`${selectedProject.id}.json`, selectedProject)}>Export record JSON</button>
-                                    <button className="subtle-button" type="button" onClick={() => void exportJson(`${selectedProject.manifest.projectId}-render-manifest.json`, selectedProject.manifest)}>Export manifest JSON</button>
-                                </div>
-                            </>
-                        ) : (
-                            <div className="empty-history">Generate a draft first to unlock local worker commands.</div>
-                        )}
-                    </div>
-
-                    <div className="diag-block">
-                        <div className="diag-title">Storage layout</div>
-                        {selectedProject ? (
-                            <div className="storage-grid">
-                                <div><span className="summary-label">Inputs</span><strong>{selectedProject.manifest.inputDir}</strong></div>
-                                <div><span className="summary-label">Cache</span><strong>{selectedProject.manifest.cacheDir}</strong></div>
-                                <div><span className="summary-label">Render</span><strong>{selectedProject.manifest.renderDir}</strong></div>
-                                <div><span className="summary-label">Concat / subtitles</span><strong>{selectedProject.manifest.concatFilePath}</strong><strong>{selectedProject.manifest.subtitleFilePath}</strong></div>
-                            </div>
-                        ) : (
-                            <div className="empty-history">Generate one draft to preview where local files will land.</div>
-                        )}
-                    </div>
-
-                    <div className="diag-block">
-                        <div className="diag-title">Recent drafts</div>
-                        <div className="history-list">
-                            {projects.length ? projects.map((project) => (
-                                <article key={project.id} className={`history-item ${project.id === selectedProjectId ? "active" : ""}`}>
-                                    <button
-                                        className="history-main"
-                                        type="button"
-                                        onClick={() => {
-                                            setSelectedProjectId(project.id);
-                                            setCopyState({ target: null, state: "idle" });
-                                            setSaveState({ status: "idle", message: "" });
-                                        }}
-                                    >
-                                        <div>
-                                            <strong>{project.plan.title}</strong>
-                                            <span>{formatDate(project.updatedAt)}</span>
-                                        </div>
-                                        <div className="history-actions">
-                                            <span>{project.manifest.totalDurationSec.toFixed(1)}s</span>
-                                            <span>${project.estimatedCostUsd.toFixed(2)}</span>
-                                        </div>
-                                    </button>
-                                    <button className="history-remove" type="button" onClick={() => removeProject(project.id)}>Remove</button>
-                                </article>
-                            )) : <div className="empty-history">Generated drafts are stored locally in this browser.</div>}
-                        </div>
-                    </div>
-                </section>
+                <ExecutionPanel
+                    selectedProject={selectedProject}
+                    bridgeHealth={bridgeHealth}
+                    bridgeStatus={bridgeStatus}
+                    saveState={saveState}
+                    renderState={renderState}
+                    copyState={copyState}
+                    projects={projects}
+                    selectedProjectId={selectedProjectId}
+                    onSave={() => void saveProjectThroughBridge()}
+                    onRender={() => void renderProjectThroughBridge()}
+                    onRefreshBridge={() => void refreshBridgeHealth()}
+                    onCopyCommand={(target, command) => void copyCommand(target, command)}
+                    onExportJson={(filename, payload) => void exportJson(filename, payload)}
+                    onRemoveProject={removeProject}
+                    onSelectProject={handleSelectProject}
+                />
             </main>
         </div>
     );

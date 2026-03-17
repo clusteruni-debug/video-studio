@@ -1,8 +1,16 @@
 import type { BudgetMode, ProjectPlan } from "../../../../shared/contracts/plan";
 import type { RenderManifest } from "../../../../shared/contracts/render";
-import type { RouteDecision } from "./planner";
+import type { PlannerMeta, RouteDecision } from "./planner";
 
 const BRIDGE_URL = "http://127.0.0.1:5161";
+
+export interface SceneAssetUploadPayload {
+    sceneId: string;
+    role: "visual" | "audio";
+    fileName: string;
+    mimeType: string;
+    base64: string;
+}
 
 export interface BridgeHealth {
     ok: boolean;
@@ -10,11 +18,22 @@ export interface BridgeHealth {
     port: number;
     projectRoot: string;
     pythonPath: string;
+    planner: BridgePlannerStatus;
     tools: {
         ffmpeg: BridgeToolStatus;
         hf: BridgeToolStatus;
         ollama: BridgeToolStatus;
     };
+    media: Record<string, BridgeMediaAdapterStatus>;
+}
+
+export interface BridgePlannerStatus {
+    ready: boolean;
+    backend: string;
+    model: string | null;
+    availableModels: string[];
+    host: string;
+    detail: string;
 }
 
 export interface BridgeToolStatus {
@@ -27,8 +46,58 @@ export interface BridgeToolStatus {
     detail: string | null;
 }
 
+export interface BridgeMediaAdapterStatus {
+    key: string;
+    label: string;
+    mode: "off" | "stub" | "command" | string;
+    outputKind: "image" | "video" | string;
+    model: string;
+    ready: boolean;
+    fallbackAvailable: boolean;
+    entryPoint: string | null;
+    commandPreview: string | null;
+    detail: string;
+}
+
+export interface BridgeLocalMediaSummary {
+    totalScenes: number;
+    uploadedVisuals?: number;
+    generationRequired?: number;
+    imageGenerations?: number;
+    videoGenerations?: number;
+    uploadedAudio?: number;
+    autoAudioFallbacks?: number;
+}
+
+export interface BridgeLocalMediaRenderSummary {
+    totalScenes: number;
+    uploaded: number;
+    generated: number;
+    placeholder: number;
+    attempted: number;
+    succeeded: number;
+    failed: number;
+}
+
+export interface BridgeLocalMediaSceneResult {
+    sceneId: string;
+    sceneTitle: string;
+    adapterKey: string | null;
+    mode: string;
+    outputKind: string;
+    status: string;
+    outputPath: string;
+    detail: string;
+    attempted: boolean;
+    succeeded: boolean | null;
+    commandPreview?: string | null;
+    requestPath?: string | null;
+    logPath?: string | null;
+}
+
 export interface BridgeRoutePlanResult {
     plan: ProjectPlan;
+    planner: PlannerMeta;
     routes: RouteDecision[];
     estimatedTotalCostUsd: number;
 }
@@ -45,7 +114,17 @@ export interface BridgeSaveProjectResult {
         manifestPath: string;
         notesPath: string;
         estimatedTotalCostUsd: number;
+        uploadedAssets?: Array<{
+            sceneId: string;
+            role: "visual" | "audio";
+            fileName: string;
+            storedPath: string;
+            mimeType?: string | null;
+        }>;
+        localMediaPlanPath?: string;
+        localMediaSummary?: BridgeLocalMediaSummary;
     };
+    planner: PlannerMeta;
     plan: ProjectPlan;
     routes: RouteDecision[];
     manifest: RenderManifest;
@@ -54,6 +133,7 @@ export interface BridgeSaveProjectResult {
 export interface BridgeRenderProjectResult {
     ok: true;
     saveResult: BridgeSaveProjectResult["saveResult"];
+    planner: PlannerMeta;
     plan: ProjectPlan;
     routes: RouteDecision[];
     manifest: RenderManifest;
@@ -67,6 +147,10 @@ export interface BridgeRenderProjectResult {
         logPath: string;
         ffmpeg: BridgeToolStatus;
         sceneClipPaths: string[];
+        localMediaPlanPath: string;
+        localMediaReportPath: string;
+        localMediaSummary: BridgeLocalMediaRenderSummary;
+        localMedia: BridgeLocalMediaSceneResult[];
     };
 }
 
@@ -117,6 +201,7 @@ export async function saveProjectWithBridge(input: {
     prompt: string;
     budgetMode: BudgetMode;
     projectId: string;
+    sceneAssets?: SceneAssetUploadPayload[];
     availability: {
         premiumEnabled: boolean;
         sora2: boolean;
@@ -133,6 +218,7 @@ export async function renderSmokeWithBridge(input: {
     prompt: string;
     budgetMode: BudgetMode;
     projectId: string;
+    sceneAssets?: SceneAssetUploadPayload[];
     availability: {
         premiumEnabled: boolean;
         sora2: boolean;

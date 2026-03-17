@@ -15,10 +15,10 @@ function Invoke-BridgeJson {
     )
 
     if ($Body) {
-        return Invoke-RestMethod -Uri $Uri -Method $Method -ContentType "application/json" -Body $Body -TimeoutSec 10
+        return Invoke-RestMethod -Uri $Uri -Method $Method -ContentType "application/json" -Body $Body -TimeoutSec 90
     }
 
-    return Invoke-RestMethod -Uri $Uri -Method $Method -TimeoutSec 10
+    return Invoke-RestMethod -Uri $Uri -Method $Method -TimeoutSec 30
 }
 
 New-Item -ItemType Directory -Force -Path (Join-Path $projectRoot "storage\cache") | Out-Null
@@ -28,7 +28,7 @@ try {
     $bridgeProcess = Start-Process -FilePath $python -ArgumentList "-m worker.bridge.server" -WorkingDirectory $projectRoot -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
 
     $health = $null
-    for ($index = 0; $index -lt 5; $index++) {
+    for ($index = 0; $index -lt 8; $index++) {
         Start-Sleep -Milliseconds 800
         try {
             $health = Invoke-BridgeJson -Uri "$bridgeUrl/api/health" -Method Get
@@ -47,6 +47,14 @@ try {
     Write-Host "[verify] bridge health"
     $health | ConvertTo-Json -Depth 4
 
+    if (-not $health.planner) {
+        throw "Bridge health did not expose planner runtime metadata"
+    }
+
+    if (-not $health.media.flux -or -not $health.media.wan) {
+        throw "Bridge health did not expose local media adapter metadata"
+    }
+
     Write-Host "[verify] route plan through bridge"
     $routePayload = @{
         prompt = "30-second cafe promo reel with a warm morning mood"
@@ -59,6 +67,10 @@ try {
     } | ConvertTo-Json -Depth 4
     $routeResponse = Invoke-BridgeJson -Uri "$bridgeUrl/api/route-plan" -Method Post -Body $routePayload
     $routeResponse | ConvertTo-Json -Depth 5
+
+    if (-not $routeResponse.planner) {
+        throw "Bridge route response did not include planner metadata"
+    }
 
     Write-Host "[verify] save project through bridge"
     $savePayload = @{
@@ -74,8 +86,24 @@ try {
     $saveResponse = Invoke-BridgeJson -Uri "$bridgeUrl/api/save-project" -Method Post -Body $savePayload
     $saveResponse | ConvertTo-Json -Depth 5
 
+    if (-not $saveResponse.planner) {
+        throw "Bridge save response did not include planner metadata"
+    }
+
     if (-not (Test-Path $saveResponse.saveResult.manifestPath)) {
         throw "Bridge save did not create manifest at $($saveResponse.saveResult.manifestPath)"
+    }
+
+    if (-not $saveResponse.saveResult.localMediaPlanPath) {
+        throw "Bridge save response did not include local media plan path"
+    }
+
+    if (-not (Test-Path $saveResponse.saveResult.localMediaPlanPath)) {
+        throw "Bridge save did not create local media plan at $($saveResponse.saveResult.localMediaPlanPath)"
+    }
+
+    if (-not $saveResponse.saveResult.localMediaSummary) {
+        throw "Bridge save response did not include local media summary"
     }
 
     Write-Host "[verify] bridge manifest path"
