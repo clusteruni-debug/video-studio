@@ -1,0 +1,17 @@
+# Auto-detect text files and normalize line endings to LF on commit
+* text=auto eol=lf
+
+# Shell scripts always LF (WSL/Linux compat)
+*.sh text eol=lf
+
+# PowerShell allow CRLF
+*.ps1 text eol=crlf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
