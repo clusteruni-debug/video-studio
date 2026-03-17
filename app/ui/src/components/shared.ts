@@ -13,6 +13,8 @@ import type {
     StudioProjectRecord,
 } from "../lib/planner";
 
+export type { QueueItem } from "../lib/image-queue";
+
 export type CopyTarget = "route" | "save" | "compose";
 export type CopyState = { target: CopyTarget | null; state: "idle" | "copied" | "failed" };
 export type BridgeStatus = "checking" | "connected" | "offline" | "error";
@@ -24,6 +26,41 @@ export type LocalSceneAsset = {
     file: File;
     previewUrl: string | null;
 };
+
+export type CreationMode = "image" | "video";
+export type ImageStatus = { status: "idle" | "success" | "error"; message: string };
+
+export type ImageEngine = { key: string; label: string; description: string };
+
+export const IMAGE_ENGINES: ImageEngine[] = [
+    { key: "sana", label: "Sana", description: "Pollinations 기본 — 고품질 범용" },
+    { key: "zimage", label: "ZImage", description: "디테일 강화 모델" },
+    { key: "turbo", label: "Turbo", description: "빠른 생성, 낮은 품질" },
+];
+
+export type GeneratedImage = {
+    id: string;
+    prompt: string;
+    url: string;
+    file: File;
+    width: number;
+    height: number;
+    engine: string;
+    createdAt: string;
+};
+
+export type ImageSize = { label: string; width: number; height: number };
+
+export const IMAGE_SIZES: ImageSize[] = [
+    { label: "128×128 (스프라이트)", width: 128, height: 128 },
+    { label: "256×256 (보스)", width: 256, height: 256 },
+    { label: "512×512 (정사각)", width: 512, height: 512 },
+    { label: "1024×1024 (HD)", width: 1024, height: 1024 },
+    { label: "16:9 가로 (1920×1080)", width: 1920, height: 1080 },
+    { label: "9:16 세로 (1080×1920)", width: 1080, height: 1920 },
+];
+
+export type ImageInputMode = "single" | "batch";
 
 export const reasonMap: Record<string, string> = {
     "free-mode or premium disabled": "무료 모드이거나 프리미엄 라우팅이 꺼져 있어 로컬로 처리합니다.",
