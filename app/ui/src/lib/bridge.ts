@@ -230,3 +230,72 @@ export async function renderSmokeWithBridge(input: {
         body: JSON.stringify(input),
     });
 }
+
+export interface RenderProgressEvent {
+    phase: "save" | "scene" | string;
+    message: string;
+    current: number;
+    total: number;
+    sceneId?: string;
+}
+
+export async function renderSmokeWithSSE(
+    input: {
+        prompt: string;
+        budgetMode: BudgetMode;
+        projectId: string;
+        sceneAssets?: SceneAssetUploadPayload[];
+        availability: {
+            premiumEnabled: boolean;
+            sora2: boolean;
+            veo3: boolean;
+        };
+    },
+    onProgress: (event: RenderProgressEvent) => void,
+): Promise<BridgeRenderProjectResult> {
+    const response = await fetch(`${BRIDGE_URL}/api/render-smoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...input, stream: true }),
+    });
+
+    if (!response.ok) {
+        const text = await response.text();
+        throw new BridgeRequestError(text || `Bridge request failed with ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new BridgeRequestError("No response body for SSE stream");
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let finalResult: BridgeRenderProjectResult | null = null;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        let eventType = "";
+        for (const line of lines) {
+            if (line.startsWith("event: ")) {
+                eventType = line.slice(7).trim();
+            } else if (line.startsWith("data: ")) {
+                const data = JSON.parse(line.slice(6));
+                if (eventType === "progress") {
+                    onProgress(data as RenderProgressEvent);
+                } else if (eventType === "done") {
+                    finalResult = data as BridgeRenderProjectResult;
+                } else if (eventType === "error") {
+                    throw new BridgeRequestError(data.error || "Render failed");
+                }
+            }
+        }
+    }
+
+    if (!finalResult) throw new BridgeRequestError("SSE stream ended without result");
+    return finalResult;
+}

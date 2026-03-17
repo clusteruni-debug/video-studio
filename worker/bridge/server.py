@@ -5,6 +5,11 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+# Load .env before any adapter/tool probe reads os.environ
+load_dotenv(Path.cwd() / ".env", override=False)
+
 from worker.media.adapters import probe_local_media_adapters
 from worker.media.model_router import ProviderAvailability, route_project_plan, summarize_cost
 from worker.planner.ollama_planner import build_project_plan, probe_planner_runtime
@@ -188,6 +193,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
         prompt = str(body.get("prompt", "")).strip()
         budget_mode = body.get("budgetMode")
         project_id = str(body.get("projectId", "")).strip()
+        use_sse = body.get("stream", False)
+
         if not prompt:
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": "prompt is required"})
             return
@@ -212,13 +219,57 @@ class BridgeHandler(BaseHTTPRequestHandler):
             project_root=PROJECT_ROOT,
             scene_assets=body.get("sceneAssets"),
         )
-        render_result = compose_smoke_render(
-            manifest_path=Path(payload["saveResult"]["manifestPath"]),
-            project_root=PROJECT_ROOT,
-        )
-        self._send_json(
-            HTTPStatus.OK,
-            {
+
+        if use_sse:
+            self._handle_render_sse(payload)
+        else:
+            render_result = compose_smoke_render(
+                manifest_path=Path(payload["saveResult"]["manifestPath"]),
+                project_root=PROJECT_ROOT,
+            )
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "ok": True,
+                    "saveResult": payload["saveResult"],
+                    "planner": payload["planner"],
+                    "plan": payload["plan"],
+                    "routes": payload["routes"],
+                    "manifest": payload["manifest"],
+                    "renderResult": render_result.to_dict(),
+                },
+            )
+
+    def _handle_render_sse(self, payload: dict) -> None:
+        """Stream render progress as SSE events."""
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1:5160")
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+
+        def _send_event(event: str, data: dict) -> None:
+            line = f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+            self.wfile.write(line.encode("utf-8"))
+            self.wfile.flush()
+
+        manifest_path = Path(payload["saveResult"]["manifestPath"])
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        total_scenes = len(manifest.get("scenes", []))
+
+        _send_event("progress", {"phase": "save", "message": "프로젝트 저장 완료", "current": 0, "total": total_scenes})
+
+        try:
+            render_result = compose_smoke_render(
+                manifest_path=manifest_path,
+                project_root=PROJECT_ROOT,
+                progress_callback=lambda idx, scene_id: _send_event(
+                    "progress",
+                    {"phase": "scene", "message": f"장면 {idx + 1}/{total_scenes} 렌더 중", "current": idx + 1, "total": total_scenes, "sceneId": scene_id},
+                ),
+            )
+            _send_event("done", {
                 "ok": True,
                 "saveResult": payload["saveResult"],
                 "planner": payload["planner"],
@@ -226,8 +277,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 "routes": payload["routes"],
                 "manifest": payload["manifest"],
                 "renderResult": render_result.to_dict(),
-            },
-        )
+            })
+        except Exception as error:
+            _send_event("error", {"error": str(error)})
 
 
 def serve() -> None:

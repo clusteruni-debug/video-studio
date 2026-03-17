@@ -48,6 +48,7 @@ class RenderSceneSpec:
     subtitleText: str
     cacheDir: str
     assetIds: list[str]
+    motionPreset: str = "random"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -71,6 +72,8 @@ class RenderManifest:
     scenes: list[RenderSceneSpec]
     assets: list[RenderAssetSpec]
     composeCommandPreview: str
+    transitionType: str = "fade"
+    transitionDuration: float = 0.5
 
     def to_dict(self) -> dict:
         return {
@@ -147,7 +150,7 @@ def build_render_manifest(
                 id=audio_asset_id,
                 sceneId=scene.id,
                 role="audio",
-                provider=route if audio_kind == "native" else "piper",
+                provider=route if audio_kind == "native" else "edge-tts",
                 kind=audio_kind,
                 prompt=scene.subtitleText,
                 durationSec=round(scene.durationSec, 2),
@@ -187,6 +190,7 @@ def build_render_manifest(
                 subtitleText=scene.subtitleText,
                 cacheDir=scene_cache_dir,
                 assetIds=asset_ids,
+                motionPreset="random" if visual_kind == "image" else "none",
             )
         )
 

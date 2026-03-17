@@ -8,6 +8,7 @@ import textwrap
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from worker.media.adapters import AdapterExecutionContext, run_local_media_adapter
 from worker.media.runtime import (
     generate_local_visual_asset,
     summarize_generation_results,
@@ -50,6 +51,8 @@ class SmokeRenderResult:
     localMediaReportPath: str
     localMediaSummary: dict
     localMedia: list[dict]
+    ttsBackends: list[str] | None = None
+    warnings: list[str] | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -468,6 +471,32 @@ def _mix_bgm_into_output(
     )
 
 
+def _synthesize_edge_tts(
+    text: str,
+    output_path: Path,
+    scene_cache_dir: Path,
+    project_root: Path,
+) -> bool:
+    """Try Edge TTS adapter. Returns True if audio file was created."""
+    prompt_file = scene_cache_dir / f"{output_path.stem}.tts-prompt.txt"
+    prompt_file.parent.mkdir(parents=True, exist_ok=True)
+    prompt_file.write_text(text.strip(), encoding="utf-8")
+
+    context = AdapterExecutionContext(
+        sceneId=output_path.stem,
+        sceneTitle="",
+        projectRoot=str(project_root),
+        promptPath=str(prompt_file),
+        outputPath=str(output_path),
+        requestPath=str(scene_cache_dir / f"{output_path.stem}.tts-request.json"),
+        logPath=str(scene_cache_dir / f"{output_path.stem}.tts-log.txt"),
+        durationSec=0,
+        route="edge-tts",
+    )
+    result = run_local_media_adapter("edge-tts", context, project_root=project_root)
+    return result.succeeded is True and output_path.exists()
+
+
 def _get_manifest_transition(manifest: dict) -> tuple[str, float]:
     """Read transition settings from the manifest, with defaults."""
     transition_type = manifest.get("transitionType") or DEFAULT_TRANSITION_TYPE
@@ -475,7 +504,11 @@ def _get_manifest_transition(manifest: dict) -> tuple[str, float]:
     return transition_type, float(transition_duration)
 
 
-def compose_smoke_render(manifest_path: Path | str, project_root: Path | str = ".") -> SmokeRenderResult:
+def compose_smoke_render(
+    manifest_path: Path | str,
+    project_root: Path | str = ".",
+    progress_callback=None,
+) -> SmokeRenderResult:
     resolved_project_root = Path(project_root).resolve()
     resolved_manifest_path = Path(manifest_path).resolve()
     manifest = _load_manifest(resolved_manifest_path)
@@ -506,9 +539,16 @@ def compose_smoke_render(manifest_path: Path | str, project_root: Path | str = "
     scene_clip_paths: list[Path] = []
     scene_durations: list[float] = []
     local_media_results = []
+    tts_backends_used: set[str] = set()
+    render_warnings: list[str] = []
 
     for index, scene in enumerate(manifest["scenes"]):
         scene_id = scene["sceneId"]
+        if progress_callback:
+            try:
+                progress_callback(index, scene_id)
+            except Exception:
+                pass  # SSE write errors should not abort render
         scene_cache_dir = resolved_project_root / scene["cacheDir"]
         scene_cache_dir.mkdir(parents=True, exist_ok=True)
         visual_asset = _asset_lookup(manifest, scene_id, "visual")
@@ -597,15 +637,39 @@ def compose_smoke_render(manifest_path: Path | str, project_root: Path | str = "
                 log_lines=log_lines,
             )
         else:
-            tts_result = synthesize_windows_voiceover(
-                text=scene["subtitleText"],
-                output_path=raw_tts_path,
-                working_dir=scene_cache_dir,
-            )
-            log_lines.append(f"tts_backend=windows-speech ok={tts_result.ok} voice={tts_result.voiceName} detail={tts_result.detail}")
-            log_lines.append("")
+            tts_ok = False
+            tts_backend = "none"
 
-            if tts_result.ok and raw_tts_path.exists():
+            # 1. Try Edge TTS (cross-platform, free)
+            edge_tts_raw = scene_cache_dir / f"{scene_id}.edge-tts.mp3"
+            edge_ok = _synthesize_edge_tts(
+                text=scene["subtitleText"],
+                output_path=edge_tts_raw,
+                scene_cache_dir=scene_cache_dir,
+                project_root=resolved_project_root,
+            )
+            if edge_ok:
+                tts_ok = True
+                tts_backend = "edge-tts"
+                raw_tts_path = edge_tts_raw
+                log_lines.append(f"tts_backend=edge-tts ok=True")
+                log_lines.append("")
+
+            # 2. Fallback: Windows Speech (Windows-only)
+            if not tts_ok:
+                tts_result = synthesize_windows_voiceover(
+                    text=scene["subtitleText"],
+                    output_path=raw_tts_path,
+                    working_dir=scene_cache_dir,
+                )
+                if tts_result.ok and raw_tts_path.exists():
+                    tts_ok = True
+                    tts_backend = "windows-speech"
+                log_lines.append(f"tts_backend=windows-speech ok={tts_result.ok} voice={tts_result.voiceName} detail={tts_result.detail}")
+                log_lines.append("")
+
+            tts_backends_used.add(tts_backend)
+            if tts_ok:
                 _normalize_audio_duration(
                     ffmpeg_path=ffmpeg_path,
                     input_path=raw_tts_path,
@@ -614,6 +678,9 @@ def compose_smoke_render(manifest_path: Path | str, project_root: Path | str = "
                     log_lines=log_lines,
                 )
             else:
+                log_lines.append("tts_backend=fallback-sine (all TTS failed)")
+                log_lines.append("")
+                render_warnings.append(f"장면 {scene_id}: 음성 합성 실패 — 사인톤으로 대체됨")
                 _create_fallback_audio(
                     ffmpeg_path=ffmpeg_path,
                     output_path=audio_path,
@@ -747,6 +814,8 @@ def compose_smoke_render(manifest_path: Path | str, project_root: Path | str = "
         localMediaReportPath=local_media_report_path,
         localMediaSummary=local_media_summary,
         localMedia=[result.to_dict() for result in local_media_results],
+        ttsBackends=sorted(tts_backends_used) if tts_backends_used else None,
+        warnings=render_warnings if render_warnings else None,
     )
 
 

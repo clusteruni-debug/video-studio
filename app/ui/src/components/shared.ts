@@ -140,8 +140,27 @@ export function toolPath(tool: BridgeToolStatus | null | undefined): string {
     return tool?.resolvedPath ?? tool?.path ?? "경로를 찾지 못했습니다.";
 }
 
+const adapterTitles: Record<string, string> = {
+    pollinations: "Pollinations FLUX",
+    flux: "FLUX 로컬",
+    dalle3: "DALL-E 3",
+    imagen3: "Imagen 3",
+    wan: "Wan 로컬",
+    sora2: "Sora 2",
+    veo3: "Veo 3",
+    runway: "Runway Gen-3",
+    "edge-tts": "Edge TTS",
+    "windows-tts": "Windows TTS",
+    elevenlabs: "ElevenLabs",
+    "openai-tts": "OpenAI TTS",
+    "local-bgm": "로컬 BGM",
+    suno: "Suno BGM",
+    "local-sfx": "로컬 SFX",
+    freesound: "Freesound",
+};
+
 export function mediaAdapterTitle(adapter: BridgeMediaAdapterStatus): string {
-    return adapter.key === "flux" ? "FLUX 어댑터" : "Wan 어댑터";
+    return adapterTitles[adapter.key] ?? `${adapter.key} 어댑터`;
 }
 
 export function mediaAdapterState(adapter: BridgeMediaAdapterStatus | null | undefined): string {

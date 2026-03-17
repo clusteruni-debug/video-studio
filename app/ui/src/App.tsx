@@ -2,7 +2,7 @@ import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { BudgetMode } from "../../../shared/contracts/plan";
 import {
     fetchBridgeHealth,
-    renderSmokeWithBridge,
+    renderSmokeWithSSE,
     routePlanWithBridge,
     saveProjectWithBridge,
     type BridgeHealth,
@@ -324,13 +324,21 @@ export default function App() {
         setRenderState({ status: "rendering", message: "실제 초안 렌더를 실행하는 중입니다." });
         try {
             const sceneAssetPayload = await serializeSceneAssets(selectedProject.id);
-            const response = await renderSmokeWithBridge({
-                prompt: selectedProject.plan.sourcePrompt,
-                budgetMode: selectedProject.plan.budgetMode,
-                projectId: selectedProject.id,
-                sceneAssets: sceneAssetPayload,
-                availability: providerAvailabilityFromRecord(selectedProject),
-            });
+            const response = await renderSmokeWithSSE(
+                {
+                    prompt: selectedProject.plan.sourcePrompt,
+                    budgetMode: selectedProject.plan.budgetMode,
+                    projectId: selectedProject.id,
+                    sceneAssets: sceneAssetPayload,
+                    availability: providerAvailabilityFromRecord(selectedProject),
+                },
+                (progress) => {
+                    setRenderState({
+                        status: "rendering",
+                        message: progress.message,
+                    });
+                },
+            );
             const nextRecord = buildStudioProjectRecordFromWorker({
                 projectId: selectedProject.id,
                 planner: response.planner,
