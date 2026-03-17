@@ -126,13 +126,14 @@ def build_render_manifest(
         decision = route_by_scene_id.get(scene.id)
         route = decision.route if decision else "local"
         scene_cache_dir = f"{cache_dir}/{scene.id}"
-        visual_kind = _visual_kind_for_scene(scene.canUseStillImage, route)
         audio_kind = _audio_kind_for_scene(route)
         asset_ids: list[str] = []
 
         visual_provider = route
         if provider_overrides and scene.id in provider_overrides:
             visual_provider = provider_overrides[scene.id]
+
+        visual_kind = _visual_kind_for_scene(scene.canUseStillImage, visual_provider)
 
         visual_asset_id = f"{scene.id}-visual"
         assets.append(

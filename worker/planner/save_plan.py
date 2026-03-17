@@ -114,6 +114,7 @@ def _apply_scene_assets(
         elif role == "sfx":
             asset.kind = "uploaded-sfx"
             asset.prompt = f"Uploaded SFX asset: {file_name}"
+            asset.outputPath = relative_path
         else:
             asset.kind = "uploaded-audio"
             asset.prompt = f"Uploaded audio asset: {file_name}"

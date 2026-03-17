@@ -609,6 +609,7 @@ def compose_smoke_render(
             scene=scene,
             project_root=resolved_project_root,
             adapters=local_media_plan.adapters,
+            provider_override=visual_asset.get("provider"),
         )
         local_media_results.append(local_media_result)
 
@@ -839,9 +840,9 @@ def compose_smoke_render(
             log_lines=log_lines,
         )
         if bgm_prepared.exists():
-            import shutil as _shutil
+            import shutil
             video_without_bgm = render_dir / "pre-bgm.mp4"
-            _shutil.copy2(output_path, video_without_bgm)
+            shutil.copy2(output_path, video_without_bgm)
             try:
                 _mix_bgm_into_output(
                     ffmpeg_path=ffmpeg_path,
@@ -852,7 +853,7 @@ def compose_smoke_render(
                 )
                 log_lines.append("bgm_status=mixed")
             except Exception as bgm_err:
-                _shutil.copy2(video_without_bgm, output_path)
+                shutil.copy2(video_without_bgm, output_path)
                 log_lines.append(f"bgm_status=failed error={bgm_err}")
         else:
             log_lines.append("bgm_status=skipped (preparation failed)")

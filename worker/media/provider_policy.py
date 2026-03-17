@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-from worker.media.adapters import (
-    ADAPTER_CONFIG,
-    MediaAdapterStatus,
-    free_adapters_by_category,
-)
+from worker.media.adapters import ADAPTER_CONFIG
 
 # Default provider preference per category (first match wins)
 DEFAULT_PREFERENCE = {
