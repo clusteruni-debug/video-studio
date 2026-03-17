@@ -1,7 +1,18 @@
 # Video Studio App Pivot Plan
 
+> **ARCHIVED — 2026-03-17 Session 27 (CC review)**
+>
+> **Verdict**: Rejected. The "generation-first vs orchestration-first" framing is a false
+> dichotomy — the current codebase already supports both paths (upload-first when assets
+> exist, free generation when not, premium on explicit approval). This plan attempted to
+> solve an infrastructure problem (Pollinations instability) through a product direction
+> change, which is the wrong approach.
+>
+> **Actual next steps**: Windows runtime test (never done), then stabilize free image
+> generation path or find alternative. See `docs/WINDOWS-TEST-CHECKLIST.md`.
+
 Date: 2026-03-17
-Status: Draft for Claude Code review
+Status: ~~Draft for Claude Code review~~ **ARCHIVED — not implementing**
 Owner: Codex
 
 ## 1. Decision Summary
