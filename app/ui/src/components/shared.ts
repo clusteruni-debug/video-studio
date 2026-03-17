@@ -18,7 +18,7 @@ export type CopyState = { target: CopyTarget | null; state: "idle" | "copied" | 
 export type BridgeStatus = "checking" | "connected" | "offline" | "error";
 export type SaveState = { status: "idle" | "saving" | "saved" | "failed"; message: string };
 export type RenderState = { status: "idle" | "rendering" | "rendered" | "failed"; message: string };
-export type SceneAssetRole = "visual" | "audio";
+export type SceneAssetRole = "visual" | "audio" | "sfx";
 export type LocalSceneAsset = {
     role: SceneAssetRole;
     file: File;
@@ -208,17 +208,20 @@ export function assetKey(projectId: string, sceneId: string, role: SceneAssetRol
 }
 
 export function sceneAssetLabel(role: SceneAssetRole): string {
-    return role === "visual" ? "장면 이미지/영상" : "장면 음성";
+    if (role === "visual") return "장면 이미지/영상";
+    if (role === "sfx") return "장면 효과음";
+    return "장면 음성";
 }
 
 export function sceneAssetHint(role: SceneAssetRole): string {
-    return role === "visual"
-        ? "이미지나 짧은 영상을 넣으면 현재 장면 배경으로 우선 사용합니다."
-        : "오디오를 넣으면 현재 장면 보이스오버 대신 그대로 씁니다.";
+    if (role === "visual") return "이미지나 짧은 영상을 넣으면 현재 장면 배경으로 우선 사용합니다.";
+    if (role === "sfx") return "효과음 파일을 넣으면 장면 오디오에 믹싱됩니다.";
+    return "오디오를 넣으면 현재 장면 보이스오버 대신 그대로 씁니다.";
 }
 
 export function sceneAssetAccept(role: SceneAssetRole): string {
-    return role === "visual" ? "image/*,video/*" : "audio/*,.wav,.mp3,.m4a,.aac";
+    if (role === "visual") return "image/*,video/*";
+    return "audio/*,.wav,.mp3,.m4a,.aac";
 }
 
 export function createPreviewUrl(file: File, role: SceneAssetRole): string | null {
@@ -237,6 +240,30 @@ export function manifestUploadedAsset(
     if (!record || isCleared) return null;
     const asset = record.manifest.assets.find((item) => item.sceneId === sceneId && item.role === role);
     return asset?.sourceOrigin === "uploaded" ? asset : null;
+}
+
+export type VisualProviderOption = { key: string; label: string };
+
+const imageProviderOptions: VisualProviderOption[] = [
+    { key: "pollinations", label: "Pollinations FLUX" },
+    { key: "flux", label: "FLUX 로컬" },
+    { key: "dalle3", label: "DALL-E 3" },
+    { key: "imagen3", label: "Imagen 3" },
+];
+
+const videoProviderOptions: VisualProviderOption[] = [
+    { key: "wan", label: "Wan 로컬" },
+    { key: "sora2", label: "Sora 2" },
+    { key: "veo3", label: "Veo 3" },
+    { key: "runway", label: "Runway Gen-3" },
+];
+
+export function visualProviderOptions(visualKind: string | undefined): VisualProviderOption[] {
+    return visualKind === "video" ? videoProviderOptions : imageProviderOptions;
+}
+
+export function providerLabel(key: string): string {
+    return adapterTitles[key] ?? key;
 }
 
 export function providerAvailabilityFromRecord(record: StudioProjectRecord): ProviderAvailability {

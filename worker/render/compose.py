@@ -25,6 +25,7 @@ from worker.runtime.windows_tts import synthesize_windows_voiceover
 
 BGM_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
 BGM_VOLUME = 0.12  # BGM volume relative to narration
+SFX_VOLUME = 0.8  # SFX volume relative to narration
 
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 FRAME_SIZE = "1080x1920"
@@ -104,6 +105,14 @@ def _asset_lookup(manifest: dict, scene_id: str, role: str) -> dict:
         if asset["sceneId"] == scene_id and asset["role"] == role:
             return asset
     raise KeyError(f"Missing asset for scene={scene_id} role={role}")
+
+
+def _sfx_asset_lookup(manifest: dict, scene_id: str) -> dict | None:
+    """Soft lookup for SFX asset — returns None if not present."""
+    for asset in manifest["assets"]:
+        if asset["sceneId"] == scene_id and asset["role"] == "sfx":
+            return asset
+    return None
 
 
 def _resolved_manifest_path(project_root: Path, relative_path: str | None) -> Path | None:
@@ -282,6 +291,33 @@ def _normalize_audio_duration(
             "-y",
             "-i", str(input_path),
             "-af", f"apad=pad_dur={duration_sec:.2f},atrim=0:{duration_sec:.2f}",
+            "-ar", "48000",
+            "-ac", "1",
+            "-c:a", "pcm_s16le",
+            str(output_path),
+        ],
+        log_lines,
+    )
+
+
+def _mix_sfx_into_scene_audio(
+    ffmpeg_path: str,
+    audio_path: Path,
+    sfx_path: Path,
+    output_path: Path,
+    volume: float,
+    log_lines: list[str],
+) -> None:
+    """Mix SFX track into scene audio using amix, writing to output_path."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    _run_ffmpeg(
+        ffmpeg_path,
+        [
+            "-y",
+            "-i", str(audio_path),
+            "-i", str(sfx_path),
+            "-filter_complex", f"[1:a]volume={volume}[sfx];[0:a][sfx]amix=inputs=2:duration=first[aout]",
+            "-map", "[aout]",
             "-ar", "48000",
             "-ac", "1",
             "-c:a", "pcm_s16le",
@@ -689,6 +725,33 @@ def compose_smoke_render(
                     log_lines=log_lines,
                 )
 
+        # SFX mixing: if a SFX file exists on disk, mix into scene audio
+        sfx_asset = _sfx_asset_lookup(manifest, scene_id)
+        if sfx_asset:
+            sfx_source = _resolved_manifest_path(resolved_project_root, sfx_asset.get("sourcePath"))
+            sfx_file = sfx_source if sfx_source else (resolved_project_root / sfx_asset["outputPath"])
+            if sfx_file.exists():
+                import shutil
+                audio_pre_sfx = scene_cache_dir / f"{scene_id}.pre-sfx.wav"
+                shutil.copy2(audio_path, audio_pre_sfx)
+                try:
+                    _mix_sfx_into_scene_audio(
+                        ffmpeg_path=ffmpeg_path,
+                        audio_path=audio_pre_sfx,
+                        sfx_path=sfx_file,
+                        output_path=audio_path,
+                        volume=SFX_VOLUME,
+                        log_lines=log_lines,
+                    )
+                    log_lines.append(f"sfx_status=mixed source={sfx_file}")
+                except Exception as sfx_err:
+                    shutil.copy2(audio_pre_sfx, audio_path)
+                    log_lines.append(f"sfx_status=failed error={sfx_err}")
+                log_lines.append("")
+            else:
+                log_lines.append(f"sfx_status=skipped (file not found: {sfx_file})")
+                log_lines.append("")
+
         _write_scene_subtitle(
             path=subtitle_path,
             subtitle_text=scene["subtitleText"],
@@ -776,16 +839,21 @@ def compose_smoke_render(
             log_lines=log_lines,
         )
         if bgm_prepared.exists():
+            import shutil as _shutil
             video_without_bgm = render_dir / "pre-bgm.mp4"
-            output_path.rename(video_without_bgm)
-            _mix_bgm_into_output(
-                ffmpeg_path=ffmpeg_path,
-                video_path=video_without_bgm,
-                bgm_path=bgm_prepared,
-                output_path=output_path,
-                log_lines=log_lines,
-            )
-            log_lines.append("bgm_status=mixed")
+            _shutil.copy2(output_path, video_without_bgm)
+            try:
+                _mix_bgm_into_output(
+                    ffmpeg_path=ffmpeg_path,
+                    video_path=video_without_bgm,
+                    bgm_path=bgm_prepared,
+                    output_path=output_path,
+                    log_lines=log_lines,
+                )
+                log_lines.append("bgm_status=mixed")
+            except Exception as bgm_err:
+                _shutil.copy2(video_without_bgm, output_path)
+                log_lines.append(f"bgm_status=failed error={bgm_err}")
         else:
             log_lines.append("bgm_status=skipped (preparation failed)")
     else:

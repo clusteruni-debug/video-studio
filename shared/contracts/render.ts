@@ -1,6 +1,6 @@
 import type { AspectRatio, ProjectPlan, RouteHint } from "./plan";
 
-export type RenderAssetRole = "visual" | "audio" | "subtitle";
+export type RenderAssetRole = "visual" | "audio" | "subtitle" | "sfx";
 export type VisualKind = "image" | "video";
 export type AudioKind = "voiceover" | "native" | "none";
 export type AssetSourceOrigin = "generated" | "uploaded";
@@ -145,6 +145,19 @@ export function buildRenderManifest(input: {
             outputPath: `${sceneCacheDir}/${scene.id}.srt`,
         });
         assetIds.push(subtitleAssetId);
+
+        const sfxAssetId = `${scene.id}-sfx`;
+        assets.push({
+            id: sfxAssetId,
+            sceneId: scene.id,
+            role: "sfx",
+            provider: "local-sfx",
+            kind: "sfx",
+            prompt: scene.title,
+            durationSec: scene.durationSec,
+            outputPath: `${sceneCacheDir}/${scene.id}.sfx.wav`,
+        });
+        assetIds.push(sfxAssetId);
 
         const startSec = Number(cursor.toFixed(2));
         cursor += scene.durationSec;

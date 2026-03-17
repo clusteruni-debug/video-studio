@@ -13,6 +13,7 @@ import {
     sceneAssetHint,
     sceneAssetLabel,
     visualKindLabel,
+    visualProviderOptions,
     type LocalSceneAsset,
     type SceneAssetRole,
 } from "./shared";
@@ -21,12 +22,14 @@ export interface StoryboardPanelProps {
     selectedProject: StudioProjectRecord | null;
     sceneAssets: Record<string, LocalSceneAsset>;
     clearedAssetKeys: Record<string, true>;
+    providerOverrides: Record<string, string>;
     onSelectAsset: (projectId: string, sceneId: string, role: SceneAssetRole, file: File | null) => void;
     onClearAsset: (projectId: string, sceneId: string, role: SceneAssetRole) => void;
+    onProviderOverride: (projectId: string, sceneId: string, provider: string) => void;
 }
 
 export default function StoryboardPanel(props: StoryboardPanelProps) {
-    const { selectedProject, sceneAssets, clearedAssetKeys, onSelectAsset, onClearAsset } = props;
+    const { selectedProject, sceneAssets, clearedAssetKeys, providerOverrides, onSelectAsset, onClearAsset, onProviderOverride } = props;
 
     if (!selectedProject) {
         return (
@@ -113,12 +116,16 @@ export default function StoryboardPanel(props: StoryboardPanelProps) {
                     const manifestScene = selectedProject.manifest.scenes.find((item) => item.sceneId === scene.id);
                     const visualKey = assetKey(selectedProject.id, scene.id, "visual");
                     const audioKey = assetKey(selectedProject.id, scene.id, "audio");
+                    const sfxKey = assetKey(selectedProject.id, scene.id, "sfx");
                     const visualDraft = sceneAssets[visualKey];
                     const audioDraft = sceneAssets[audioKey];
+                    const sfxDraft = sceneAssets[sfxKey];
                     const visualCleared = Boolean(clearedAssetKeys[visualKey]);
                     const audioCleared = Boolean(clearedAssetKeys[audioKey]);
+                    const sfxCleared = Boolean(clearedAssetKeys[sfxKey]);
                     const uploadedVisual = manifestUploadedAsset(selectedProject, scene.id, "visual", visualCleared);
                     const uploadedAudio = manifestUploadedAsset(selectedProject, scene.id, "audio", audioCleared);
+                    const uploadedSfx = manifestUploadedAsset(selectedProject, scene.id, "sfx", sfxCleared);
 
                     return (
                         <article key={scene.id} className="scene-card">
@@ -141,6 +148,18 @@ export default function StoryboardPanel(props: StoryboardPanelProps) {
                                 <span>{audioKindLabel(manifestScene?.audioKind)}</span>
                                 <span>{manifestScene?.cacheDir ?? "storage/cache"}</span>
                             </div>
+                            <div className="scene-provider-select">
+                                <label className="summary-label">비주얼 프로바이더</label>
+                                <select
+                                    value={providerOverrides[scene.id] ?? ""}
+                                    onChange={(e) => onProviderOverride(selectedProject.id, scene.id, e.target.value)}
+                                >
+                                    <option value="">자동</option>
+                                    {visualProviderOptions(manifestScene?.visualKind).map((opt) => (
+                                        <option key={opt.key} value={opt.key}>{opt.label}</option>
+                                    ))}
+                                </select>
+                            </div>
                             <div className="scene-assets">
                                 <SceneAssetCard
                                     role="visual"
@@ -159,6 +178,15 @@ export default function StoryboardPanel(props: StoryboardPanelProps) {
                                     durationSec={scene.durationSec}
                                     onSelect={(file) => onSelectAsset(selectedProject.id, scene.id, "audio", file)}
                                     onClear={() => onClearAsset(selectedProject.id, scene.id, "audio")}
+                                />
+                                <SceneAssetCard
+                                    role="sfx"
+                                    sceneTitle={scene.title}
+                                    draftAsset={sfxDraft}
+                                    uploadedAsset={uploadedSfx}
+                                    durationSec={scene.durationSec}
+                                    onSelect={(file) => onSelectAsset(selectedProject.id, scene.id, "sfx", file)}
+                                    onClear={() => onClearAsset(selectedProject.id, scene.id, "sfx")}
                                 />
                             </div>
                             <div className="scene-footer">
@@ -192,6 +220,8 @@ function SceneAssetCard(props: {
                     <strong>
                         {role === "visual"
                             ? draftAsset?.file.name ?? uploadedAsset?.sourceLabel ?? "아직 연결하지 않음"
+                            : role === "sfx"
+                            ? draftAsset?.file.name ?? uploadedAsset?.sourceLabel ?? "효과음 없음 (선택 사항)"
                             : draftAsset?.file.name ?? uploadedAsset?.sourceLabel ?? "자막으로 자동 보이스오버 생성"}
                     </strong>
                     <small>

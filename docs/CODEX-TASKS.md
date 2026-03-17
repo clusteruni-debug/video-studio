@@ -62,6 +62,7 @@ from `worker/media/provider_policy.py`. Keep:
 
 ## CX-3: Add SFX role to render pipeline (full vertical slice)
 
+**Status**: DONE (CC implemented directly, Session 19)
 **Priority**: MEDIUM
 **Effort**: Large (multi-file)
 **Prerequisite**: CC approval — this is a feature addition, not a standalone script task
@@ -99,6 +100,7 @@ the contract/compositor changes and only delegate the adapter scripts to Codex.
 
 ## CX-4: Set up Python test infrastructure + core unit tests
 
+**Status**: DONE (CC implemented directly, Session 19 — 16 tests all passing)
 **Priority**: MEDIUM
 **Effort**: Medium
 **Prerequisite**: **User approval for `pytest` dependency** (AGENTS.md rule 2: "Do not add or remove dependencies without explicit approval")
@@ -155,6 +157,7 @@ tests/test_transitions.py
 
 ## CX-5: Per-scene provider selection dropdown (full-stack feature)
 
+**Status**: DONE (CC implemented directly, Session 19)
 **Priority**: LOW (downgraded — depends on multiple prerequisites)
 **Effort**: Large (5+ files)
 **Prerequisites**:
@@ -189,15 +192,14 @@ The actual change requires modifying the save/render request contract end-to-end
 ```
 CX-1  (trivial, HIGH)   → DONE ✓
 CX-2  (small, HIGH)     → Codex-ready — single file, pure deletion
-CX-4  (medium, MEDIUM)  → Codex-ready after pytest approval — Python tests only
-CX-3  (large, MEDIUM)   → NOT Codex-ready — needs contract + compositor changes
-CX-5  (large, LOW)      → NOT Codex-ready — full-stack feature, CC task
+CX-3  (large, MEDIUM)   → DONE ✓ (CC Session 19)
+CX-4  (medium, MEDIUM)  → DONE ✓ (CC Session 19 — 16 tests)
+CX-5  (large, LOW)      → DONE ✓ (CC Session 19)
 ```
 
 ## Codex-Executable Summary
 Only **CX-2** is immediately executable by Codex without prerequisites.
-**CX-4** becomes executable after user approves `pytest` dependency addition.
-**CX-3** and **CX-5** are CC tasks or require further decomposition.
+**CX-3**, **CX-4**, **CX-5** were completed by CC in Session 19.
 
 ## Notes
 - CC reviews and merges all Codex output

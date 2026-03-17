@@ -176,6 +176,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             project_id=project_id,
             project_root=PROJECT_ROOT,
             scene_assets=body.get("sceneAssets"),
+            provider_overrides=body.get("providerOverrides"),
         )
         self._send_json(
             HTTPStatus.OK,
@@ -218,6 +219,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             project_id=project_id,
             project_root=PROJECT_ROOT,
             scene_assets=body.get("sceneAssets"),
+            provider_overrides=body.get("providerOverrides"),
         )
 
         if use_sse:

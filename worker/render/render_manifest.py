@@ -11,7 +11,7 @@ from worker.media.model_router import ProviderAvailability, RouteDecision, route
 from worker.planner.ollama_planner import build_project_plan
 from worker.planner.sample_plan import AspectRatio, ProjectPlan
 
-RenderAssetRole = Literal["visual", "audio", "subtitle"]
+RenderAssetRole = Literal["visual", "audio", "subtitle", "sfx"]
 VisualKind = Literal["image", "video"]
 AudioKind = Literal["voiceover", "native", "none"]
 
@@ -106,6 +106,7 @@ def build_render_manifest(
     project_id: str,
     estimated_cost_usd: float,
     storage_root: str = "storage",
+    provider_overrides: dict[str, str] | None = None,
 ) -> RenderManifest:
     title_slug = slugify(plan.title)
     input_dir = f"{storage_root}/inputs/{project_id}"
@@ -129,13 +130,17 @@ def build_render_manifest(
         audio_kind = _audio_kind_for_scene(route)
         asset_ids: list[str] = []
 
+        visual_provider = route
+        if provider_overrides and scene.id in provider_overrides:
+            visual_provider = provider_overrides[scene.id]
+
         visual_asset_id = f"{scene.id}-visual"
         assets.append(
             RenderAssetSpec(
                 id=visual_asset_id,
                 sceneId=scene.id,
                 role="visual",
-                provider=route,
+                provider=visual_provider,
                 kind=visual_kind,
                 prompt=scene.prompt,
                 durationSec=round(scene.durationSec, 2),
@@ -173,6 +178,21 @@ def build_render_manifest(
             )
         )
         asset_ids.append(subtitle_asset_id)
+
+        sfx_asset_id = f"{scene.id}-sfx"
+        assets.append(
+            RenderAssetSpec(
+                id=sfx_asset_id,
+                sceneId=scene.id,
+                role="sfx",
+                provider="local-sfx",
+                kind="sfx",
+                prompt=scene.title,
+                durationSec=round(scene.durationSec, 2),
+                outputPath=f"{scene_cache_dir}/{scene.id}.sfx.wav",
+            )
+        )
+        asset_ids.append(sfx_asset_id)
 
         start_sec = round(cursor, 2)
         cursor = round(cursor + scene.durationSec, 2)

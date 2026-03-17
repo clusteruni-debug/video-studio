@@ -57,6 +57,7 @@ export default function App() {
     const [renderState, setRenderState] = useState<RenderState>({ status: "idle", message: "" });
     const [sceneAssets, setSceneAssets] = useState<Record<string, LocalSceneAsset>>({});
     const [clearedAssetKeys, setClearedAssetKeys] = useState<Record<string, true>>({});
+    const [providerOverrides, setProviderOverrides] = useState<Record<string, Record<string, string>>>({});
 
     const initializedRef = useRef(false);
 
@@ -152,6 +153,18 @@ export default function App() {
             return next;
         });
         setClearedAssetKeys((current) => ({ ...current, [key]: true }));
+    }
+
+    function handleProviderOverride(projectId: string, sceneId: string, provider: string): void {
+        setProviderOverrides((current) => {
+            const projectOverrides = { ...(current[projectId] ?? {}) };
+            if (provider) {
+                projectOverrides[sceneId] = provider;
+            } else {
+                delete projectOverrides[sceneId];
+            }
+            return { ...current, [projectId]: projectOverrides };
+        });
     }
 
     async function serializeSceneAssets(projectId: string): Promise<SceneAssetUploadPayload[]> {
@@ -253,6 +266,11 @@ export default function App() {
             setClearedAssetKeys((current) =>
                 Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(prefix))),
             );
+            setProviderOverrides((current) => {
+                const next = { ...current };
+                delete next[projectId];
+                return next;
+            });
         });
     }
 
@@ -287,6 +305,7 @@ export default function App() {
                 projectId: selectedProject.id,
                 sceneAssets: sceneAssetPayload,
                 availability: providerAvailabilityFromRecord(selectedProject),
+                providerOverrides: providerOverrides[selectedProject.id],
             });
             const nextRecord = buildStudioProjectRecordFromWorker({
                 projectId: selectedProject.id,
@@ -331,6 +350,7 @@ export default function App() {
                     projectId: selectedProject.id,
                     sceneAssets: sceneAssetPayload,
                     availability: providerAvailabilityFromRecord(selectedProject),
+                    providerOverrides: providerOverrides[selectedProject.id],
                 },
                 (progress) => {
                     setRenderState({
@@ -409,8 +429,10 @@ export default function App() {
                     selectedProject={selectedProject}
                     sceneAssets={sceneAssets}
                     clearedAssetKeys={clearedAssetKeys}
+                    providerOverrides={providerOverrides[selectedProject?.id ?? ""] ?? {}}
                     onSelectAsset={selectSceneAsset}
                     onClearAsset={clearSceneAsset}
+                    onProviderOverride={handleProviderOverride}
                 />
 
                 <ExecutionPanel

@@ -6,7 +6,7 @@ const BRIDGE_URL = "http://127.0.0.1:5161";
 
 export interface SceneAssetUploadPayload {
     sceneId: string;
-    role: "visual" | "audio";
+    role: "visual" | "audio" | "sfx";
     fileName: string;
     mimeType: string;
     base64: string;
@@ -116,7 +116,7 @@ export interface BridgeSaveProjectResult {
         estimatedTotalCostUsd: number;
         uploadedAssets?: Array<{
             sceneId: string;
-            role: "visual" | "audio";
+            role: "visual" | "audio" | "sfx";
             fileName: string;
             storedPath: string;
             mimeType?: string | null;
@@ -207,6 +207,7 @@ export async function saveProjectWithBridge(input: {
         sora2: boolean;
         veo3: boolean;
     };
+    providerOverrides?: Record<string, string>;
 }): Promise<BridgeSaveProjectResult> {
     return request<BridgeSaveProjectResult>("/api/save-project", {
         method: "POST",
@@ -224,6 +225,7 @@ export async function renderSmokeWithBridge(input: {
         sora2: boolean;
         veo3: boolean;
     };
+    providerOverrides?: Record<string, string>;
 }): Promise<BridgeRenderProjectResult> {
     return request<BridgeRenderProjectResult>("/api/render-smoke", {
         method: "POST",
@@ -250,6 +252,7 @@ export async function renderSmokeWithSSE(
             sora2: boolean;
             veo3: boolean;
         };
+        providerOverrides?: Record<string, string>;
     },
     onProgress: (event: RenderProgressEvent) => void,
 ): Promise<BridgeRenderProjectResult> {

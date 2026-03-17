@@ -87,7 +87,7 @@ def _apply_scene_assets(
         file_name = str(item.get("fileName", "")).strip()
         mime_type = str(item.get("mimeType", "")).strip() or None
 
-        if not scene_id or role not in {"visual", "audio"} or not encoded or not file_name:
+        if not scene_id or role not in {"visual", "audio", "sfx"} or not encoded or not file_name:
             continue
 
         asset = _asset_by_scene_and_role(manifest, scene_id, role)
@@ -111,6 +111,9 @@ def _apply_scene_assets(
             asset.prompt = f"Uploaded visual asset: {file_name}"
             asset.outputPath = relative_path
             scene.visualKind = visual_kind
+        elif role == "sfx":
+            asset.kind = "uploaded-sfx"
+            asset.prompt = f"Uploaded SFX asset: {file_name}"
         else:
             asset.kind = "uploaded-audio"
             asset.prompt = f"Uploaded audio asset: {file_name}"
@@ -137,6 +140,7 @@ def save_project_bundle(
     project_id: str | None = None,
     project_root: str | Path = ".",
     scene_assets: list[dict] | None = None,
+    provider_overrides: dict[str, str] | None = None,
 ) -> dict:
     plan, planner = build_project_plan(
         prompt,
@@ -153,6 +157,7 @@ def save_project_bundle(
         decisions=decisions,
         project_id=resolved_project_id,
         estimated_cost_usd=estimated_cost,
+        provider_overrides=provider_overrides,
     )
 
     resolved_project_root = Path(project_root).resolve()

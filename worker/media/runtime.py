@@ -75,12 +75,23 @@ def _asset_lookup(manifest: dict, scene_id: str, role: str) -> dict:
     raise KeyError(f"Missing manifest asset for scene={scene_id} role={role}")
 
 
-def _visual_adapter_key(scene: dict, adapters: dict[str, MediaAdapterStatus] | None = None) -> str:
+def _visual_adapter_key(
+    scene: dict,
+    adapters: dict[str, MediaAdapterStatus] | None = None,
+    override: str | None = None,
+) -> str:
     """Choose the visual adapter key for a scene.
 
-    Prefers ready adapters: for images, tries pollinations → flux.
+    If *override* is set and is a known adapter, use it directly.
+    Otherwise prefers ready adapters: for images, tries pollinations → flux.
     For video, tries wan → sora2 → veo3.
     """
+    if override:
+        from worker.media.adapters import ADAPTER_CONFIG
+        cfg = ADAPTER_CONFIG.get(override)
+        if cfg and cfg["category"] in ("image", "video"):
+            return override
+
     if scene.get("visualKind") == "image":
         if adapters:
             for candidate in ("pollinations", "flux"):
@@ -213,6 +224,7 @@ def generate_local_visual_asset(
     scene: dict,
     project_root: Path | str = ".",
     adapters: dict[str, MediaAdapterStatus] | None = None,
+    provider_override: str | None = None,
 ) -> MediaGenerationResult:
     resolved_project_root = Path(project_root).resolve()
     resolved_manifest_path = Path(manifest_path).resolve()
@@ -235,7 +247,7 @@ def generate_local_visual_asset(
         )
 
     adapter_statuses = adapters or probe_local_media_adapters(resolved_project_root)
-    adapter_key = _visual_adapter_key(scene, adapter_statuses)
+    adapter_key = _visual_adapter_key(scene, adapter_statuses, override=provider_override)
     adapter_status = adapter_statuses.get(adapter_key)
     if not adapter_status:
         # Fallback to first available adapter status for this category
