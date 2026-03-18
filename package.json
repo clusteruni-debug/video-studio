@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "npm run build && .\\.venv\\Scripts\\python.exe -m http.server 5160 --directory dist",
+    "dev": "vite",
     "bridge": ".\\.venv\\Scripts\\python.exe -m worker.bridge.server",
     "build": "tsc --noEmit && vite build",
     "preview": ".\\.venv\\Scripts\\python.exe -m http.server 4160 --directory dist",

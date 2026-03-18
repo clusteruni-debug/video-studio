@@ -2,7 +2,7 @@
 
 ## Status
 - Content automation tool with multi-provider media pipeline
-- React + Vite + TypeScript UI split into 4 components (App shell + 3 panels)
+- React + Vite + TypeScript UI using a shell + sidebar/canvas/bottom-bar flow with debug drawer and per-scene detail panel
 - 18 provider adapters across 5 categories (image, video, tts, bgm, sfx)
 - Free-first provider policy — zero-cost path works with Pollinations + Edge TTS + local BGM
 - FFmpeg composition with Ken Burns motion, xfade transitions, gradient backgrounds, BGM mixing
@@ -11,7 +11,7 @@
 - Windows-first desktop/web hybrid content production tool
 
 ## Target Stack
-- UI: React + Vite (split: App.tsx 428 LOC + 3 panels + shared utils)
+- UI: React + Vite (App shell + Sidebar/ImageCanvas/StoryboardPanel/BottomBar/DebugDrawer/SceneDetailPanel + shared utils)
 - Desktop shell: Tauri 2 after the web UI stabilizes
 - Planner: Ollama `qwen2.5:7b` local, browser-sample fallback
 - Image: Pollinations FLUX (free default), DALL-E 3, Imagen 3
@@ -29,9 +29,12 @@
 ## Directory Map
 - `app/ui/src/` — React frontend
   - `App.tsx` — state management shell
-  - `components/ComposerPanel.tsx` — prompt + budget controls
+  - `components/Sidebar.tsx` — prompt, mode, engine, and history controls
+  - `components/ImageCanvas.tsx` — generated-image gallery and batch progress
   - `components/StoryboardPanel.tsx` — scene cards + asset management
-  - `components/ExecutionPanel.tsx` — render controls + diagnostics
+  - `components/BottomBar.tsx` — save/render/image action bar
+  - `components/DebugDrawer.tsx` — bridge diagnostics, command previews, storage paths
+  - `components/SceneDetailPanel.tsx` — selected-scene asset and provider override controls
   - `components/shared.ts` — shared types + utility functions
 - `worker/planner/` — planning and routing adapters
 - `worker/media/` — adapter registry, provider policy, cost estimation
@@ -71,6 +74,7 @@
 npm run bridge
 npm run dev
 npm run build
+npm run preview
 python -m worker.planner.route_plan --prompt "sample prompt" --budget-mode free
 python -m worker.planner.save_plan --prompt "sample prompt" --budget-mode standard
 python -m worker.bridge.server
@@ -85,7 +89,8 @@ ollama --version
 - Terminal 1: `npm run bridge`
 - Terminal 2: `npm run dev`
 - Browser: `http://127.0.0.1:5160`
-- `npm run dev` is a build-and-serve flow, not Vite HMR. Rerun it after UI code changes.
+- `npm run dev` runs the Vite HMR server on `127.0.0.1:5160`.
+- Use `npm run build` followed by `npm run preview` when you need a static `dist/` check on port `4160`.
 - Scene asset files are selected in the UI, held for the current browser session, and copied into `storage/inputs/<project-id>/uploads/` when the user saves or renders.
 
 ## References
