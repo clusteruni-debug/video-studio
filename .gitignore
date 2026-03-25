@@ -1,10 +1,9 @@
 node_modules/
 .env
 .env.*
-storage/cache/
-storage/inputs/
-storage/renders/
+storage/
 *.pyc
 __pycache__/
 dist/
 .vite/
+output/
