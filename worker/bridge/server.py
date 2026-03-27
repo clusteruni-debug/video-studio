@@ -376,26 +376,72 @@ def create_draft_route():
             shutil.rmtree(dest)
         shutil.copytree(str(template_dir), str(dest))
 
-        # Fix audio material paths — VectCutAPI's os.path.join("C:", ...) bug
-        # produces "C:Users\..." instead of "C:\Users\...".
-        # Must set replace_path (serializes as "path" in JSON).
         cached_script = DRAFT_CACHE.get(draft_id, script)
-        if hasattr(cached_script, "materials") and hasattr(cached_script.materials, "audios"):
-            for audio in cached_script.materials.audios:
-                correct_path = str(dest / "assets" / "audio" / audio.material_name)
-                audio.replace_path = correct_path
 
-        # Fix image material paths if present
-        if hasattr(cached_script, "materials") and hasattr(cached_script.materials, "videos"):
-            for video in cached_script.materials.videos:
-                if getattr(video, "material_type", "") == "photo":
-                    correct_path = str(dest / "assets" / "image" / video.material_name)
-                    video.replace_path = correct_path
+        # ── Step 5a: Copy TTS audio into draft assets ─────────────────────
+        audio_dest = dest / "assets" / "audio"
+        audio_dest.mkdir(parents=True, exist_ok=True)
+        for scene in scenes:
+            if scene.get("_tts_path") and Path(scene["_tts_path"]).exists():
+                material_name = f"audio_{url_to_hash(scene['_tts_url'])}.mp3"
+                shutil.copy2(scene["_tts_path"], str(audio_dest / material_name))
 
-        # Save project file — CapCut uses draft_content.json (not draft_info.json)
+        # ── Step 5b: Download images into draft assets ────────────────────
+        image_dest = dest / "assets" / "image"
+        image_dest.mkdir(parents=True, exist_ok=True)
+        if has_images:
+            for scene in scenes:
+                img_url = scene.get("_image_url")
+                if not img_url:
+                    continue
+                img_hash = url_to_hash(img_url)
+                try:
+                    req = urllib_request.Request(img_url, headers={
+                        "User-Agent": "VideoStudio/1.0",
+                    })
+                    with urllib_request.urlopen(req, timeout=15) as resp:
+                        ct = resp.headers.get("Content-Type", "").split(";")[0].strip()
+                        ext = ".jpg"
+                        if ct == "video/mp4":
+                            ext = ".mp4"
+                        elif ct == "image/gif":
+                            ext = ".gif"
+                        elif ct == "image/png":
+                            ext = ".png"
+                        img_path = image_dest / f"image_{img_hash}{ext}"
+                        img_path.write_bytes(resp.read(20 * 1024 * 1024))
+                except Exception as e:
+                    print(f"[download] Image failed: {e}")
+
+        # ── Step 5c: Match downloaded files to VectCutAPI materials ───────
+        # VectCutAPI registers materials as .png, but downloads are .jpg/.mp4.
+        # Copy actual files to the .png names VectCutAPI expects, then set paths.
+        actual_by_stem = {}
+        for fp in image_dest.iterdir():
+            if fp.is_file():
+                actual_by_stem[fp.stem] = fp
+
+        if hasattr(cached_script, "materials"):
+            # Fix audio paths
+            if hasattr(cached_script.materials, "audios"):
+                for audio in cached_script.materials.audios:
+                    audio.replace_path = str(audio_dest / audio.material_name)
+            # Fix image paths — copy .jpg to .png name so CapCut finds it
+            if hasattr(cached_script.materials, "videos"):
+                for video in cached_script.materials.videos:
+                    if getattr(video, "material_type", "") == "photo":
+                        stem = Path(video.material_name).stem
+                        actual_fp = actual_by_stem.get(stem)
+                        if actual_fp and actual_fp.suffix != ".png":
+                            target = image_dest / video.material_name
+                            if not target.exists():
+                                shutil.copy2(str(actual_fp), str(target))
+                        video.replace_path = str(image_dest / video.material_name)
+
+        # ── Step 5d: Save project file ────────────────────────────────────
         cached_script.dump(str(dest / "draft_content.json"))
 
-        # Fix draft_meta_info.json — update fold_path to actual location
+        # Fix draft_meta_info.json
         meta_path = dest / "draft_meta_info.json"
         if meta_path.exists():
             with open(str(meta_path), "r", encoding="utf-8") as f:
@@ -406,43 +452,6 @@ def create_draft_route():
             meta["cloud_draft_sync"] = False
             with open(str(meta_path), "w", encoding="utf-8") as f:
                 json.dump(meta, f, ensure_ascii=False)
-
-        # Copy TTS audio files into draft assets
-        audio_dest = dest / "assets" / "audio"
-        audio_dest.mkdir(parents=True, exist_ok=True)
-        for scene in scenes:
-            if scene.get("_tts_path") and Path(scene["_tts_path"]).exists():
-                material_name = f"audio_{url_to_hash(scene['_tts_url'])}.mp3"
-                shutil.copy2(scene["_tts_path"], str(audio_dest / material_name))
-
-        # Download images/GIFs into draft assets
-        if has_images:
-            image_dest = dest / "assets" / "image"
-            image_dest.mkdir(parents=True, exist_ok=True)
-            for scene in scenes:
-                img_url = scene.get("_image_url")
-                if not img_url:
-                    continue
-                # Determine extension from URL or content type
-                ext = ".png"
-                url_lower = img_url.lower()
-                if ".mp4" in url_lower or "mp4" in url_lower:
-                    ext = ".mp4"
-                elif ".gif" in url_lower:
-                    ext = ".gif"
-                elif ".jpg" in url_lower or ".jpeg" in url_lower:
-                    ext = ".jpg"
-                material_name = f"image_{url_to_hash(img_url)}{ext}"
-                img_path = image_dest / material_name
-                try:
-                    req = urllib_request.Request(img_url, headers={
-                        "User-Agent": "VideoStudio/1.0",
-                    })
-                    with urllib_request.urlopen(req, timeout=15) as resp:
-                        data = resp.read(20 * 1024 * 1024)  # 20MB cap
-                        img_path.write_bytes(data)
-                except Exception as e:
-                    print(f"[download] Image failed: {e}")
 
         draft_path = str(dest)
         steps_log.append("saved to CapCut")
