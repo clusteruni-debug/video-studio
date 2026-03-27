@@ -26,7 +26,7 @@ from flask_cors import CORS
 
 from worker.tts.providers import generate_tts, available_providers
 from worker.bridge.templates import TEMPLATE_TYPES, build_template_prompt
-from worker.bridge.image_router import route_image, PEXELS_API_KEY as _PEXELS_KEY, TENOR_API_KEY as _TENOR_KEY
+from worker.bridge.image_router import route_image, PEXELS_API_KEY as _PEXELS_KEY, KLIPY_API_KEY as _KLIPY_KEY
 
 # Add VectCutAPI to Python path
 VECTCUT_DIR = Path(os.environ.get("VECTCUT_DIR", str(Path.cwd().parent / "VectCutAPI")))
@@ -174,7 +174,7 @@ def health():
         "vectcut": "library" if vectcut_ok else "missing",
         "tts_providers": available_providers(),
         "pexels": "ready" if _PEXELS_KEY else "no_key",
-        "tenor": "ready" if _TENOR_KEY else "no_key",
+        "klipy": "ready" if _KLIPY_KEY else "no_key",
         "gemini": "ready" if GEMINI_API_KEY else "no_key",
         "template_types": list(TEMPLATE_TYPES),
         "capcut_draft_dir": str(CAPCUT_DRAFT_DIR),
@@ -225,13 +225,28 @@ def create_draft_route():
     for scene in scenes:
         n = scene["scene_num"]
         audio_path = tts_subdir / f"scene_{n}.mp3"
+
+        # Determine TTS tone based on scene metadata
+        tts_rate = "+0%"
+        tts_pitch = "+0Hz"
+        tts_text = scene["narration"]
+        if scene.get("is_commentary"):
+            # Commentary slides: slower, slightly lower pitch for "explainer" feel
+            tts_rate = "-5%"
+            tts_pitch = "-1Hz"
+        if scene.get("rank") is not None:
+            # Rank slides: insert pause before rank number for dramatic effect
+            tts_text = f"... {tts_text}"
+
         try:
             generate_tts(
-                text=scene["narration"],
+                text=tts_text,
                 lang=lang,
                 gender=voice_gender,
                 provider=tts_provider,
                 output_path=audio_path,
+                rate=tts_rate,
+                pitch=tts_pitch,
             )
             scene["_tts_path"] = str(audio_path)
             scene["_tts_duration"] = _get_audio_duration(str(audio_path))
@@ -469,7 +484,7 @@ def main():
     print(f"  TTS providers : {available_providers()}")
     print(f"  Gemini        : {'ready' if GEMINI_API_KEY else 'no key (template fallback)'}")
     print(f"  Pexels        : {'ready' if _PEXELS_KEY else 'no key (no stock images)'}")
-    print(f"  Tenor         : {'ready' if _TENOR_KEY else 'no key (no meme/GIF)'}")
+    print(f"  Klipy         : {'ready' if _KLIPY_KEY else 'no key (no meme/GIF)'}")
     print(f"  Templates     : {', '.join(TEMPLATE_TYPES)}")
     print(f"  VectCutAPI    : {VECTCUT_DIR}")
     print(f"  CapCut drafts : {CAPCUT_DRAFT_DIR}")

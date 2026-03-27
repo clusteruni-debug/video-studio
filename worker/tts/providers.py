@@ -105,14 +105,17 @@ def generate_google_tts(text: str, lang: str, gender: str, output_path: Path) ->
 # ---------------------------------------------------------------------------
 # edge-tts (free fallback)
 # ---------------------------------------------------------------------------
-def generate_edge_tts(text: str, lang: str, gender: str, output_path: Path) -> bool:
+def generate_edge_tts(
+    text: str, lang: str, gender: str, output_path: Path,
+    rate: str = "+0%", pitch: str = "+0Hz",
+) -> bool:
     import edge_tts
 
     voice = VOICES["edge"][_voice_key(lang, gender)]
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     async def _run():
-        communicate = edge_tts.Communicate(text, voice)
+        communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
         await communicate.save(str(output_path))
 
     asyncio.run(_run())
@@ -135,8 +138,11 @@ def generate_tts(
     gender: str = "female",
     provider: str = "edge",
     output_path: Path = Path("output.mp3"),
+    rate: str = "+0%",
+    pitch: str = "+0Hz",
 ) -> bool:
-    """Generate TTS audio. Falls back to edge-tts on failure."""
+    """Generate TTS audio. Falls back to edge-tts on failure.
+    rate/pitch only apply to edge-tts (e.g. rate='-5%', pitch='-1Hz' for commentary tone)."""
     fn = PROVIDERS.get(provider)
     if fn and fn is not generate_edge_tts:
         try:
@@ -144,7 +150,7 @@ def generate_tts(
         except Exception as e:
             print(f"[tts] {provider} failed: {e}, falling back to edge-tts")
 
-    return generate_edge_tts(text, lang, gender, output_path)
+    return generate_edge_tts(text, lang, gender, output_path, rate=rate, pitch=pitch)
 
 
 def available_providers() -> list[str]:

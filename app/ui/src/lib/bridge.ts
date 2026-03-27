@@ -7,7 +7,7 @@ export interface BridgeHealth {
   vectcut: string;
   tts_providers: string[];
   pexels: string;
-  tenor: string;
+  klipy: string;
   gemini: string;
   template_types: TemplateType[];
   capcut_draft_dir: string;

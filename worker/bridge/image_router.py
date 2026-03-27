@@ -1,5 +1,6 @@
 """
-Image routing — emotion-based auto-selection between Pexels (stock) and Tenor (meme/GIF).
+Image routing — emotion-based auto-selection between Pexels (stock) and Klipy (meme/GIF).
+Klipy is a Tenor v2-compatible API (same endpoint structure, different base URL).
 """
 from __future__ import annotations
 
@@ -8,9 +9,9 @@ import os
 from urllib import request as urllib_request
 
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "")
-TENOR_API_KEY = os.environ.get("TENOR_API_KEY", "")
+KLIPY_API_KEY = os.environ.get("KLIPY_API_KEY", "")
 
-# Emotions that route to Tenor (reaction GIFs) vs Pexels (stock photos)
+# Emotions that route to Klipy (reaction GIFs) vs Pexels (stock photos)
 TENOR_EMOTIONS = {"funny", "shock", "anger"}
 
 
@@ -36,16 +37,16 @@ def search_pexels(query: str, orientation: str = "portrait") -> str | None:
     return None
 
 
-def search_tenor(query: str, limit: int = 3) -> str | None:
-    """Search Tenor v2 for a GIF/MP4. Returns media URL or None."""
-    if not TENOR_API_KEY:
+def search_klipy(query: str, limit: int = 3) -> str | None:
+    """Search Klipy (Tenor v2-compatible) for a GIF/MP4. Returns media URL or None."""
+    if not KLIPY_API_KEY:
         return None
     try:
         from urllib.parse import quote_plus
         safe_query = quote_plus(query)
         url = (
-            f"https://tenor.googleapis.com/v2/search"
-            f"?q={safe_query}&key={TENOR_API_KEY}"
+            f"https://api.klipy.com/v2/search"
+            f"?q={safe_query}&key={KLIPY_API_KEY}"
             f"&media_filter=mp4,gif&limit={limit}&contentfilter=medium"
         )
         req = urllib_request.Request(url, headers={"User-Agent": "VideoStudio/1.0"})
@@ -60,7 +61,7 @@ def search_tenor(query: str, limit: int = 3) -> str | None:
                 if "gif" in formats:
                     return formats["gif"]["url"]
     except Exception as e:
-        print(f"[tenor] Search failed for '{query}': {e}")
+        print(f"[klipy] Search failed for '{query}': {e}")
     return None
 
 
@@ -77,9 +78,9 @@ def route_image(scene: dict) -> tuple[str | None, str | None]:
 
     # Explicit source override
     if source == "tenor":
-        url = search_tenor(image_prompt)
+        url = search_klipy(image_prompt)
         if not url and fallback:
-            url = search_tenor(fallback)
+            url = search_klipy(fallback)
         if url:
             return url, "tenor"
         # Fall through to Pexels if Tenor unconfigured/no results
@@ -97,11 +98,11 @@ def route_image(scene: dict) -> tuple[str | None, str | None]:
 
     # Auto-route by emotion
     if emotion in TENOR_EMOTIONS:
-        url = search_tenor(image_prompt)
+        url = search_klipy(image_prompt)
         if url:
             return url, "tenor"
         if fallback:
-            url = search_tenor(fallback)
+            url = search_klipy(fallback)
             if url:
                 return url, "tenor"
 
