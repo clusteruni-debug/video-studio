@@ -145,6 +145,8 @@ def generate_tts(
     rate/pitch only apply to edge-tts (e.g. rate='-5%', pitch='-1Hz' for commentary tone)."""
     fn = PROVIDERS.get(provider)
     if fn and fn is not generate_edge_tts:
+        if rate != "+0%" or pitch != "+0Hz":
+            print(f"[tts] {provider} does not support rate/pitch — tone shift will only apply on edge-tts fallback")
         try:
             return fn(text, lang, gender, output_path)
         except Exception as e:

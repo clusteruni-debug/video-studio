@@ -26,7 +26,7 @@ from flask_cors import CORS
 
 from worker.tts.providers import generate_tts, available_providers
 from worker.bridge.templates import TEMPLATE_TYPES, build_template_prompt
-from worker.bridge.image_router import route_image, PEXELS_API_KEY as _PEXELS_KEY, KLIPY_API_KEY as _KLIPY_KEY
+from worker.bridge.image_router import route_image
 
 # Add VectCutAPI to Python path
 VECTCUT_DIR = Path(os.environ.get("VECTCUT_DIR", str(Path.cwd().parent / "VectCutAPI")))
@@ -173,8 +173,8 @@ def health():
         "bridge": "ok",
         "vectcut": "library" if vectcut_ok else "missing",
         "tts_providers": available_providers(),
-        "pexels": "ready" if _PEXELS_KEY else "no_key",
-        "klipy": "ready" if _KLIPY_KEY else "no_key",
+        "pexels": "ready" if os.environ.get("PEXELS_API_KEY", "") else "no_key",
+        "klipy": "ready" if os.environ.get("KLIPY_API_KEY", "") else "no_key",
         "gemini": "ready" if GEMINI_API_KEY else "no_key",
         "template_types": list(TEMPLATE_TYPES),
         "capcut_draft_dir": str(CAPCUT_DRAFT_DIR),
@@ -234,9 +234,9 @@ def create_draft_route():
             # Commentary slides: slower, slightly lower pitch for "explainer" feel
             tts_rate = "-5%"
             tts_pitch = "-1Hz"
-        if scene.get("rank") is not None:
-            # Rank slides: insert pause before rank number for dramatic effect
-            tts_text = f"... {tts_text}"
+        if scene.get("rank") is not None and tts_text.strip():
+            # Rank slides: SSML pause before rank number for dramatic effect
+            tts_text = f'<speak><break time="500ms"/>{tts_text}</speak>'
 
         try:
             generate_tts(
@@ -483,8 +483,8 @@ def main():
     print(f"Bridge server: http://{BRIDGE_HOST}:{BRIDGE_PORT}")
     print(f"  TTS providers : {available_providers()}")
     print(f"  Gemini        : {'ready' if GEMINI_API_KEY else 'no key (template fallback)'}")
-    print(f"  Pexels        : {'ready' if _PEXELS_KEY else 'no key (no stock images)'}")
-    print(f"  Klipy         : {'ready' if _KLIPY_KEY else 'no key (no meme/GIF)'}")
+    print(f"  Pexels        : {'ready' if os.environ.get('PEXELS_API_KEY', '') else 'no key (no stock images)'}")
+    print(f"  Klipy         : {'ready' if os.environ.get('KLIPY_API_KEY', '') else 'no key (no meme/GIF)'}")
     print(f"  Templates     : {', '.join(TEMPLATE_TYPES)}")
     print(f"  VectCutAPI    : {VECTCUT_DIR}")
     print(f"  CapCut drafts : {CAPCUT_DRAFT_DIR}")

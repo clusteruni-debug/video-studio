@@ -127,11 +127,11 @@ When `image_source` is omitted, the router selects based on `emotion`:
 | Emotion | Primary Source | Search Strategy | Example Query |
 |---------|---------------|-----------------|---------------|
 | `neutral` | Pexels | Subject-related stock photo | `"office meeting room"` |
-| `funny` | **Tenor** | Reaction GIF/MP4 | `"funny reaction meme"` |
+| `funny` | **Klipy** | Reaction GIF/MP4 | `"funny reaction meme"` |
 | `serious` | Pexels | Dark-tone stock | `"storm clouds city"` |
-| `shock` | **Tenor** | Surprised reaction | `"shocked reaction oh no"` |
+| `shock` | **Klipy** | Surprised reaction | `"shocked reaction oh no"` |
 | `sad` | Pexels | Melancholy stock | `"rain window alone"` |
-| `anger` | **Tenor** | Frustrated reaction | `"angry reaction frustrated"` |
+| `anger` | **Klipy** | Frustrated reaction | `"angry reaction frustrated"` |
 
 ### Explicit Source Override
 
@@ -140,16 +140,19 @@ When `image_source` is specified:
 | Source | API | Key Required | Format | Use Case |
 |--------|-----|-------------|--------|----------|
 | `pexels` | Pexels v1 | `PEXELS_API_KEY` | JPG | Stock photos, backgrounds, locations |
-| `tenor` | Tenor v2 (Google) | `TENOR_API_KEY` | GIF/MP4 | Memes, reactions, humor |
+| `tenor` | Klipy (Tenor v2-compatible) | `KLIPY_API_KEY` | GIF/MP4 | Memes, reactions, humor |
 | `dalle` | DALL-E 3 | `OPENAI_API_KEY` | PNG | Style-unified AI art (origin_story) |
 | `pollinations` | Pollinations FLUX | None | PNG | Free AI generation fallback |
 
-### Tenor Integration Notes
+### Klipy Integration Notes
+
+Klipy is a Tenor v2-compatible API (same response format, different base URL).
+Gemini prompts emit `"image_source": "tenor"` — this is a **routing token** that maps to Klipy in `image_router.py`.
 
 ```
-GET https://tenor.googleapis.com/v2/search
+GET https://api.klipy.com/v2/search
   ?q=shocked+reaction
-  &key=TENOR_API_KEY
+  &key=KLIPY_API_KEY
   &media_filter=mp4,gif
   &limit=3
   &contentfilter=medium
@@ -157,7 +160,7 @@ GET https://tenor.googleapis.com/v2/search
 
 - Returns MP4 in `media_formats.mp4.url` — directly usable in VectCutAPI
 - Korean keyword search supported: `q=놀란+반응` works
-- Free tier: ~50 req/sec, no daily cap
+- Free tier: 100 req/min (test key), unlimited (production key)
 - For video pipeline: prefer `mp4` format (smaller, no decoding overhead)
 - GIF fallback: `media_formats.gif.url` if MP4 unavailable
 
@@ -486,7 +489,7 @@ else:
 2. If no results, search `fallback_prompt`
 3. If still no results, return None (scene gets text-only card)
 
-**Tenor** (meme/reaction GIF):
+**Klipy** (meme/reaction GIF):
 1. Search `image_prompt` with `media_filter=mp4,gif&limit=3`
 2. Pick first result, prefer `mp4` format
 3. If no results, search `fallback_prompt`
@@ -567,9 +570,9 @@ Assuming 8-scene video, free-tier defaults:
 
 | Template | TTS | Image | Total |
 |----------|-----|-------|-------|
-| community_read | Free (Edge) | Free (Pexels + Tenor) | **$0** |
+| community_read | Free (Edge) | Free (Pexels + Klipy) | **$0** |
 | news_explainer | Free (Edge) | Free (Pexels) + ~2 DALL-E ($0.08) | **~$0.08** |
-| reddit_translation | Free (Edge) | Free (Pexels + Tenor) | **$0** |
+| reddit_translation | Free (Edge) | Free (Pexels + Klipy) | **$0** |
 | ranking_list | Free (Edge) | Free (Pexels) | **$0** |
 | origin_story | Free (Edge) | 8x DALL-E ($0.32) | **~$0.32** |
 
