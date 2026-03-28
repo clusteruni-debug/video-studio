@@ -5,8 +5,8 @@ set PYTHONDONTWRITEBYTECODE=1
 
 echo Starting Video Studio...
 
-:: Start bridge server (detached, minimized)
-start "VS-Bridge" /min .venv\Scripts\pythonw.exe -m worker.bridge.server
+:: Start bridge server (detached, minimized, -B = no bytecode cache)
+start "VS-Bridge" /min .venv\Scripts\pythonw.exe -B -m worker.bridge.server
 
 :: Wait for bridge to be ready
 timeout /t 4 /nobreak >nul

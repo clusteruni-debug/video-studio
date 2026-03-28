@@ -25,7 +25,7 @@ from flask import Flask, jsonify, request as flask_request, send_from_directory
 from flask_cors import CORS
 
 from worker.tts.providers import generate_tts, available_providers
-from worker.bridge.templates import TEMPLATE_TYPES, build_template_prompt
+from worker.bridge.templates import TEMPLATE_TYPES
 from worker.bridge.image_router import route_image
 
 # Add VectCutAPI to Python path
@@ -62,12 +62,7 @@ def _generate_scenes_llm(topic: str, lang: str, template_type: str = "news_expla
     lang_name = "Korean" if not lang.startswith("en") else "English"
     if template_type not in TEMPLATE_TYPES:
         template_type = "news_explainer"
-    prompt = build_template_prompt(topic, lang_name, template_type)
-
-    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={GEMINI_API_KEY}"
-
-    # Minimal Korean prompt — JSON format rules cause Gemini to lose topic focus
+    # Korean wrapper keeps Gemini on-topic; templates.py provides structure hints
     template_hint = {
         "community_read": "커뮤니티 글 읽어주기",
         "news_explainer": "뉴스 해설",
@@ -75,20 +70,18 @@ def _generate_scenes_llm(topic: str, lang: str, template_type: str = "news_expla
         "ranking_list": "Top N 랭킹",
         "origin_story": "기원/역사 스토리",
     }.get(template_type, "뉴스 해설")
-    phase1_prompt = f'{topic}에 대해 유튜브 쇼츠 {template_hint} 영상 스크립트를 만들어줘. 8개 씬. 각 씬마다 나레이션과 영어 이미지 검색어를 포함해줘. JSON 배열로 반환: [{{"scene_num":1,"narration":"나레이션","image_prompt":"english image query"}}]'
+    gemini_prompt = f'{topic}에 대해 유튜브 쇼츠 {template_hint} 영상 스크립트를 만들어줘. 8개 씬. 각 씬마다 나레이션과 영어 이미지 검색어를 포함해줘. JSON 배열로 반환: [{{"scene_num":1,"narration":"나레이션","display_text":"자막","image_prompt":"english image query","emotion":"neutral","image_source":"pexels","transition":"Dissolve"}}]'
 
+    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={GEMINI_API_KEY}"
     payload = json.dumps({
-        "contents": [{"parts": [{"text": phase1_prompt}]}],
+        "contents": [{"parts": [{"text": gemini_prompt}]}],
         "generationConfig": {
             "temperature": 0.7,
             "maxOutputTokens": 4096,
             "responseMimeType": "application/json",
         },
     }).encode("utf-8")
-
-    # Debug: save actual prompt being sent
-    with open(str(PROJECT_ROOT / "storage" / "last_prompt.txt"), "w", encoding="utf-8") as dpf:
-        dpf.write(phase1_prompt)
 
     req = urllib_request.Request(gemini_url, data=payload, headers={"Content-Type": "application/json"})
     try:
@@ -395,21 +388,27 @@ def create_draft_route():
             # Pick first available (future: match bgm_style)
             bgm_file = bgm_candidates[0]
     if bgm_file:
-        bgm_url = f"http://{BRIDGE_HOST}:{BRIDGE_PORT}/api/bgm/{bgm_file.name}"
+        bgm_duration = _get_audio_duration(str(bgm_file))
+        bgm_end = min(bgm_duration, cumulative_time)
         try:
+            # Pass local file path directly — HTTP self-reference deadlocks Flask
             add_audio_track(
-                audio_url=bgm_url,
+                audio_url=str(bgm_file),
                 start=0,
-                end=cumulative_time,
+                end=bgm_end,
                 target_start=0,
                 draft_id=draft_id,
                 track_name="bgm",
                 volume=0.12,
-                duration=cumulative_time,
+                duration=bgm_end,
             )
             steps_log.append(f"bgm: {bgm_file.name}")
         except Exception as e:
-            print(f"[vectcut] add_bgm failed: {e}")
+            import traceback
+            err_msg = f"[vectcut] add_bgm failed: {e}\n{traceback.format_exc()}"
+            print(err_msg)
+            with open(str(PROJECT_ROOT / "storage" / "bgm_error.log"), "w") as ef:
+                ef.write(err_msg)
 
     steps_log.append(f"draft: {draft_id}")
 
