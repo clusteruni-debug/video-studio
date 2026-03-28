@@ -25,6 +25,23 @@ VECTCUT_DIR = Path(os.environ.get("VECTCUT_DIR", str(Path.cwd().parent / "VectCu
 if str(VECTCUT_DIR) not in sys.path:
     sys.path.insert(0, str(VECTCUT_DIR))
 
+# Version pin check — warn if VectCutAPI was updated since last verified commit
+_PINNED = os.environ.get("VECTCUT_PINNED_COMMIT", "")
+if _PINNED and VECTCUT_DIR.is_dir():
+    try:
+        import subprocess
+        _head = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=VECTCUT_DIR, capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        if _head and not _head.startswith(_PINNED):
+            print(
+                f"[vectcut_bridge] WARNING: VectCutAPI commit {_head} != pinned {_PINNED}. "
+                f"If something breaks, run: cd {VECTCUT_DIR} && git checkout {_PINNED}"
+            )
+    except Exception:
+        pass
+
 _MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
 
 
