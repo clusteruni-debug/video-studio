@@ -22,13 +22,21 @@ _HOOK_INSTRUCTION = """CRITICAL — Scene 1 MUST be a viewer-retention hook:
 _HOOK_EXEMPT = frozenset({"reddit_translation", "ranking_list", "tutorial_steps"})
 
 
-def build_template_prompt(topic: str, lang_name: str, template_type: str) -> str:
+def build_template_prompt(
+    topic: str,
+    lang_name: str,
+    template_type: str,
+    tone_rule: str = "",
+) -> str:
     """Build a Gemini prompt. Topic is repeated at start and end to prevent drift.
 
     Templates in ``_HOOK_EXEMPT`` skip the hook instruction because their scene 1
     has a structural role (intro/rank/commentary) rather than a retention hook.
+    *tone_rule* is appended when non-empty so Gemini respects the same speech style as Groq.
     """
     body = _build_template_body(topic, lang_name, template_type)
+    if tone_rule:
+        body += f"\n\n★ 말투 규칙 (절대 준수): {tone_rule}"
     if template_type in _HOOK_EXEMPT:
         return body
     return f"{_HOOK_INSTRUCTION}\n{body}"

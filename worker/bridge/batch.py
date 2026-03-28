@@ -24,6 +24,7 @@ class BatchJob:
     tts_provider: str
     voice_gender: str
     subtitle_style: str = ""
+    tone: str = "casual_heyo"
     status: str = "pending"  # pending | running | completed | failed
     progress: int = 0
     results: list[dict] = field(default_factory=list)
@@ -91,6 +92,7 @@ class BatchManager:
         tts_provider: str = "edge",
         voice_gender: str = "female",
         subtitle_style: str = "",
+        tone: str = "casual_heyo",
     ) -> str:
         batch_id = f"batch-{uuid.uuid4().hex[:8]}"
         job = BatchJob(
@@ -102,6 +104,7 @@ class BatchManager:
             tts_provider=tts_provider,
             voice_gender=voice_gender,
             subtitle_style=subtitle_style,
+            tone=tone,
         )
         with self._lock:
             # Evict oldest completed batches when over capacity
@@ -147,6 +150,7 @@ class BatchManager:
                     "voice_gender": job.voice_gender,
                     "template_type": job.template_type,
                     "subtitle_style": job.subtitle_style,
+                    "tone": job.tone,
                 })
                 job.results.append(result)
             except Exception as e:
