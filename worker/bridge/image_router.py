@@ -72,6 +72,22 @@ def search_klipy(query: str, limit: int = 3) -> str | None:
     return None
 
 
+def _generate_pollinations(prompt: str, width: int = 1080, height: int = 1920) -> str | None:
+    """Generate image via Pollinations FLUX (free). Returns image URL or None."""
+    try:
+        from urllib.parse import quote_plus
+        safe_prompt = quote_plus(prompt)
+        url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width={width}&height={height}&nologo=true"
+        # Verify the URL resolves (Pollinations redirects to generated image)
+        req = urllib_request.Request(url, method="HEAD", headers={"User-Agent": "VideoStudio/1.0"})
+        with urllib_request.urlopen(req, timeout=30) as resp:
+            if resp.status == 200:
+                return resp.url  # Final redirect URL
+    except Exception as e:
+        print(f"[pollinations] Generation failed for '{prompt[:40]}': {e}")
+    return None
+
+
 def route_image(scene: dict) -> tuple[str | None, str | None]:
     """Route image search based on emotion and image_source fields.
     Returns (resolved_image_url, source_name) tuple.
@@ -99,8 +115,15 @@ def route_image(scene: dict) -> tuple[str | None, str | None]:
         if not url and fallback:
             url = search_pexels(fallback)
         return (url, "pexels") if url else (None, None)
-    # dalle / pollinations are not yet wired in this pipeline
-    if source in ("dalle", "pollinations"):
+    # FLUX / Pollinations — use the Pollinations FLUX endpoint
+    if source in ("flux", "pollinations"):
+        url = _generate_pollinations(image_prompt)
+        if url:
+            return url, "flux"
+        # Fall back to Pexels if generation fails
+        url = search_pexels(image_prompt)
+        return (url, "pexels") if url else (None, None)
+    if source == "dalle":
         url = search_pexels(image_prompt)
         return (url, "pexels") if url else (None, None)
 

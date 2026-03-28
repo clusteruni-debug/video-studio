@@ -435,6 +435,8 @@ def reddit_auto_generate_route():
             "template_type": "reddit_translation",
             "tone": data.get("tone", "casual_heyo"),
             "subtitle_style": data.get("subtitle_style", ""),
+            "target_duration": data.get("target_duration", "30s"),
+            "custom_instruction": data.get("custom_instruction", ""),
         })
 
         result["source_post"] = {
@@ -485,6 +487,8 @@ def news_auto_generate_route():
             "template_type": "news_explainer",
             "tone": data.get("tone", "casual_heyo"),
             "subtitle_style": data.get("subtitle_style", ""),
+            "target_duration": data.get("target_duration", "30s"),
+            "custom_instruction": data.get("custom_instruction", ""),
         })
         result["source_article"] = {
             "title": best["title"],
@@ -539,6 +543,8 @@ def create_batch_route():
         voice_gender=data.get("voice_gender", "female"),
         subtitle_style=data.get("subtitle_style", ""),
         tone=data.get("tone", "casual_heyo"),
+        target_duration=data.get("target_duration", "30s"),
+        custom_instruction=data.get("custom_instruction", ""),
     )
     thread = threading.Thread(
         target=batch_manager.run_batch,

@@ -25,6 +25,8 @@ class BatchJob:
     voice_gender: str
     subtitle_style: str = ""
     tone: str = "casual_heyo"
+    target_duration: str = "30s"
+    custom_instruction: str = ""
     status: str = "pending"  # pending | running | completed | failed
     progress: int = 0
     results: list[dict] = field(default_factory=list)
@@ -93,6 +95,8 @@ class BatchManager:
         voice_gender: str = "female",
         subtitle_style: str = "",
         tone: str = "casual_heyo",
+        target_duration: str = "30s",
+        custom_instruction: str = "",
     ) -> str:
         batch_id = f"batch-{uuid.uuid4().hex[:8]}"
         job = BatchJob(
@@ -105,6 +109,8 @@ class BatchManager:
             voice_gender=voice_gender,
             subtitle_style=subtitle_style,
             tone=tone,
+            target_duration=target_duration,
+            custom_instruction=custom_instruction,
         )
         with self._lock:
             # Evict oldest completed batches when over capacity
@@ -161,6 +167,8 @@ class BatchManager:
                     "template_type": job.template_type,
                     "subtitle_style": job.subtitle_style,
                     "tone": job.tone,
+                    "target_duration": job.target_duration,
+                    "custom_instruction": job.custom_instruction,
                 })
                 job.results.append(result)
             except Exception as e:
