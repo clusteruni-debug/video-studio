@@ -26,7 +26,9 @@ from flask import Flask, jsonify, request as flask_request, send_from_directory
 from flask_cors import CORS
 
 from worker.tts.providers import generate_tts, available_providers
-from worker.bridge.templates import TEMPLATE_TYPES
+from worker.bridge.templates import TEMPLATE_TYPES, build_template_prompt
+from worker.bridge.batch import BatchManager
+from worker.bridge.job_queue import JobQueue
 from worker.bridge.image_router import route_image
 
 # Add VectCutAPI to Python path
@@ -49,6 +51,9 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 
 app = Flask(__name__)
 CORS(app)
+
+batch_manager = BatchManager()
+job_queue = JobQueue()
 
 
 # ---------------------------------------------------------------------------
@@ -176,19 +181,22 @@ def _call_gemini(prompt: str) -> str | None:
 
 def _generate_scenes_llm(topic: str, lang: str, template_type: str = "news_explainer") -> tuple[list[dict], str]:
     """Generate scene script. Groq first (topic-faithful), Gemini fallback, then template."""
+    lang_name = "Korean" if not lang.startswith("en") else "English"
     if template_type not in TEMPLATE_TYPES:
         template_type = "news_explainer"
-    prompt = _build_scene_prompt(topic, template_type)
+    # Use short Korean prompt for Groq (topic-faithful), rich template for Gemini
+    short_prompt = _build_scene_prompt(topic, template_type)
+    rich_prompt = build_template_prompt(topic, lang_name, template_type)
 
-    # Try Groq first (free, fast, topic-faithful)
-    text = _call_groq(prompt)
+    # Try Groq first (free, fast, topic-faithful) with short Korean prompt
+    text = _call_groq(short_prompt)
     if text:
         scenes = _parse_scenes_json(text)
         if scenes:
             return _normalize_scenes(scenes, topic), "groq"
 
-    # Fallback to Gemini
-    text = _call_gemini(prompt)
+    # Fallback to Gemini with rich template prompt (structured instructions)
+    text = _call_gemini(rich_prompt)
     if text:
         scenes = _parse_scenes_json(text)
         if scenes:
@@ -750,28 +758,23 @@ def news_headlines_route():
 
 
 # ---------------------------------------------------------------------------
-# Batch generation & async job queue
+# Batch generation & async job queue (imports at top of section; classes in batch.py / job_queue.py)
 # ---------------------------------------------------------------------------
-from worker.bridge.batch import BatchManager
-from worker.bridge.job_queue import JobQueue
-
-batch_manager = BatchManager()
-job_queue = JobQueue()
 
 
 def _execute_draft_via_test_client(payload: dict) -> dict:
     """Execute a create-draft request through the Flask test client.
 
-    This avoids HTTP self-reference deadlocks in the single-threaded Flask
-    server while keeping the full pipeline logic in one place.
+    Pushes an app context so this works from background threads (batch/job_queue).
     """
-    with app.test_client() as client:
-        resp = client.post(
-            "/api/create-draft",
-            json=payload,
-            content_type="application/json",
-        )
-        return resp.get_json()
+    with app.app_context():
+        with app.test_client() as client:
+            resp = client.post(
+                "/api/create-draft",
+                json=payload,
+                content_type="application/json",
+            )
+            return resp.get_json()
 
 
 job_queue.set_execute_fn(_execute_draft_via_test_client)
