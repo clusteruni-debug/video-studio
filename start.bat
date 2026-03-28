@@ -5,6 +5,9 @@ set PYTHONDONTWRITEBYTECODE=1
 
 echo Starting Video Studio...
 
+:: Clean bytecode cache (stale pyc causes code changes to not take effect)
+for /d /r worker %%d in (__pycache__) do @if exist "%%d" rd /s /q "%%d" 2>nul
+
 :: Start bridge server (detached, minimized, -B = no bytecode cache)
 start "VS-Bridge" /min .venv\Scripts\pythonw.exe -B -m worker.bridge.server
 

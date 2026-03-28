@@ -73,18 +73,85 @@ _TEMPLATE_HINTS = {
 }
 
 
+_SCENE_JSON_HINT = 'JSON 배열로 반환. 각 원소: {{"scene_num":N,"narration":"한국어 나레이션","display_text":"한국어 자막 3줄 이내","image_prompt":"구체적인 영어 이미지 검색어","emotion":"neutral","image_source":"pexels","transition":"Dissolve"}}'
+
+_TEMPLATE_PROMPTS = {
+    "community_read": (
+        '다음 글을 유튜브 쇼츠 "커뮤니티 글 읽어주기" 스타일로 읽어줘. '
+        '원본 글의 핵심을 살려서 5~8개 씬으로 나눠줘. '
+        '말투: "~했다는데요", "~래요", "~이거 실화냐" 같은 한국 온라인 구어체. '
+        '딱딱한 뉴스 문체 절대 금지. 실제 유튜버가 읽어주는 느낌으로. '
+        '감정 태그: 놀라운 부분은 "shock", 웃긴 부분은 "funny". '
+    ),
+    "news_explainer": (
+        '유튜브 쇼츠 뉴스 해설 영상 스크립트를 만들어줘. 8개 씬. '
+        '구조: 충격적 사실(1) → 배경(2-3) → 핵심 팩트와 숫자(4-5) → 전망(6-7) → 질문 유도(8). '
+        '말투: 뉴스 해설자 톤이지만 딱딱하지 않게. "~인 거죠", "~한 셈입니다", "~라고 합니다". '
+        '핵심 숫자는 display_text에 크게. 씬1은 반드시 emotion "shock". '
+    ),
+    "reddit_translation": (
+        '해외 커뮤니티 글을 한국어로 번역해서 읽어주는 유튜브 쇼츠 스크립트. 6~8개 씬. '
+        '문화 차이가 있는 부분은 괄호로 설명 추가. '
+        '말투: "~인데요", "~거든요", "~하더라고요" 같은 구어체. '
+        '리액션 필요한 부분은 emotion "funny" 또는 "shock". '
+    ),
+    "ranking_list": (
+        '"Top N" 랭킹 유튜브 쇼츠 스크립트. '
+        '구조: 인트로(1) → 각 항목(2씬씩: 순위+설명) → 아웃트로. '
+        '말투: "N위는 바로~", "이건 진짜 몰랐죠?", "저장 필수입니다". '
+        '순위 씬에 "rank": N 필드 추가. '
+    ),
+    "origin_story": (
+        '"~의 탄생 비화" 스타일 유튜브 쇼츠 스크립트. 8개 씬. '
+        '구조: 의외의 사실(1) → 기원(2-3) → 전환점(4-5) → 현재(6-7) → 한 줄 정리(8). '
+        '말투: 이야기체. "~였는데요", "~했다고 합니다", "알고 보면~". '
+    ),
+    "vs_comparison": (
+        'A vs B 비교 유튜브 쇼츠 스크립트. 8개 씬. '
+        '구조: "뭐가 더 좋을까?"(1) → A 소개(2-3) → B 소개(4-5) → 비교(6-7) → 결론(8). '
+        '말투: "~한 반면", "~쪽이 더", "결국 정답은~". 공정한 비교. '
+    ),
+    "myth_buster": (
+        '팩트체크 유튜브 쇼츠 스크립트. 8개 씬. '
+        '구조: "이거 진짜?"(1) → 통념(2) → 근거 찬성(3-4) → 근거 반대(5-6) → 판정(7) → 마무리(8). '
+        '말투: "사실일까요?", "확인해보겠습니다", "결론은~". 판정 씬은 emotion "shock". '
+    ),
+    "tutorial_steps": (
+        '단계별 튜토리얼 유튜브 쇼츠 스크립트. 8개 씬. '
+        '구조: 문제(1) → Step 1(2-3) → Step 2(4-5) → Step 3(6-7) → 완성(8). '
+        '말투: "먼저~", "다음으로~", "마지막으로~". 쉽고 친절. Step 씬에 "rank": N 추가. '
+    ),
+    "before_after": (
+        '비포/애프터 유튜브 쇼츠 스크립트. 8개 씬. '
+        '구조: Before 훅(1) → Before 상세(2-3) → 전환(4) → After 공개(5-6) → 임팩트(7) → 마무리(8). '
+        '말투: 드라마틱. "예전에는~", "그런데~", "지금은~". Before "sad", 전환 "shock", After "funny". '
+    ),
+    "hot_take": (
+        '핫테이크 유튜브 쇼츠 스크립트. 8개 씬. '
+        '구조: 강한 주장(1) → 배경(2-3) → 찬성(4-5) → 반론(6) → 결론(7) → 댓글 유도(8). '
+        '말투: "솔직히~", "~라고 생각합니다", "여러분은 어떠세요?". 씬1 emotion "shock". '
+    ),
+}
+
+
 def _build_scene_prompt(topic: str, template_type: str) -> str:
-    hint = _TEMPLATE_HINTS.get(template_type, "뉴스 해설")
+    base = _TEMPLATE_PROMPTS.get(template_type, _TEMPLATE_PROMPTS["news_explainer"])
     return (
-        f'{topic}에 대해 유튜브 쇼츠 {hint} 영상 스크립트를 만들어줘. '
-        f'8개 씬. 각 씬마다 나레이션과 영어 이미지 검색어를 포함해줘. '
-        f'JSON 배열로 반환: [{{"scene_num":1,"narration":"나레이션",'
-        f'"display_text":"자막","image_prompt":"english image query",'
-        f'"emotion":"neutral","image_source":"pexels","transition":"Dissolve"}}]'
+        f'주제: {topic}\n\n'
+        f'{base}\n'
+        f'중요 규칙:\n'
+        f'- 나레이션(narration)과 자막(display_text)은 반드시 자연스러운 한국어. 번역투 금지.\n'
+        f'- image_prompt만 영어로 쓰되, "{topic}"과 직접 관련된 구체적 검색어로. "futuristic city" 같은 일반적 표현 금지.\n'
+        f'- display_text는 화면에 보여줄 짧은 자막. 3줄 이내, 줄당 12자.\n\n'
+        f'{_SCENE_JSON_HINT}'
     )
 
 
-def _normalize_scenes(scenes: list[dict], topic: str) -> list[dict]:
+# Templates where the hook optimisation should NOT alter scene 1
+_HOOK_EXEMPT_TEMPLATES = frozenset({"reddit_translation", "ranking_list", "tutorial_steps"})
+
+
+def _normalize_scenes(scenes: list[dict], topic: str, template_type: str = "") -> list[dict]:
     for s in scenes:
         s.setdefault("image_prompt", s.pop("visual_description", topic))
         s.setdefault("display_text", "")
@@ -96,7 +163,8 @@ def _normalize_scenes(scenes: list[dict], topic: str) -> list[dict]:
         s.setdefault("rank", None)
 
     # Hook optimisation: ensure scene 1 grabs attention in the first 3 seconds
-    if scenes:
+    # Exempt templates where scene 1 has a structural role (intro/rank/commentary)
+    if scenes and template_type not in _HOOK_EXEMPT_TEMPLATES:
         hook = scenes[0]
         hook["transition"] = "Fade_In"
         if hook.get("emotion") == "neutral":
@@ -193,14 +261,14 @@ def _generate_scenes_llm(topic: str, lang: str, template_type: str = "news_expla
     if text:
         scenes = _parse_scenes_json(text)
         if scenes:
-            return _normalize_scenes(scenes, topic), "groq"
+            return _normalize_scenes(scenes, topic, template_type), "groq"
 
     # Fallback to Gemini with rich template prompt (structured instructions)
     text = _call_gemini(rich_prompt)
     if text:
         scenes = _parse_scenes_json(text)
         if scenes:
-            return _normalize_scenes(scenes, topic), "gemini"
+            return _normalize_scenes(scenes, topic, template_type), "gemini"
 
     return _generate_scenes_fallback(topic, lang), "template"
 
@@ -294,6 +362,17 @@ def serve_bgm(filename: str):
     return send_from_directory(str(PROJECT_ROOT / "assets" / "bgm"), filename)
 
 
+def _safe_resolve(user_path: str, allowed_root: Path) -> Path | None:
+    """Resolve *user_path* and verify it is under *allowed_root*."""
+    try:
+        resolved = Path(user_path).resolve()
+    except (OSError, ValueError):
+        return None
+    if not str(resolved).startswith(str(allowed_root.resolve())):
+        return None
+    return resolved
+
+
 @app.route("/api/thumbnail", methods=["POST"])
 def generate_thumbnail_route():
     """Generate a thumbnail from a rendered video or image."""
@@ -301,12 +380,15 @@ def generate_thumbnail_route():
     source_path = data.get("source_path", "").strip()
     if not source_path:
         return jsonify({"ok": False, "error": "source_path is required"}), 400
-    source = Path(source_path)
-    if not source.exists():
-        return jsonify({"ok": False, "error": f"File not found: {source_path}"}), 404
+    source = _safe_resolve(source_path, PROJECT_ROOT)
+    if not source or not source.exists():
+        return jsonify({"ok": False, "error": "File not found or path not allowed"}), 400
 
     text = data.get("text", "")
-    timestamp = float(data.get("timestamp_sec", 1.5))
+    try:
+        timestamp = float(data.get("timestamp_sec", 1.5))
+    except (TypeError, ValueError):
+        timestamp = 1.5
     output_dir = PROJECT_ROOT / "storage" / "thumbnails"
     output_path = output_dir / f"{source.stem}_thumb.png"
 
@@ -665,9 +747,9 @@ def dub_route():
     source_path = data.get("source_path", "").strip()
     if not source_path:
         return jsonify({"ok": False, "error": "source_path is required"}), 400
-    source = Path(source_path)
-    if not source.exists():
-        return jsonify({"ok": False, "error": f"File not found: {source_path}"}), 404
+    source = _safe_resolve(source_path, PROJECT_ROOT)
+    if not source or not source.exists():
+        return jsonify({"ok": False, "error": "File not found or path not allowed"}), 400
 
     target_lang = data.get("target_lang", "ko")
     tts_provider = data.get("tts_provider", "edge")
@@ -699,7 +781,10 @@ def reddit_posts_route():
     """Fetch popular Reddit posts from a subreddit."""
     subreddit = flask_request.args.get("subreddit", "todayilearned")
     sort = flask_request.args.get("sort", "hot")
-    limit = min(int(flask_request.args.get("limit", "10")), 25)
+    try:
+        limit = min(int(flask_request.args.get("limit", "10")), 25)
+    except (ValueError, TypeError):
+        limit = 10
     try:
         from worker.sources.reddit import fetch_reddit_posts
         posts = fetch_reddit_posts(subreddit, sort=sort, limit=limit)
@@ -721,16 +806,13 @@ def reddit_auto_generate_route():
             return jsonify({"ok": False, "error": "No suitable posts found"}), 404
 
         prompt = post_to_prompt(best)
-        # Forward to create-draft via test client
-        with app.test_client() as client:
-            resp = client.post("/api/create-draft", json={
-                "prompt": prompt,
-                "lang": data.get("lang", "ko"),
-                "tts_provider": data.get("tts_provider", "edge"),
-                "voice_gender": data.get("voice_gender", "female"),
-                "template_type": "reddit_translation",
-            }, content_type="application/json")
-            result = resp.get_json()
+        result = _execute_draft_via_test_client({
+            "prompt": prompt,
+            "lang": data.get("lang", "ko"),
+            "tts_provider": data.get("tts_provider", "edge"),
+            "voice_gender": data.get("voice_gender", "female"),
+            "template_type": "reddit_translation",
+        })
 
         result["source_post"] = {
             "title": best["title"],
@@ -786,7 +868,10 @@ def create_batch_route():
     topic = data.get("prompt", "").strip()
     if not topic:
         return jsonify({"ok": False, "error": "prompt is required"}), 400
-    variants = min(int(data.get("variants", 3)), 10)
+    try:
+        variants = min(int(data.get("variants", 3)), 10)
+    except (ValueError, TypeError):
+        variants = 3
 
     batch_id = batch_manager.create_batch(
         topic=topic,
