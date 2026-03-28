@@ -140,9 +140,15 @@ def _build_scene_prompt(topic: str, template_type: str) -> str:
         f'주제: {topic}\n\n'
         f'{base}\n'
         f'중요 규칙:\n'
-        f'- 나레이션(narration)과 자막(display_text)은 반드시 자연스러운 한국어. 번역투 금지.\n'
-        f'- image_prompt만 영어로 쓰되, "{topic}"과 직접 관련된 구체적 검색어로. "futuristic city" 같은 일반적 표현 금지.\n'
-        f'- display_text는 화면에 보여줄 짧은 자막. 3줄 이내, 줄당 12자.\n\n'
+        f'- 나레이션은 짧게. 한 문장 최대 25자. 숏폼이니까 빠르게.\n'
+        f'- 문어체("~입니다", "~습니다", "~것입니다") 절대 금지.\n'
+        f'- 구어체/반말 OK: "~임", "~인데", "~거든", "~인 거지", "~한 셈이지". 유튜브 숏폼 톤.\n'
+        f'- 자막은 나레이션 핵심만, 2줄 이내.\n'
+        f'- image_prompt는 "{topic}" 직접 관련 영어. 일반적 표현("futuristic", "abstract") 금지.\n'
+        f'- emotion 다양하게: shock, serious, funny, neutral 골고루.\n\n'
+        f'좋은 예시:\n'
+        f'{{"scene_num":1,"narration":"이거 아는 사람 별로 없는데","display_text":"아는 사람 별로 없는","image_prompt":"surprised person looking at phone","emotion":"shock"}}\n'
+        f'{{"scene_num":2,"narration":"사실 이건 어제오늘 일이 아님","display_text":"어제오늘 일 아님","image_prompt":"calendar with dates highlighted","emotion":"serious"}}\n\n'
         f'{_SCENE_JSON_HINT}'
     )
 
