@@ -206,13 +206,13 @@ def create_draft_route():
         audio_path = tts_subdir / f"scene_{n}.mp3"
 
         # Determine TTS tone based on scene metadata
-        tts_rate = "+0%"
+        tts_rate = "+40%"
         tts_pitch = "+0Hz"
         tts_text = scene["narration"]
         if scene.get("is_commentary"):
-            # Commentary slides: slower, slightly lower pitch for "explainer" feel
-            tts_rate = "-5%"
-            tts_pitch = "-1Hz"
+            # Commentary slides: slightly slower than default fast pace
+            tts_rate = "+30%"
+            tts_pitch = "+0Hz"
         if scene.get("rank") is not None and tts_text.strip():
             # Rank slides: SSML pause before rank number for dramatic effect
             tts_text = f'<speak><break time="500ms"/>{tts_text}</speak>'

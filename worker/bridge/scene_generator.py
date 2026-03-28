@@ -15,24 +15,6 @@ from worker.bridge.templates import TEMPLATE_TYPES, build_template_prompt, _HOOK
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
-# ---------------------------------------------------------------------------
-# Template hints (for Groq short prompt)
-# ---------------------------------------------------------------------------
-_TEMPLATE_HINTS = {
-    "community_read": "커뮤니티 글 읽어주기",
-    "news_explainer": "뉴스 해설",
-    "reddit_translation": "해외 글 번역",
-    "ranking_list": "Top N 랭킹",
-    "origin_story": "기원/역사 스토리",
-    "vs_comparison": "A vs B 비교",
-    "myth_buster": "팩트체크",
-    "tutorial_steps": "단계별 튜토리얼",
-    "before_after": "비포/애프터",
-    "hot_take": "핫테이크/논쟁",
-}
-
-_SCENE_JSON_HINT = 'JSON 배열로 반환. 각 원소: {{"scene_num":N,"narration":"한국어 나레이션","display_text":"한국어 자막 2줄 이내","image_prompt":"구체적 영어 이미지 검색어","emotion":"neutral","image_source":"pexels","transition":"Dissolve"}}'
-
 # --- Tone presets (종결어미) — independent from template ---
 TONE_PRESETS = {
     "casual_heyo": {
@@ -61,72 +43,6 @@ TONE_PRESETS = {
         "example_endings": ["~합니다", "~인데요", "~이죠"],
     },
 }
-
-# --- Template structure (구조만, 말투 없음) ---
-_TEMPLATE_PROMPTS = {
-    "community_read": (
-        '유튜브 쇼츠 커뮤니티 글 읽어주기. 5~8개 씬으로 분할. '
-        'emotion: 놀라운 부분 "shock", 웃긴 부분 "funny". '
-    ),
-    "news_explainer": (
-        '유튜브 쇼츠 뉴스 해설. 8개 씬. '
-        '구조: 충격(1) → 배경(2-3) → 핵심 숫자(4-5) → 전망(6-7) → 질문(8). '
-        '숫자는 display_text에 크게. 씬1 emotion "shock". '
-    ),
-    "reddit_translation": (
-        '해외 글 번역 읽어주기 유튜브 쇼츠. 6~8개 씬. 문화차이 괄호 설명. '
-        'emotion: 리액션 "funny"/"shock". '
-    ),
-    "ranking_list": (
-        'Top N 랭킹 유튜브 쇼츠. 구조: 인트로(1) → 항목(2씬씩) → 아웃트로. '
-        '순위 씬에 "rank": N 필드 추가. '
-    ),
-    "origin_story": (
-        '탄생 비화 유튜브 쇼츠. 8개 씬. '
-        '구조: 의외(1) → 기원(2-3) → 전환(4-5) → 현재(6-7) → 정리(8). '
-    ),
-    "vs_comparison": (
-        'A vs B 비교 유튜브 쇼츠. 8개 씬. '
-        '구조: 훅(1) → A(2-3) → B(4-5) → 비교(6-7) → 결론(8). '
-    ),
-    "myth_buster": (
-        '팩트체크 유튜브 쇼츠. 8개 씬. '
-        '구조: 질문(1) → 통념(2) → 찬성(3-4) → 반대(5-6) → 판정(7) → 마무리(8). 판정 emotion "shock". '
-    ),
-    "tutorial_steps": (
-        '단계별 튜토리얼 유튜브 쇼츠. 8개 씬. '
-        '구조: 문제(1) → Step1(2-3) → Step2(4-5) → Step3(6-7) → 완성(8). Step에 "rank": N. '
-    ),
-    "before_after": (
-        '비포/애프터 유튜브 쇼츠. 8개 씬. '
-        '구조: Before(1-3) → 전환(4) → After(5-6) → 임팩트(7) → 마무리(8). '
-        'Before "sad", 전환 "shock", After "funny". '
-    ),
-    "hot_take": (
-        '핫테이크 유튜브 쇼츠. 8개 씬. '
-        '구조: 주장(1) → 배경(2-3) → 찬성(4-5) → 반론(6) → 결론(7) → 댓글(8). 씬1 emotion "shock". '
-    ),
-}
-
-
-def build_scene_prompt(topic: str, template_type: str, tone: str = "casual_heyo") -> str:
-    """Build a short Korean prompt for Groq (topic-faithful, tone-enforced)."""
-    structure = _TEMPLATE_PROMPTS.get(template_type, _TEMPLATE_PROMPTS["news_explainer"])
-    tone_preset = TONE_PRESETS.get(tone, TONE_PRESETS["casual_heyo"])
-    tone_rule = tone_preset["rule"]
-    examples = tone_preset["example_endings"]
-    return (
-        f'주제: {topic}\n\n'
-        f'{structure}\n'
-        f'★ 말투 통일 (절대 규칙): {tone_rule} 다른 종결어미 절대 섞지 마.\n'
-        f'나레이션 예시 톤: "{examples[0]}", "{examples[1]}", "{examples[2]}"\n\n'
-        f'추가 규칙:\n'
-        f'- 나레이션 한 문장 최대 25자.\n'
-        f'- 자막(display_text)은 핵심만, 2줄 이내.\n'
-        f'- image_prompt는 "{topic}" 직접 관련 영어. 일반적 표현 금지.\n'
-        f'- emotion 다양하게: shock, serious, funny, neutral.\n\n'
-        f'{_SCENE_JSON_HINT}'
-    )
 
 
 def normalize_scenes(scenes: list[dict], topic: str, template_type: str = "") -> list[dict]:
@@ -222,8 +138,64 @@ def _call_gemini(prompt: str) -> str | None:
             data = json.loads(resp.read())
             return data["candidates"][0]["content"]["parts"][0]["text"]
     except Exception as e:
-        print(f"[gemini] Failed: {type(e).__name__}")
+        print(f"[gemini] Failed: {e}")
         return None
+
+
+def _call_llm(prompt: str) -> tuple[str | None, str]:
+    """Try Gemini first, Groq fallback.  Returns (text, provider)."""
+    text = _call_gemini(prompt)
+    if text:
+        return text, "gemini"
+    text = _call_groq(prompt)
+    if text:
+        return text, "groq"
+    return None, "none"
+
+
+def _enrich_image_prompts(scenes: list[dict], topic: str) -> None:
+    """Step 2: Generate concrete image search terms for each scene (in-place)."""
+    scene_summaries = []
+    for s in scenes:
+        scene_summaries.append(
+            f'scene {s.get("scene_num", 0)}: "{s.get("narration", "")[:60]}" (emotion: {s.get("emotion", "neutral")})'
+        )
+    prompt = (
+        f'Topic: "{topic}"\n\n'
+        f'Below are scenes from a YouTube Shorts script. '
+        f'For each scene, write a concrete English image search query for Pexels/Unsplash. '
+        f'Rules:\n'
+        f'- NEVER use abstract words like "concept", "representation", "digital illustration"\n'
+        f'- Use real objects, places, people, actions (e.g. "golden bitcoin coin on laptop keyboard")\n'
+        f'- Each query must be directly related to "{topic}", not generic stock photos\n'
+        f'- 3-8 words per query, noun-heavy\n\n'
+        f'Scenes:\n' + '\n'.join(scene_summaries) + '\n\n'
+        f'Return a JSON array of objects: [{{"scene_num": 1, "image_prompt": "..."}}]'
+    )
+    text, enrich_provider = _call_llm(prompt)
+    if not text:
+        print("[enrich] Step 2 skipped: no LLM response")
+        return
+    parsed = parse_scenes_json(text)
+    if not parsed:
+        print("[enrich] Step 2 skipped: failed to parse response")
+        return
+    prompt_map: dict[int, str] = {}
+    for item in parsed:
+        sn = item.get("scene_num")
+        ip = item.get("image_prompt")
+        if sn is not None and ip:
+            try:
+                prompt_map[int(sn)] = ip
+            except (ValueError, TypeError):
+                continue
+    updated = 0
+    for s in scenes:
+        sn = s.get("scene_num")
+        if sn in prompt_map:
+            s["image_prompt"] = prompt_map[sn]
+            updated += 1
+    print(f"[enrich] Step 2: {updated}/{len(scenes)} image prompts enriched ({enrich_provider})")
 
 
 def generate_scenes_llm(
@@ -232,27 +204,25 @@ def generate_scenes_llm(
     template_type: str = "news_explainer",
     tone: str = "casual_heyo",
 ) -> tuple[list[dict], str]:
-    """Generate scene script.  Groq first (topic-faithful), Gemini fallback, then template."""
+    """Two-step generation: script first, then image prompts separately."""
     lang_name = "Korean" if not lang.startswith("en") else "English"
     if template_type not in TEMPLATE_TYPES:
         template_type = "news_explainer"
     if tone not in TONE_PRESETS:
         tone = "casual_heyo"
     tone_preset = TONE_PRESETS[tone]
-    short_prompt = build_scene_prompt(topic, template_type, tone)
     rich_prompt = build_template_prompt(topic, lang_name, template_type, tone_rule=tone_preset["rule"])
 
-    text = _call_groq(short_prompt)
+    text, provider = _call_llm(rich_prompt)
     if text:
         scenes = parse_scenes_json(text)
         if scenes:
-            return normalize_scenes(scenes, topic, template_type), "groq"
-
-    text = _call_gemini(rich_prompt)
-    if text:
-        scenes = parse_scenes_json(text)
-        if scenes:
-            return normalize_scenes(scenes, topic, template_type), "gemini"
+            scenes = normalize_scenes(scenes, topic, template_type)
+            try:
+                _enrich_image_prompts(scenes, topic)
+            except Exception as e:
+                print(f"[enrich] Step 2 failed, keeping original prompts: {e}")
+            return scenes, provider
 
     return generate_scenes_fallback(topic, lang), "template"
 
