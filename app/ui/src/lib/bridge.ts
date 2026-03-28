@@ -124,7 +124,7 @@ export interface JobStatus {
   ok: boolean;
   job_id: string;
   status: "queued" | "pending" | "running" | "completed" | "failed";
-  prompt: string;
+  prompt?: string;
   result?: DraftResult | null;
   error?: string;
 }

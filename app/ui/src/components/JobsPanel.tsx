@@ -71,7 +71,7 @@ export default function JobsPanel() {
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: "0.85rem", fontWeight: 500 }}>
-                    {job.prompt.slice(0, 60)}{job.prompt.length > 60 ? "..." : ""}
+                    {(job.prompt || job.result?.message || job.job_id).slice(0, 60)}
                   </div>
                   <div style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", display: "flex", gap: 8 }}>
                     <span className="route-badge" style={{
