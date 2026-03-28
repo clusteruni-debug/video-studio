@@ -3,13 +3,33 @@ Shortform video template prompts for Gemini scene script generation.
 """
 from __future__ import annotations
 
-TEMPLATE_TYPES = ("community_read", "news_explainer", "reddit_translation", "ranking_list", "origin_story")
+TEMPLATE_TYPES = (
+    "community_read", "news_explainer", "reddit_translation", "ranking_list", "origin_story",
+    "vs_comparison", "myth_buster", "tutorial_steps", "before_after", "hot_take",
+)
 
 _JSON_FORMAT = """Each element: {{ "scene_num": N, "narration": "spoken text", "display_text": "screen subtitle max 3 lines", "image_prompt": "English image search query", "image_source": "pexels", "emotion": "neutral|funny|serious|shock|sad", "fallback_prompt": "alt query", "transition": "Dissolve" }}"""
 
+_HOOK_INSTRUCTION = """CRITICAL — Scene 1 MUST be a viewer-retention hook:
+- narration: under 3 seconds when spoken (max 25 chars Korean / 12 words English)
+- emotion: MUST be "shock" or "funny" (NEVER "neutral" for scene 1)
+- display_text: ONE bold line, max 8 chars — a question or surprising claim
+- image_prompt: the most visually striking image in the entire video
+- transition: "Fade_In"
+"""
+
 
 def build_template_prompt(topic: str, lang_name: str, template_type: str) -> str:
-    """Build a Gemini prompt. Topic is repeated at start and end to prevent drift."""
+    """Build a Gemini prompt. Topic is repeated at start and end to prevent drift.
+
+    All templates are prepended with ``_HOOK_INSTRUCTION`` to maximise first-3-second retention.
+    """
+    body = _build_template_body(topic, lang_name, template_type)
+    return f"{_HOOK_INSTRUCTION}\n{body}"
+
+
+def _build_template_body(topic: str, lang_name: str, template_type: str) -> str:
+    """Internal: return the template-specific prompt body (without hook prefix)."""
 
     if template_type == "community_read":
         return f"""Write a YouTube Shorts script about: "{topic}"
@@ -53,7 +73,63 @@ Structure in {lang_name}: Intro(1) → Per item: rank scene + explanation scene 
 Return ONLY a JSON array about "{topic}". {_JSON_FORMAT}
 Extra field on rank scenes: "rank": N"""
 
-    # origin_story
+    if template_type == "vs_comparison":
+        return f"""Write a YouTube Shorts A-vs-B comparison about: "{topic}"
+
+Structure in {lang_name}: Hook(1) → Side A overview(2-3) → Side B overview(4-5) → Key differences(6-7) → Verdict(8)
+- narration: balanced, factual tone in {lang_name}
+- display_text: side labels "A" / "B" clearly marked, max 3 lines
+- emotion: "shock" for hook, "serious" for analysis, "neutral" for verdict
+- image_prompt: product/concept images directly related to "{topic}"
+
+Return ONLY a JSON array about "{topic}". {_JSON_FORMAT}"""
+
+    if template_type == "myth_buster":
+        return f"""Write a YouTube Shorts myth-busting / fact-check about: "{topic}"
+
+Structure in {lang_name}: Hook question(1) → Common belief(2) → Evidence for(3-4) → Evidence against(5-6) → Verdict(7) → CTA(8)
+- narration: investigative, "{lang_name}" style "사실일까요?", "확인해보겠습니다"
+- display_text: "사실" / "거짓" verdict labels, max 3 lines
+- emotion: "shock" for hook & reveals, "serious" for evidence, "neutral" for CTA
+- image_prompt: evidence-related visuals for "{topic}"
+
+Return ONLY a JSON array about "{topic}". {_JSON_FORMAT}"""
+
+    if template_type == "tutorial_steps":
+        return f"""Write a YouTube Shorts step-by-step tutorial about: "{topic}"
+
+Structure in {lang_name}: Problem(1) → Step 1(2-3) → Step 2(4-5) → Step 3(6-7) → Result(8)
+- Step scenes: set "rank": N for step number (1, 2, 3)
+- narration: instructional, clear {lang_name}
+- display_text: "Step N" + brief action, max 3 lines
+- emotion: "neutral" for steps, "funny" or "shock" for result reveal
+
+Return ONLY a JSON array about "{topic}". {_JSON_FORMAT}
+Extra field on step scenes: "rank": N"""
+
+    if template_type == "before_after":
+        return f"""Write a YouTube Shorts before/after transformation about: "{topic}"
+
+Structure in {lang_name}: Before hook(1) → Before details(2-3) → Transition moment(4) → After reveal(5-6) → Impact(7) → CTA(8)
+- narration: dramatic build-up in {lang_name}, contrast "before" vs "after"
+- display_text: "Before" / "After" labels, max 3 lines
+- emotion: "sad" or "serious" for before, "shock" for transition, "funny" for after reveal
+- image_prompt: contrasting visuals for "{topic}"
+
+Return ONLY a JSON array about "{topic}". {_JSON_FORMAT}"""
+
+    if template_type == "hot_take":
+        return f"""Write a YouTube Shorts hot-take / opinion piece about: "{topic}"
+
+Structure in {lang_name}: Bold statement(1) → Context(2-3) → Supporting argument(4-5) → Counter-argument(6) → Conclusion(7) → Engagement CTA(8)
+- narration: opinionated, conversational {lang_name} "~라고 생각합니다", "~일 수도 있습니다"
+- display_text: provocative one-liners, max 3 lines
+- emotion: "shock" for opener, "serious" for arguments, "funny" for CTA
+- CTA: ask viewers to comment their opinion
+
+Return ONLY a JSON array about "{topic}". {_JSON_FORMAT}"""
+
+    # origin_story (default fallback)
     return f"""Write a history/origin storytelling YouTube Shorts about: "{topic}"
 
 Narrative arc in {lang_name}: Hook(1) → Origin(2-3) → Turning point(4-5) → Now(6-7) → Punchline(8)

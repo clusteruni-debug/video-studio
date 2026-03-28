@@ -7,6 +7,11 @@ const TEMPLATE_LABELS: Record<TemplateType, string> = {
   reddit_translation: "해외 글 번역",
   ranking_list: "Top N 랭킹",
   origin_story: "기원/역사 스토리",
+  vs_comparison: "A vs B 비교",
+  myth_buster: "팩트체크/오해와진실",
+  tutorial_steps: "단계별 튜토리얼",
+  before_after: "비포/애프터",
+  hot_take: "핫테이크/논쟁",
 };
 
 const TTS_LABELS: Record<string, string> = {
@@ -14,6 +19,16 @@ const TTS_LABELS: Record<string, string> = {
   elevenlabs: "ElevenLabs",
   google: "Google Cloud TTS",
   "openai-tts": "OpenAI TTS",
+};
+
+const SUBTITLE_STYLE_LABELS: Record<string, string> = {
+  "": "기본 (SRT)",
+  default: "표준 스타일",
+  news: "뉴스/해설",
+  story: "스토리텔링",
+  ranking: "랭킹/퀴즈",
+  minimal: "미니멀",
+  impact: "임팩트 (노랑 강조)",
 };
 
 /* CSS custom properties injected once at :root */
@@ -55,6 +70,7 @@ export default function App() {
   const [templateType, setTemplateType] = useState<TemplateType>("news_explainer");
   const [ttsProvider, setTtsProvider] = useState("edge");
   const [voiceGender, setVoiceGender] = useState<"female" | "male">("female");
+  const [subtitleStyle, setSubtitleStyle] = useState("");
   const [bridgeStatus, setBridgeStatus] = useState<"checking" | "connected" | "offline">("checking");
   const [availableProviders, setAvailableProviders] = useState<string[]>(["edge"]);
   const [availableTemplates, setAvailableTemplates] = useState<TemplateType[]>(Object.keys(TEMPLATE_LABELS) as TemplateType[]);
@@ -80,7 +96,7 @@ export default function App() {
     setError(null);
     setDraftResult(null);
     try {
-      const result = await createDraft(prompt, lang, ttsProvider, voiceGender, templateType);
+      const result = await createDraft(prompt, lang, ttsProvider, voiceGender, templateType, subtitleStyle);
       if (result.ok) {
         setDraftResult(result);
       } else {
@@ -156,6 +172,13 @@ export default function App() {
           style={selectStyle}>
           <option value="female">여성</option>
           <option value="male">남성</option>
+        </select>
+
+        <select value={subtitleStyle} onChange={(e) => setSubtitleStyle(e.target.value)}
+          style={{ ...selectStyle, minWidth: 120 }}>
+          {Object.entries(SUBTITLE_STYLE_LABELS).map(([k, v]) => (
+            <option key={k} value={k}>{v}</option>
+          ))}
         </select>
       </div>
 

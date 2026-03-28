@@ -1,6 +1,6 @@
 const BRIDGE_URL = "http://127.0.0.1:5161";
 
-export type TemplateType = "community_read" | "news_explainer" | "reddit_translation" | "ranking_list" | "origin_story";
+export type TemplateType = "community_read" | "news_explainer" | "reddit_translation" | "ranking_list" | "origin_story" | "vs_comparison" | "myth_buster" | "tutorial_steps" | "before_after" | "hot_take";
 
 export interface BridgeHealth {
   bridge: string;
@@ -54,6 +54,7 @@ export async function createDraft(
   ttsProvider: string,
   voiceGender: string,
   templateType: TemplateType = "news_explainer",
+  subtitleStyle: string = "",
 ): Promise<DraftResult> {
   const resp = await fetch(`${BRIDGE_URL}/api/create-draft`, {
     method: "POST",
@@ -64,6 +65,7 @@ export async function createDraft(
       tts_provider: ttsProvider,
       voice_gender: voiceGender,
       template_type: templateType,
+      subtitle_style: subtitleStyle,
     }),
     signal: AbortSignal.timeout(300_000), // 5 min — pipeline can be slow
   });

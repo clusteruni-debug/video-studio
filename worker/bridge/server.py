@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from urllib import request as urllib_request
@@ -44,6 +45,7 @@ CAPCUT_DRAFT_DIR = Path(os.environ.get(
     str(Path.home() / "AppData" / "Local" / "CapCut" / "User Data" / "Projects" / "com.lveditor.draft"),
 ))
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 
 app = Flask(__name__)
 CORS(app)
@@ -52,65 +54,147 @@ CORS(app)
 # ---------------------------------------------------------------------------
 # Gemini — scene script generation
 # ---------------------------------------------------------------------------
-def _generate_scenes_llm(topic: str, lang: str, template_type: str = "news_explainer") -> tuple[list[dict], str]:
-    """Call Gemini 2.0 Flash to generate a structured scene script.
-    Returns (scenes, source) where source is 'gemini' or 'template'."""
-    if not GEMINI_API_KEY:
-        print("[script] No GEMINI_API_KEY, using template fallback")
-        return _generate_scenes_fallback(topic, lang), "template"
+_TEMPLATE_HINTS = {
+    "community_read": "커뮤니티 글 읽어주기",
+    "news_explainer": "뉴스 해설",
+    "reddit_translation": "해외 글 번역",
+    "ranking_list": "Top N 랭킹",
+    "origin_story": "기원/역사 스토리",
+    "vs_comparison": "A vs B 비교",
+    "myth_buster": "팩트체크",
+    "tutorial_steps": "단계별 튜토리얼",
+    "before_after": "비포/애프터",
+    "hot_take": "핫테이크/논쟁",
+}
 
-    lang_name = "Korean" if not lang.startswith("en") else "English"
-    if template_type not in TEMPLATE_TYPES:
-        template_type = "news_explainer"
-    # Korean wrapper keeps Gemini on-topic; templates.py provides structure hints
-    template_hint = {
-        "community_read": "커뮤니티 글 읽어주기",
-        "news_explainer": "뉴스 해설",
-        "reddit_translation": "해외 글 번역",
-        "ranking_list": "Top N 랭킹",
-        "origin_story": "기원/역사 스토리",
-    }.get(template_type, "뉴스 해설")
-    gemini_prompt = f'{topic}에 대해 유튜브 쇼츠 {template_hint} 영상 스크립트를 만들어줘. 8개 씬. 각 씬마다 나레이션과 영어 이미지 검색어를 포함해줘. JSON 배열로 반환: [{{"scene_num":1,"narration":"나레이션","display_text":"자막","image_prompt":"english image query","emotion":"neutral","image_source":"pexels","transition":"Dissolve"}}]'
 
-    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={GEMINI_API_KEY}"
+def _build_scene_prompt(topic: str, template_type: str) -> str:
+    hint = _TEMPLATE_HINTS.get(template_type, "뉴스 해설")
+    return (
+        f'{topic}에 대해 유튜브 쇼츠 {hint} 영상 스크립트를 만들어줘. '
+        f'8개 씬. 각 씬마다 나레이션과 영어 이미지 검색어를 포함해줘. '
+        f'JSON 배열로 반환: [{{"scene_num":1,"narration":"나레이션",'
+        f'"display_text":"자막","image_prompt":"english image query",'
+        f'"emotion":"neutral","image_source":"pexels","transition":"Dissolve"}}]'
+    )
+
+
+def _normalize_scenes(scenes: list[dict], topic: str) -> list[dict]:
+    for s in scenes:
+        s.setdefault("image_prompt", s.pop("visual_description", topic))
+        s.setdefault("display_text", "")
+        s.setdefault("emotion", "neutral")
+        s.setdefault("image_source", "")
+        s.setdefault("fallback_prompt", "")
+        s.setdefault("transition", "Dissolve")
+        s.setdefault("is_commentary", False)
+        s.setdefault("rank", None)
+
+    # Hook optimisation: ensure scene 1 grabs attention in the first 3 seconds
+    if scenes:
+        hook = scenes[0]
+        hook["transition"] = "Fade_In"
+        if hook.get("emotion") == "neutral":
+            hook["emotion"] = "shock"
+        narr = hook.get("narration", "")
+        if len(narr) > 30:
+            for delim in (".", "!", "?", "。", "！", "？"):
+                idx = narr.find(delim)
+                if 0 < idx < 30:
+                    hook["narration"] = narr[: idx + 1]
+                    break
+
+    return scenes
+
+
+def _parse_scenes_json(text: str) -> list[dict] | None:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1]
+        text = text.rsplit("```", 1)[0].strip()
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+    try:
+        result = json.loads(text)
+        if isinstance(result, dict):
+            for v in result.values():
+                if isinstance(v, list) and v and isinstance(v[0], dict):
+                    return v
+        if isinstance(result, list):
+            return result
+    except json.JSONDecodeError:
+        pass
+    return None
+
+
+def _call_groq(prompt: str) -> str | None:
+    if not GROQ_API_KEY:
+        return None
+    model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
     payload = json.dumps({
-        "contents": [{"parts": [{"text": gemini_prompt}]}],
-        "generationConfig": {
-            "temperature": 0.7,
-            "maxOutputTokens": 4096,
-            "responseMimeType": "application/json",
-        },
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7,
+        "max_tokens": 4096,
+        "response_format": {"type": "json_object"},
     }).encode("utf-8")
+    req = urllib_request.Request(
+        "https://api.groq.com/openai/v1/chat/completions",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "User-Agent": "VideoStudio/1.0",
+        },
+    )
+    try:
+        with urllib_request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+            return data["choices"][0]["message"]["content"]
+    except Exception as e:
+        print(f"[groq] Failed: {e}")
+        return None
 
-    req = urllib_request.Request(gemini_url, data=payload, headers={"Content-Type": "application/json"})
+
+def _call_gemini(prompt: str) -> str | None:
+    if not GEMINI_API_KEY:
+        return None
+    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+    payload = json.dumps({
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.7, "maxOutputTokens": 4096, "responseMimeType": "application/json"},
+    }).encode("utf-8")
+    req = urllib_request.Request(url, data=payload, headers={"Content-Type": "application/json"})
     try:
         with urllib_request.urlopen(req, timeout=45) as resp:
-            raw = resp.read()
-            gemini_data = json.loads(raw)
-            text = gemini_data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            # Strip markdown code fences
-            if text.startswith("```"):
-                text = text.split("\n", 1)[1]
-                text = text.rsplit("```", 1)[0].strip()
-            # Fix common JSON issues: trailing commas
-            text = re.sub(r",\s*([}\]])", r"\1", text)
-            scenes = json.loads(text)
-            for s in scenes:
-                # Normalize: visual_description -> image_prompt (backward compat)
-                s.setdefault("image_prompt", s.pop("visual_description", topic))
-                s.setdefault("display_text", "")
-                s.setdefault("emotion", "neutral")
-                s.setdefault("image_source", "")
-                s.setdefault("fallback_prompt", "")
-                s.setdefault("transition", "Dissolve")
-                s.setdefault("is_commentary", False)
-                s.setdefault("rank", None)
-            return scenes, "gemini"
+            data = json.loads(resp.read())
+            return data["candidates"][0]["content"]["parts"][0]["text"]
     except Exception as e:
-        with open(str(PROJECT_ROOT / "storage" / "gemini_debug.log"), "a") as f:
-            f.write(f"[{time.strftime('%H:%M:%S')}] Gemini failed ({template_type}): {e}\n")
-        return _generate_scenes_fallback(topic, lang), "template"
+        print(f"[gemini] Failed: {e}")
+        return None
+
+
+def _generate_scenes_llm(topic: str, lang: str, template_type: str = "news_explainer") -> tuple[list[dict], str]:
+    """Generate scene script. Groq first (topic-faithful), Gemini fallback, then template."""
+    if template_type not in TEMPLATE_TYPES:
+        template_type = "news_explainer"
+    prompt = _build_scene_prompt(topic, template_type)
+
+    # Try Groq first (free, fast, topic-faithful)
+    text = _call_groq(prompt)
+    if text:
+        scenes = _parse_scenes_json(text)
+        if scenes:
+            return _normalize_scenes(scenes, topic), "groq"
+
+    # Fallback to Gemini
+    text = _call_gemini(prompt)
+    if text:
+        scenes = _parse_scenes_json(text)
+        if scenes:
+            return _normalize_scenes(scenes, topic), "gemini"
+
+    return _generate_scenes_fallback(topic, lang), "template"
 
 
 def _generate_scenes_fallback(topic: str, lang: str) -> list[dict]:
@@ -184,6 +268,7 @@ def health():
         "tts_providers": available_providers(),
         "pexels": "ready" if os.environ.get("PEXELS_API_KEY", "") else "no_key",
         "klipy": "ready" if os.environ.get("KLIPY_API_KEY", "") else "no_key",
+        "groq": "ready" if GROQ_API_KEY else "no_key",
         "gemini": "ready" if GEMINI_API_KEY else "no_key",
         "template_types": list(TEMPLATE_TYPES),
         "capcut_draft_dir": str(CAPCUT_DRAFT_DIR),
@@ -199,6 +284,35 @@ def serve_tts(filename: str):
 @app.route("/api/bgm/<path:filename>", methods=["GET"])
 def serve_bgm(filename: str):
     return send_from_directory(str(PROJECT_ROOT / "assets" / "bgm"), filename)
+
+
+@app.route("/api/thumbnail", methods=["POST"])
+def generate_thumbnail_route():
+    """Generate a thumbnail from a rendered video or image."""
+    data = flask_request.get_json(silent=True) or {}
+    source_path = data.get("source_path", "").strip()
+    if not source_path:
+        return jsonify({"ok": False, "error": "source_path is required"}), 400
+    source = Path(source_path)
+    if not source.exists():
+        return jsonify({"ok": False, "error": f"File not found: {source_path}"}), 404
+
+    text = data.get("text", "")
+    timestamp = float(data.get("timestamp_sec", 1.5))
+    output_dir = PROJECT_ROOT / "storage" / "thumbnails"
+    output_path = output_dir / f"{source.stem}_thumb.png"
+
+    from worker.render.thumbnail import generate_thumbnail, generate_thumbnail_from_image
+
+    is_video = source.suffix.lower() in {".mp4", ".mov", ".webm", ".avi", ".mkv"}
+    if is_video:
+        ok = generate_thumbnail(source, output_path, text=text, timestamp_sec=timestamp)
+    else:
+        ok = generate_thumbnail_from_image(source, output_path, text=text)
+
+    if ok:
+        return jsonify({"ok": True, "thumbnail_path": str(output_path)})
+    return jsonify({"ok": False, "error": "Thumbnail generation failed"}), 500
 
 
 @app.route("/api/create-draft", methods=["POST"])
@@ -533,12 +647,203 @@ def create_draft_route():
 
 
 # ---------------------------------------------------------------------------
+# Translation / Dubbing
+# ---------------------------------------------------------------------------
+
+@app.route("/api/dub", methods=["POST"])
+def dub_route():
+    """Transcribe + translate + generate TTS for a foreign-language audio file."""
+    data = flask_request.get_json(silent=True) or {}
+    source_path = data.get("source_path", "").strip()
+    if not source_path:
+        return jsonify({"ok": False, "error": "source_path is required"}), 400
+    source = Path(source_path)
+    if not source.exists():
+        return jsonify({"ok": False, "error": f"File not found: {source_path}"}), 404
+
+    target_lang = data.get("target_lang", "ko")
+    tts_provider = data.get("tts_provider", "edge")
+    voice_gender = data.get("voice_gender", "female")
+    whisper_model = data.get("whisper_model", "base")
+    style = data.get("style", "natural")
+
+    try:
+        from worker.translation.dubbing import dub_audio
+        result = dub_audio(
+            source_audio=source,
+            target_lang=target_lang,
+            tts_provider=tts_provider,
+            voice_gender=voice_gender,
+            whisper_model=whisper_model,
+            translation_style=style,
+        )
+        return jsonify({"ok": True, **result})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Content Sourcing
+# ---------------------------------------------------------------------------
+
+@app.route("/api/sources/reddit", methods=["GET"])
+def reddit_posts_route():
+    """Fetch popular Reddit posts from a subreddit."""
+    subreddit = flask_request.args.get("subreddit", "todayilearned")
+    sort = flask_request.args.get("sort", "hot")
+    limit = min(int(flask_request.args.get("limit", "10")), 25)
+    try:
+        from worker.sources.reddit import fetch_reddit_posts
+        posts = fetch_reddit_posts(subreddit, sort=sort, limit=limit)
+        return jsonify({"ok": True, "posts": posts})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/sources/reddit/auto", methods=["POST"])
+def reddit_auto_generate_route():
+    """Auto-select best Reddit post and generate a draft using reddit_translation."""
+    data = flask_request.get_json(silent=True) or {}
+    subreddit = data.get("subreddit", "todayilearned")
+    try:
+        from worker.sources.reddit import fetch_reddit_posts, select_best_post, post_to_prompt
+        posts = fetch_reddit_posts(subreddit, limit=15)
+        best = select_best_post(posts)
+        if not best:
+            return jsonify({"ok": False, "error": "No suitable posts found"}), 404
+
+        prompt = post_to_prompt(best)
+        # Forward to create-draft via test client
+        with app.test_client() as client:
+            resp = client.post("/api/create-draft", json={
+                "prompt": prompt,
+                "lang": data.get("lang", "ko"),
+                "tts_provider": data.get("tts_provider", "edge"),
+                "voice_gender": data.get("voice_gender", "female"),
+                "template_type": "reddit_translation",
+            }, content_type="application/json")
+            result = resp.get_json()
+
+        result["source_post"] = {
+            "title": best["title"],
+            "subreddit": best["subreddit"],
+            "score": best["score"],
+            "url": best["url"],
+        }
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/sources/news", methods=["GET"])
+def news_headlines_route():
+    """Fetch news headlines (requires NEWSAPI_KEY)."""
+    query = flask_request.args.get("q", "")
+    country = flask_request.args.get("country", "kr")
+    category = flask_request.args.get("category", "general")
+    try:
+        from worker.sources.news import fetch_news_headlines
+        articles = fetch_news_headlines(query=query, country=country, category=category)
+        return jsonify({"ok": True, "articles": articles})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Batch generation & async job queue
+# ---------------------------------------------------------------------------
+from worker.bridge.batch import BatchManager
+from worker.bridge.job_queue import JobQueue
+
+batch_manager = BatchManager()
+job_queue = JobQueue()
+
+
+def _execute_draft_via_test_client(payload: dict) -> dict:
+    """Execute a create-draft request through the Flask test client.
+
+    This avoids HTTP self-reference deadlocks in the single-threaded Flask
+    server while keeping the full pipeline logic in one place.
+    """
+    with app.test_client() as client:
+        resp = client.post(
+            "/api/create-draft",
+            json=payload,
+            content_type="application/json",
+        )
+        return resp.get_json()
+
+
+job_queue.set_execute_fn(_execute_draft_via_test_client)
+
+
+@app.route("/api/batch/create", methods=["POST"])
+def create_batch_route():
+    data = flask_request.get_json(silent=True) or {}
+    topic = data.get("prompt", "").strip()
+    if not topic:
+        return jsonify({"ok": False, "error": "prompt is required"}), 400
+    variants = min(int(data.get("variants", 3)), 10)
+
+    batch_id = batch_manager.create_batch(
+        topic=topic,
+        variants=variants,
+        template_type=data.get("template_type", "news_explainer"),
+        lang=data.get("lang", "ko"),
+        tts_provider=data.get("tts_provider", "edge"),
+        voice_gender=data.get("voice_gender", "female"),
+        subtitle_style=data.get("subtitle_style", ""),
+    )
+    thread = threading.Thread(
+        target=batch_manager.run_batch,
+        args=(batch_id, _execute_draft_via_test_client),
+        daemon=True,
+    )
+    thread.start()
+    return jsonify({"ok": True, "batch_id": batch_id}), 202
+
+
+@app.route("/api/batch/<batch_id>", methods=["GET"])
+def get_batch_status_route(batch_id: str):
+    job = batch_manager.get_status(batch_id)
+    if not job:
+        return jsonify({"ok": False, "error": "batch not found"}), 404
+    return jsonify({"ok": True, **job.to_dict()})
+
+
+@app.route("/api/batch", methods=["GET"])
+def list_batches_route():
+    return jsonify({"ok": True, "batches": batch_manager.list_jobs()})
+
+
+@app.route("/api/jobs", methods=["GET", "POST"])
+def jobs_route():
+    if flask_request.method == "POST":
+        payload = flask_request.get_json(silent=True) or {}
+        if not payload.get("prompt", "").strip():
+            return jsonify({"ok": False, "error": "prompt is required"}), 400
+        job_id = job_queue.submit(payload)
+        return jsonify({"ok": True, "job_id": job_id}), 202
+    # GET — list recent jobs
+    return jsonify({"ok": True, "jobs": job_queue.list_jobs()})
+
+
+@app.route("/api/jobs/<job_id>", methods=["GET"])
+def get_job_route(job_id: str):
+    job = job_queue.get_job(job_id)
+    if not job:
+        return jsonify({"ok": False, "error": "job not found"}), 404
+    return jsonify({"ok": True, **job.to_dict()})
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
     print(f"Bridge server: http://{BRIDGE_HOST}:{BRIDGE_PORT}")
     print(f"  TTS providers : {available_providers()}")
-    print(f"  Gemini        : {'ready' if GEMINI_API_KEY else 'no key (template fallback)'}")
+    print(f"  Groq          : {'ready' if GROQ_API_KEY else 'no key'}")
+    print(f"  Gemini        : {'ready' if GEMINI_API_KEY else 'no key'}")
     print(f"  Pexels        : {'ready' if os.environ.get('PEXELS_API_KEY', '') else 'no key (no stock images)'}")
     print(f"  Klipy         : {'ready' if os.environ.get('KLIPY_API_KEY', '') else 'no key (no meme/GIF)'}")
     print(f"  Templates     : {', '.join(TEMPLATE_TYPES)}")
