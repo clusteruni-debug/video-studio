@@ -134,6 +134,8 @@ def build_template_prompt(
     lang_name: str,
     template_type: str,
     tone_rule: str = "",
+    scene_count: int = 8,
+    custom_instruction: str = "",
 ) -> str:
     """Build a Gemini prompt. Topic is repeated at start and end to prevent drift.
 
@@ -143,11 +145,15 @@ def build_template_prompt(
     """
     body = _build_template_body(topic, lang_name, template_type)
     body += _QUALITY_RULES
+    body += f"\n★ 총 씬 수: 정확히 {scene_count}개 씬으로 구성하세요."
     example = _EXAMPLES.get(template_type, "")
     if example:
         body += f"\n{example}"
     if tone_rule:
         body += f"\n★ 말투 규칙 (절대 준수): {tone_rule}"
+    if custom_instruction.strip():
+        safe_instruction = custom_instruction.strip()[:300]
+        body += f"\n★ 추가 지시: {safe_instruction}"
     if template_type in _HOOK_EXEMPT:
         return body
     return f"{_HOOK_INSTRUCTION}\n{body}"

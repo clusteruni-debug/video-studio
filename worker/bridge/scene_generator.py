@@ -198,11 +198,16 @@ def _enrich_image_prompts(scenes: list[dict], topic: str) -> None:
     print(f"[enrich] Step 2: {updated}/{len(scenes)} image prompts enriched ({enrich_provider})")
 
 
+_DURATION_SCENE_MAP = {"30s": 5, "1min": 8, "custom": 8}
+
+
 def generate_scenes_llm(
     topic: str,
     lang: str,
     template_type: str = "news_explainer",
     tone: str = "casual_heyo",
+    target_duration: str = "30s",
+    custom_instruction: str = "",
 ) -> tuple[list[dict], str]:
     """Two-step generation: script first, then image prompts separately."""
     lang_name = "Korean" if not lang.startswith("en") else "English"
@@ -211,7 +216,11 @@ def generate_scenes_llm(
     if tone not in TONE_PRESETS:
         tone = "casual_heyo"
     tone_preset = TONE_PRESETS[tone]
-    rich_prompt = build_template_prompt(topic, lang_name, template_type, tone_rule=tone_preset["rule"])
+    scene_count = _DURATION_SCENE_MAP.get(target_duration, 8)
+    rich_prompt = build_template_prompt(
+        topic, lang_name, template_type, tone_rule=tone_preset["rule"],
+        scene_count=scene_count, custom_instruction=custom_instruction,
+    )
 
     text, provider = _call_llm(rich_prompt)
     if text:

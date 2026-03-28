@@ -189,10 +189,16 @@ def create_draft_route():
     template_type = data.get("template_type", "news_explainer")
     tone = data.get("tone", "casual_heyo")
     subtitle_style = data.get("subtitle_style", "")
+    target_duration = data.get("target_duration", "30s")
+    custom_instruction = data.get("custom_instruction", "")
 
     steps_log = []
     # ── Step 1: Generate script ──────────────────────────────────────────
-    scenes, script_source = generate_scenes_llm(topic, lang, template_type, tone)
+    scenes, script_source = generate_scenes_llm(
+        topic, lang, template_type, tone,
+        target_duration=target_duration,
+        custom_instruction=custom_instruction,
+    )
     wrap_narration(scenes)
     steps_log.append(f"script: {len(scenes)} scenes ({script_source}, {template_type}, topic={topic[:30]})")
 
@@ -339,6 +345,8 @@ def create_draft_route():
                 "duration": round(s["_tts_duration"], 1),
                 "has_image": bool(s.get("_image_url")),
                 "rank": s.get("rank"),
+                "image_source": s.get("image_source", ""),
+                "_tts_url": s.get("_tts_url"),
             }
             for s in scenes
         ],

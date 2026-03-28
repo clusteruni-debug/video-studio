@@ -224,9 +224,9 @@ export default function StoryboardPanel() {
         <Plus size={14} /> 씬 추가
       </button>
 
-      {/* Scene detail panel */}
+      {/* Mobile fallback: inline detail (hidden on desktop where right-panel shows) */}
       {selectedSceneIndex !== null && scenes[selectedSceneIndex] && (
-        <div style={{ marginTop: 16 }}>
+        <div className="mobile-scene-detail">
           <SceneDetailPanel />
         </div>
       )}

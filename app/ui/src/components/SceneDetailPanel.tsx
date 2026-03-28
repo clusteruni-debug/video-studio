@@ -1,13 +1,40 @@
-import { X, ImagePlus } from "lucide-react";
+import { useState } from "react";
+import { X, ImagePlus, Search } from "lucide-react";
 import { useStudioState, useStudioActions } from "../context/StudioContext";
+
+type ImageSource = "pexels" | "flux";
+
+const SOURCE_LABELS: Record<ImageSource, string> = {
+  pexels: "Pexels",
+  flux: "FLUX AI",
+};
 
 export default function SceneDetailPanel() {
   const { draftResult, selectedSceneIndex } = useStudioState();
   const actions = useStudioActions();
+  const [editingPrompt, setEditingPrompt] = useState(false);
+  const [promptDraft, setPromptDraft] = useState("");
 
   if (selectedSceneIndex === null || !draftResult?.scenes?.[selectedSceneIndex]) return null;
 
   const scene = draftResult.scenes[selectedSceneIndex];
+  const currentSource = (scene.image_source as ImageSource) || "pexels";
+
+  const handleSourceChange = (src: ImageSource) => {
+    actions.editScene(selectedSceneIndex, "image_source", src);
+  };
+
+  const handlePromptEdit = () => {
+    setPromptDraft(scene.image_prompt || "");
+    setEditingPrompt(true);
+  };
+
+  const commitPrompt = () => {
+    setEditingPrompt(false);
+    if (promptDraft !== scene.image_prompt) {
+      actions.editScene(selectedSceneIndex, "image_prompt", promptDraft);
+    }
+  };
 
   return (
     <div className="scene-detail">
@@ -23,10 +50,65 @@ export default function SceneDetailPanel() {
         </button>
       </div>
 
+      {/* Image source toggle */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: 6 }}>이미지 소스</div>
+        <div className="mode-toggle duration-toggle">
+          {(["pexels", "flux"] as ImageSource[]).map((src) => (
+            <button
+              key={src}
+              className={`mode-toggle-btn duration-toggle-btn ${currentSource === src ? "active" : ""}`}
+              onClick={() => handleSourceChange(src)}
+            >
+              {SOURCE_LABELS[src]}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Image prompt */}
-      {scene.image_prompt && (
-        <p className="scene-detail-prompt">{scene.image_prompt}</p>
-      )}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: 4 }}>
+          {currentSource === "flux" ? "AI 이미지 프롬프트" : "검색어"}
+        </div>
+        {editingPrompt ? (
+          <textarea
+            className="editable-input"
+            value={promptDraft}
+            onChange={(e) => setPromptDraft(e.target.value)}
+            onBlur={commitPrompt}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setEditingPrompt(false);
+            }}
+            rows={2}
+            autoFocus
+          />
+        ) : (
+          <div className="editable-text" onClick={handlePromptEdit}>
+            {scene.image_prompt || <span className="editable-placeholder">이미지 프롬프트 입력...</span>}
+          </div>
+        )}
+      </div>
+
+      {/* Generate button */}
+      <div style={{ marginBottom: 12 }}>
+        <button
+          className="chip"
+          onClick={() => {
+            if (scene.image_prompt) {
+              actions.enqueueImages([scene]);
+              actions.setActiveTab("images");
+            }
+          }}
+          disabled={!scene.image_prompt}
+        >
+          {currentSource === "flux" ? (
+            <><ImagePlus size={12} /> FLUX 이미지 생성</>
+          ) : (
+            <><Search size={12} /> Pexels 검색</>
+          )}
+        </button>
+      </div>
 
       {/* Meta */}
       <div className="scene-detail-meta">
@@ -60,28 +142,6 @@ export default function SceneDetailPanel() {
             </div>
           </div>
         )}
-      </div>
-
-      {/* Footer actions */}
-      <div className="scene-detail-footer">
-        <div>
-          <strong>에셋</strong>
-          <br />
-          <small>{scene.has_image ? "이미지 준비됨" : "이미지 없음"}</small>
-        </div>
-        <div className="scene-detail-asset-actions">
-          <button
-            className="chip"
-            onClick={() => {
-              if (scene.image_prompt) {
-                actions.enqueueImages([scene]);
-                actions.setActiveTab("images");
-              }
-            }}
-          >
-            <ImagePlus size={12} /> 이미지 생성
-          </button>
-        </div>
       </div>
     </div>
   );

@@ -8,9 +8,15 @@ import BatchPanel from "./components/BatchPanel";
 import JobsPanel from "./components/JobsPanel";
 import BottomBar from "./components/BottomBar";
 import DebugDrawer from "./components/DebugDrawer";
+import SceneDetailPanel from "./components/SceneDetailPanel";
 
 function StudioShell() {
-  const { activeTab } = useStudioState();
+  const { activeTab, selectedSceneIndex, draftResult } = useStudioState();
+
+  const showRightPanel =
+    activeTab === "storyboard" &&
+    selectedSceneIndex !== null &&
+    draftResult?.scenes?.[selectedSceneIndex] != null;
 
   return (
     <div className="studio-shell">
@@ -24,6 +30,11 @@ function StudioShell() {
           {activeTab === "batch" && <BatchPanel />}
           {activeTab === "jobs" && <JobsPanel />}
         </main>
+        {showRightPanel && (
+          <aside className="right-panel">
+            <SceneDetailPanel />
+          </aside>
+        )}
       </div>
       <BottomBar />
       <DebugDrawer />

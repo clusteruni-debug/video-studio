@@ -375,6 +375,15 @@ button { cursor: pointer; }
     overflow-y: auto;
 }
 
+.right-panel {
+    width: 340px;
+    flex-shrink: 0;
+    padding: 16px;
+    overflow-y: auto;
+    border-left: 1px solid var(--border-subtle);
+    background: var(--bg-elevated);
+}
+
 /* Canvas empty state */
 .canvas-empty {
     display: flex;
@@ -692,6 +701,12 @@ button { cursor: pointer; }
     padding: 4px 6px;
     outline: none;
     resize: vertical;
+}
+
+/* ─── Mobile scene detail fallback ─── */
+.mobile-scene-detail {
+    display: none;
+    margin-top: 16px;
 }
 
 /* ─── Scene detail panel ─── */
@@ -1452,6 +1467,14 @@ textarea {
 
     .sidebar-history {
         display: none;
+    }
+
+    .right-panel {
+        display: none;
+    }
+
+    .mobile-scene-detail {
+        display: block;
     }
 
     .scene-grid {
