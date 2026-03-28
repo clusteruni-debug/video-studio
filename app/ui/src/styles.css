@@ -522,6 +522,178 @@ button { cursor: pointer; }
     color: var(--text-tertiary);
 }
 
+/* ─── Scene list (vertical) ─── */
+.scene-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.scene-row {
+    display: flex;
+    align-items: stretch;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+    cursor: pointer;
+    transition: border-color 0.15s;
+}
+
+.scene-row:hover {
+    border-color: var(--border);
+}
+
+.scene-row.selected {
+    border-color: var(--accent);
+}
+
+.scene-row-num {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-width: 36px;
+    padding-top: 2px;
+}
+
+.scene-num-badge {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--bg-active);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.scene-emotion-badge {
+    font-size: 0.6rem;
+    padding: 1px 6px;
+    border-radius: 999px;
+    color: var(--text-primary);
+}
+
+.scene-emotion-shock { background: var(--error-dim); color: var(--error); }
+.scene-emotion-funny { background: var(--warning-dim); color: var(--warning); }
+.scene-emotion-serious { background: var(--accent-dim); color: var(--accent); }
+.scene-emotion-sad { background: var(--accent-dim); color: var(--accent); }
+
+.scene-row-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.scene-row-narration {
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--text-primary);
+    white-space: pre-line;
+}
+
+.scene-row-display-text {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    white-space: pre-line;
+}
+
+.scene-row-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.scene-row:hover .scene-row-actions {
+    opacity: 1;
+}
+
+.scene-action-btn {
+    background: none;
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    padding: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.scene-action-btn:hover:not(:disabled) {
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+.scene-action-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.scene-action-delete:hover:not(:disabled) {
+    border-color: var(--error);
+    color: var(--error);
+}
+
+.scene-add-end {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 10px;
+    margin-top: 8px;
+    background: none;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    cursor: pointer;
+}
+
+.scene-add-end:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+
+/* ─── Editable text ─── */
+.editable-text {
+    cursor: text;
+    padding: 2px 4px;
+    border-radius: 4px;
+    min-height: 1.4em;
+}
+
+.editable-text:hover {
+    background: var(--bg-hover);
+}
+
+.editable-placeholder {
+    color: var(--text-tertiary);
+    font-style: italic;
+}
+
+.editable-input {
+    width: 100%;
+    background: var(--bg-surface);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: inherit;
+    font-family: inherit;
+    padding: 4px 6px;
+    outline: none;
+    resize: vertical;
+}
+
 /* ─── Scene detail panel ─── */
 .scene-detail {
     padding: 16px;
@@ -1287,6 +1459,10 @@ textarea {
 
     .scene-grid {
         grid-template-columns: 1fr;
+    }
+
+    .scene-row-actions {
+        opacity: 1;
     }
 
     .image-gallery {

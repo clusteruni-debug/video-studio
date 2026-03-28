@@ -28,6 +28,9 @@ export interface Scene {
   duration: number;
   has_image: boolean;
   rank: number | null;
+  _tts_url?: string | null;
+  is_commentary?: boolean;
+  transition?: string;
 }
 
 export interface DraftResult {

@@ -101,7 +101,11 @@ type Action =
   | { type: "IMAGE_QUEUE_UPDATE"; items: QueueItem[]; processing: boolean }
   | { type: "BATCH_UPDATE"; status: BatchStatus }
   | { type: "BATCHES_LOADED"; batches: BatchStatus[] }
-  | { type: "JOBS_LOADED"; jobs: JobStatus[] };
+  | { type: "JOBS_LOADED"; jobs: JobStatus[] }
+  | { type: "EDIT_SCENE"; index: number; field: keyof Scene; value: unknown }
+  | { type: "DELETE_SCENE"; index: number }
+  | { type: "ADD_SCENE"; afterIndex: number }
+  | { type: "REORDER_SCENE"; fromIndex: number; toIndex: number };
 
 function reducer(state: StudioState, action: Action): StudioState {
   switch (action.type) {
@@ -135,6 +139,47 @@ function reducer(state: StudioState, action: Action): StudioState {
       return { ...state, batches: action.batches };
     case "JOBS_LOADED":
       return { ...state, jobs: action.jobs };
+    case "EDIT_SCENE": {
+      if (!state.draftResult?.scenes) return state;
+      const scenes = [...state.draftResult.scenes];
+      scenes[action.index] = { ...scenes[action.index], [action.field]: action.value };
+      return { ...state, draftResult: { ...state.draftResult, scenes } };
+    }
+    case "DELETE_SCENE": {
+      if (!state.draftResult?.scenes || state.draftResult.scenes.length <= 1) return state;
+      const scenes = state.draftResult.scenes
+        .filter((_, i) => i !== action.index)
+        .map((s, i) => ({ ...s, scene_num: i + 1 }));
+      const sel = state.selectedSceneIndex;
+      let newSel: number | null = sel;
+      if (sel !== null) {
+        if (sel === action.index) newSel = null;
+        else if (sel > action.index) newSel = sel - 1;
+        if (newSel !== null && newSel >= scenes.length) newSel = scenes.length - 1;
+      }
+      return { ...state, draftResult: { ...state.draftResult, scenes }, selectedSceneIndex: newSel };
+    }
+    case "ADD_SCENE": {
+      if (!state.draftResult?.scenes) return state;
+      const raw = [...state.draftResult.scenes];
+      const newScene: Scene = {
+        scene_num: 0, narration: "", display_text: "", image_prompt: "",
+        emotion: "neutral", duration: 4, has_image: false, rank: null,
+        _tts_url: null, is_commentary: false, transition: "Dissolve",
+      };
+      raw.splice(action.afterIndex + 1, 0, newScene);
+      const scenes = raw.map((s, i) => ({ ...s, scene_num: i + 1 }));
+      return { ...state, draftResult: { ...state.draftResult, scenes }, selectedSceneIndex: action.afterIndex + 1 };
+    }
+    case "REORDER_SCENE": {
+      if (!state.draftResult?.scenes) return state;
+      if (action.fromIndex === action.toIndex) return state;
+      const raw = [...state.draftResult.scenes];
+      const [moved] = raw.splice(action.fromIndex, 1);
+      raw.splice(action.toIndex, 0, moved);
+      const scenes = raw.map((s, i) => ({ ...s, scene_num: i + 1 }));
+      return { ...state, draftResult: { ...state.draftResult, scenes }, selectedSceneIndex: action.toIndex };
+    }
     default:
       return state;
   }
@@ -159,6 +204,10 @@ export interface StudioActions {
   enqueueImages(scenes: Scene[]): void;
   retryImage(id: string): void;
   clearImages(): void;
+  editScene(index: number, field: keyof Scene, value: unknown): void;
+  deleteScene(index: number): void;
+  addScene(afterIndex: number): void;
+  reorderScene(fromIndex: number, toIndex: number): void;
   deleteProject(id: string): void;
   startBatch(variants: number): Promise<string | null>;
   refreshBatches(): Promise<void>;
@@ -301,6 +350,18 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: "IMAGE_QUEUE_UPDATE", items: [], processing: false });
     },
 
+    editScene(index, field, value) {
+      dispatch({ type: "EDIT_SCENE", index, field, value });
+    },
+    deleteScene(index) {
+      dispatch({ type: "DELETE_SCENE", index });
+    },
+    addScene(afterIndex) {
+      dispatch({ type: "ADD_SCENE", afterIndex });
+    },
+    reorderScene(fromIndex, toIndex) {
+      dispatch({ type: "REORDER_SCENE", fromIndex, toIndex });
+    },
     deleteProject(id) {
       dispatch({ type: "DELETE_PROJECT", id });
     },
