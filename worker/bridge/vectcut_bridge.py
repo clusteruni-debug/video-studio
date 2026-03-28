@@ -143,11 +143,15 @@ def add_subtitle(
     transform_y: float = -0.35,
     border_width: float = 0.12,
     shadow_distance: float = 5.0,
+    intro_animation: str = "Fade_In",
+    intro_duration: float = 0.3,
+    background_color: str = "",
+    background_alpha: float = 0.0,
 ) -> bool:
     """Add a text subtitle overlay.  Returns True on success."""
     _text = _get_vectcut().text
     try:
-        _text(
+        kwargs = dict(
             text=text,
             start=start, end=end,
             draft_id=draft_id,
@@ -164,10 +168,13 @@ def add_subtitle(
             shadow_color="#000000",
             shadow_alpha=1.0,
             shadow_distance=shadow_distance,
-            background_alpha=0.0,
-            intro_animation="Fade_In",
-            intro_duration=0.3,
+            background_alpha=background_alpha,
+            intro_animation=intro_animation,
+            intro_duration=intro_duration,
         )
+        if background_color and background_alpha > 0:
+            kwargs["background_color"] = background_color
+        _text(**kwargs)
         return True
     except Exception as e:
         print(f"[vectcut] add_text scene {scene_num}: {e}")

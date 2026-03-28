@@ -12,8 +12,8 @@ from urllib import request as urllib_request
 
 from worker.bridge.templates import TEMPLATE_TYPES, build_template_prompt, _HOOK_EXEMPT
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+def _get_key(name: str) -> str:
+    return os.environ.get(name, "")
 
 # --- Tone presets (종결어미) — independent from template ---
 TONE_PRESETS = {
@@ -45,8 +45,40 @@ TONE_PRESETS = {
 }
 
 
+def _extract_key_phrase(narration: str, max_len: int = 24) -> str:
+    """Extract the most salient phrase from narration for display_text."""
+    # Look for numbers with units
+    number_pattern = re.compile(r'[\d,]+\.?\d*\s*[%원달러만억조배위개월년일초분시]')
+    numbers = number_pattern.findall(narration)
+    if numbers:
+        return numbers[0].strip()
+    # First clause up to Korean sentence delimiter
+    for d in ("거든요.", "이에요.", "예요.", "했어요.", "는데요.", "잖아요.", "해요.", "돼요."):
+        idx = narration.find(d)
+        if 0 < idx < max_len:
+            return narration[:idx].strip()
+    # Fallback: first part before comma or period
+    for d in (",", ".", "!", "?"):
+        idx = narration.find(d)
+        if 0 < idx < max_len:
+            return narration[:idx].strip()
+    return narration[:max_len].strip()
+
+
+def _display_text_matches_narration(display_text: str, narration: str) -> bool:
+    """Check if display_text shares key tokens with narration."""
+    if not display_text or not narration:
+        return False
+    # Normalize: remove newlines, markdown, whitespace
+    dt_clean = re.sub(r'[*\n\\n]', ' ', display_text).strip().lower()
+    narr_clean = narration.lower()
+    # Check if any word (>= 2 chars) from display_text appears in narration
+    words = [w for w in re.split(r'\s+', dt_clean) if len(w) >= 2]
+    return any(w in narr_clean for w in words) if words else False
+
+
 def normalize_scenes(scenes: list[dict], topic: str, template_type: str = "") -> list[dict]:
-    """Fill missing fields and apply hook optimization (exempt templates skip hook)."""
+    """Fill missing fields, validate display_text, apply hook optimization."""
     for s in scenes:
         s.setdefault("image_prompt", s.pop("visual_description", topic))
         s.setdefault("display_text", "")
@@ -57,19 +89,17 @@ def normalize_scenes(scenes: list[dict], topic: str, template_type: str = "") ->
         s.setdefault("is_commentary", False)
         s.setdefault("rank", None)
 
+        # Validate display_text matches narration; auto-fix if not
+        narr = s.get("narration", "")
+        dt = s.get("display_text", "")
+        if narr and (not dt or not _display_text_matches_narration(dt, narr)):
+            s["display_text"] = _extract_key_phrase(narr)
+
     if scenes and template_type not in _HOOK_EXEMPT:
         hook = scenes[0]
         hook["transition"] = "Fade_In"
         if hook.get("emotion") == "neutral":
             hook["emotion"] = "shock"
-        # Truncate long narrations to first sentence boundary under 30 chars
-        narr = hook.get("narration", "")
-        if len(narr) > 30:
-            for delim in (".", "!", "?", "。", "！", "？"):
-                idx = narr.find(delim)
-                if 0 < idx < 30:
-                    hook["narration"] = narr[: idx + 1]
-                    break
 
     return scenes
 
@@ -95,7 +125,7 @@ def parse_scenes_json(text: str) -> list[dict] | None:
 
 
 def _call_groq(prompt: str) -> str | None:
-    if not GROQ_API_KEY:
+    if not _get_key("GROQ_API_KEY"):
         return None
     model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
     payload = json.dumps({
@@ -110,7 +140,7 @@ def _call_groq(prompt: str) -> str | None:
         data=payload,
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Authorization": f"Bearer {_get_key("GROQ_API_KEY")}",
             "User-Agent": "VideoStudio/1.0",
         },
     )
@@ -123,28 +153,40 @@ def _call_groq(prompt: str) -> str | None:
         return None
 
 
-def _call_gemini(prompt: str) -> str | None:
-    if not GEMINI_API_KEY:
+def _call_gemini(prompt: str, use_search: bool = False) -> str | None:
+    if not _get_key("GEMINI_API_KEY"):
         return None
     model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
-    payload = json.dumps({
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={_get_key("GEMINI_API_KEY")}"
+    gen_config: dict = {"temperature": 0.7, "maxOutputTokens": 4096}
+    # google_search tool is incompatible with responseMimeType: "application/json"
+    if not use_search:
+        gen_config["responseMimeType"] = "application/json"
+    body: dict = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.7, "maxOutputTokens": 4096, "responseMimeType": "application/json"},
-    }).encode("utf-8")
+        "generationConfig": gen_config,
+    }
+    if use_search:
+        body["tools"] = [{"google_search": {}}]
+    payload = json.dumps(body).encode("utf-8")
     req = urllib_request.Request(url, data=payload, headers={"Content-Type": "application/json"})
     try:
-        with urllib_request.urlopen(req, timeout=45) as resp:
+        with urllib_request.urlopen(req, timeout=60) as resp:
             data = json.loads(resp.read())
-            return data["candidates"][0]["content"]["parts"][0]["text"]
+            candidate = data["candidates"][0]
+            if use_search and "groundingMetadata" in candidate:
+                sources = candidate["groundingMetadata"].get("groundingChunks", [])
+                if sources:
+                    print(f"[gemini] Grounded with {len(sources)} web sources")
+            return candidate["content"]["parts"][0]["text"]
     except Exception as e:
         print(f"[gemini] Failed: {e}")
         return None
 
 
-def _call_llm(prompt: str) -> tuple[str | None, str]:
+def _call_llm(prompt: str, use_search: bool = False) -> tuple[str | None, str]:
     """Try Gemini first, Groq fallback.  Returns (text, provider)."""
-    text = _call_gemini(prompt)
+    text = _call_gemini(prompt, use_search=use_search)
     if text:
         return text, "gemini"
     text = _call_groq(prompt)
@@ -163,12 +205,16 @@ def _enrich_image_prompts(scenes: list[dict], topic: str) -> None:
     prompt = (
         f'Topic: "{topic}"\n\n'
         f'Below are scenes from a YouTube Shorts script. '
-        f'For each scene, write a concrete English image search query for Pexels/Unsplash. '
+        f'For each scene, write a concrete English image generation prompt for AI (Imagen 3). '
         f'Rules:\n'
-        f'- NEVER use abstract words like "concept", "representation", "digital illustration"\n'
-        f'- Use real objects, places, people, actions (e.g. "golden bitcoin coin on laptop keyboard")\n'
-        f'- Each query must be directly related to "{topic}", not generic stock photos\n'
-        f'- 3-8 words per query, noun-heavy\n\n'
+        f'- NEVER: "abstract concept", "technology background", "business meeting", "digital illustration"\n'
+        f'- NEVER: generic stock photo descriptions\n'
+        f'- ALWAYS: specific objects with descriptive adjectives and lighting\n'
+        f'- GOOD: "golden bitcoin coins stacked on circuit board, dramatic blue lighting, close-up macro"\n'
+        f'- GOOD: "young Korean woman excited at phone screen, cafe background, natural daylight"\n'
+        f'- Each prompt must paint a SPECIFIC visual scene related to "{topic}"\n'
+        f'- 8-20 words per prompt, descriptive and visual\n'
+        f'- Include camera angle, lighting, and mood keywords\n\n'
         f'Scenes:\n' + '\n'.join(scene_summaries) + '\n\n'
         f'Return a JSON array of objects: [{{"scene_num": 1, "image_prompt": "..."}}]'
     )
@@ -198,7 +244,7 @@ def _enrich_image_prompts(scenes: list[dict], topic: str) -> None:
     print(f"[enrich] Step 2: {updated}/{len(scenes)} image prompts enriched ({enrich_provider})")
 
 
-_DURATION_SCENE_MAP = {"30s": 5, "1min": 8, "custom": 8}
+_DURATION_SCENE_MAP = {"30s": 6, "1min": 10, "custom": 8}
 
 
 def generate_scenes_llm(
@@ -220,9 +266,10 @@ def generate_scenes_llm(
     rich_prompt = build_template_prompt(
         topic, lang_name, template_type, tone_rule=tone_preset["rule"],
         scene_count=scene_count, custom_instruction=custom_instruction,
+        target_duration=target_duration,
     )
 
-    text, provider = _call_llm(rich_prompt)
+    text, provider = _call_llm(rich_prompt, use_search=True)
     if text:
         scenes = parse_scenes_json(text)
         if scenes:
@@ -233,7 +280,8 @@ def generate_scenes_llm(
                 print(f"[enrich] Step 2 failed, keeping original prompts: {e}")
             return scenes, provider
 
-    return generate_scenes_fallback(topic, lang), "template"
+    fallback = generate_scenes_fallback(topic, lang)
+    return normalize_scenes(fallback, topic, template_type), "template"
 
 
 def generate_scenes_fallback(topic: str, lang: str) -> list[dict]:

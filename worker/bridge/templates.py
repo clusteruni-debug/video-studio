@@ -5,20 +5,27 @@ Each template includes one golden example scene to anchor quality expectations.
 """
 from __future__ import annotations
 
+from datetime import date
+
 TEMPLATE_TYPES = (
     "community_read", "news_explainer", "reddit_translation", "ranking_list", "origin_story",
     "vs_comparison", "myth_buster", "tutorial_steps", "before_after", "hot_take",
 )
 
-_JSON_FORMAT = """Each element: {{ "scene_num": N, "narration": "spoken text", "display_text": "screen subtitle max 3 lines", "image_prompt": "English image search query", "image_source": "pexels", "emotion": "neutral|funny|serious|shock|sad", "fallback_prompt": "alt query", "transition": "Dissolve" }}"""
+_JSON_FORMAT = """Each element: {{ "scene_num": N, "narration": "full spoken text for TTS (40-60 Korean chars, 2-3 sentences)", "display_text": "KEY phrase extracted FROM narration (max 12 chars/line, max 2 lines)", "image_prompt": "English image search query", "image_source": "pexels", "emotion": "neutral|funny|serious|shock|sad", "fallback_prompt": "alt query", "transition": "Dissolve" }}"""
 
 _QUALITY_RULES = """
 NARRATION QUALITY RULES (must follow):
-- Each narration must contain a SPECIFIC fact, number, name, or anecdote — never vague filler
-- BAD: "큰 의미를 부여하고 있어요" / "많은 변화가 있었어요" / "주목받고 있어요"
-- GOOD: "시가총액이 2조 달러를 넘겼거든요" / "2009년 사토시가 처음 만들었는데요" / "테슬라가 15억 달러어치 샀어요"
-- Max 25 chars per narration sentence
-- display_text: only the key number or keyword, max 2 lines
+- Each narration: 2-3 natural spoken sentences, 40-60 Korean chars total (= 3-5 seconds when spoken)
+- Every narration MUST contain a SPECIFIC fact, number, name, or anecdote — never vague filler
+- BAD: "큰 변화가 예상돼요" / "많은 관심을 받고 있어요" / "주목할 만해요"
+- GOOD: "채굴 보상이 6.25에서 3.125 비트코인으로 줄어들거든요. 공급이 반토막 나는 거예요."
+
+DISPLAY_TEXT RULES (must follow):
+- display_text MUST be a key phrase EXTRACTED from narration — never independent new text
+- WRONG: narration="비트코인 가격이 10만 달러를 돌파했어요" / display_text="시장 급등"
+- RIGHT: narration="비트코인 가격이 10만 달러를 돌파했어요" / display_text="10만 달러 돌파"
+- Max 2 lines, max 12 chars per line — show the KEY number or keyword from narration
 """
 
 _HOOK_INSTRUCTION = """CRITICAL — Scene 1 MUST be a viewer-retention hook:
@@ -39,92 +46,92 @@ _EXAMPLES = {
     "news_explainer": '''
 Example (topic: "삼성전자 3나노 수율 돌파"):
 [
-  {"scene_num":1,"narration":"삼성이 드디어 해냈어요!","display_text":"3나노 수율 돌파","emotion":"shock","transition":"Fade_In"},
-  {"scene_num":2,"narration":"3나노 공정 수율이 60%를 넘겼거든요.","display_text":"수율 60%+","emotion":"serious","transition":"Dissolve"},
-  {"scene_num":3,"narration":"TSMC도 아직 못 한 수치예요.","display_text":"TSMC 대비\\n앞서는 수치","emotion":"serious","transition":"Dissolve"}
+  {"scene_num":1,"narration":"삼성이 드디어 3나노 공정에서 역대급 성과를 냈어요. 반도체 업계가 뒤집어졌거든요.","display_text":"3나노 수율 돌파","emotion":"shock","transition":"Fade_In"},
+  {"scene_num":2,"narration":"3나노 공정 수율이 60%를 넘겼는데, 이게 업계 최초 수치예요. 작년까지만 해도 30%대였거든요.","display_text":"수율 60%+\\n업계 최초","emotion":"serious","transition":"Dissolve"},
+  {"scene_num":3,"narration":"경쟁사 TSMC는 아직 55% 수준이에요. 처음으로 삼성이 수율에서 앞서게 된 거예요.","display_text":"TSMC 55%\\nvs 삼성 60%","emotion":"serious","transition":"Dissolve"}
 ]
-(continue this quality for all 8 scenes — every narration needs a concrete fact)
+(continue this quality for all scenes — every narration has 2-3 sentences with concrete facts)
 ''',
     "community_read": '''
 Example (topic: "자취방 월세 50만원인데 관리비가 30만원"):
 [
-  {"scene_num":1,"narration":"월세보다 관리비가 더 비쌌대요!","display_text":"관리비 30만?","emotion":"shock","transition":"Fade_In"},
-  {"scene_num":2,"narration":"월세가 50만원이었는데요.","display_text":"월세 50만원","emotion":"neutral","transition":"Dissolve"},
-  {"scene_num":3,"narration":"관리비 고지서를 보니까 30만원이 찍혀있었대요.","display_text":"관리비 30만원\\n청구서","emotion":"shock","transition":"Dissolve"}
+  {"scene_num":1,"narration":"월세보다 관리비가 더 비싼 집이 있대요. 진짜 이게 말이 되나 싶은 사연이에요.","display_text":"관리비 30만?","emotion":"shock","transition":"Fade_In"},
+  {"scene_num":2,"narration":"원래 월세가 50만원이었거든요. 저렴하다 싶어서 바로 계약했대요.","display_text":"월세 50만원","emotion":"neutral","transition":"Dissolve"},
+  {"scene_num":3,"narration":"그런데 첫 달 관리비 고지서가 30만원이 찍혀 나왔대요. 난방비만 18만원이었다고요.","display_text":"관리비 30만원\\n난방비 18만","emotion":"shock","transition":"Dissolve"}
 ]
-(continue — use specific numbers, direct quotes, reactions from the post)
+(continue — each narration 2-3 sentences, use specific numbers, direct quotes)
 ''',
     "reddit_translation": '''
 Example (topic: "미국인이 한국 편의점 가서 충격받은 이야기"):
 [
-  {"scene_num":1,"narration":"한국 편의점에서 삼각김밥을 처음 봤대요.","display_text":"삼각김밥 충격","emotion":"funny","transition":"Dissolve"},
-  {"scene_num":2,"narration":"참치마요 하나에 1200원이라고요.","display_text":"1200원\\n(약 $0.90)","emotion":"shock","transition":"Dissolve","is_commentary":false},
-  {"scene_num":3,"narration":"미국 편의점 샌드위치가 8달러인데 비교가 안 된대요.","display_text":"미국 $8 vs\\n한국 $0.90","emotion":"funny","transition":"Dissolve","is_commentary":true}
+  {"scene_num":1,"narration":"한국 편의점에서 삼각김밥을 처음 봤대요. 이 삼각형 모양이 뭐냐고 한참을 쳐다봤다고요.","display_text":"삼각김밥 충격","emotion":"funny","transition":"Dissolve"},
+  {"scene_num":2,"narration":"참치마요 하나에 1200원이라고요. 미국 돈으로 90센트도 안 하는 거예요.","display_text":"1200원\\n(약 $0.90)","emotion":"shock","transition":"Dissolve","is_commentary":false},
+  {"scene_num":3,"narration":"미국 편의점 샌드위치가 8달러인데 맛은 비교도 안 된대요. 한국이 미쳤다고 했어요.","display_text":"미국 $8 vs\\n한국 $0.90","emotion":"funny","transition":"Dissolve","is_commentary":true}
 ]
-(continue — translate naturally, add price/cultural comparisons)
+(continue — each narration 2-3 sentences with price/cultural comparisons)
 ''',
     "ranking_list": '''
 Example (topic: "세계에서 가장 비싼 운동화 Top 5"):
 [
-  {"scene_num":1,"narration":"5위부터 시작할게요!","display_text":"Top 5 운동화","emotion":"neutral","transition":"Dissolve"},
-  {"scene_num":2,"narration":"5위, 에어맥스 1/97 숀 워더스푼.","display_text":"5위\\n숀 워더스푼","emotion":"neutral","transition":"Slide_Left","rank":5},
-  {"scene_num":3,"narration":"리셀가가 500만원을 넘겼거든요.","display_text":"리셀가 500만원+","emotion":"shock","transition":"Dissolve"}
+  {"scene_num":1,"narration":"세계에서 가장 비싼 운동화 Top 5를 알려드릴게요. 5위부터 시작합니다!","display_text":"Top 5 운동화","emotion":"neutral","transition":"Dissolve"},
+  {"scene_num":2,"narration":"5위, 에어맥스 1/97 숀 워더스푼이에요. 2017년에 나온 한정판이거든요.","display_text":"5위\\n숀 워더스푼","emotion":"neutral","transition":"Slide_Left","rank":5},
+  {"scene_num":3,"narration":"리셀가가 500만원을 넘겼어요. 출시가의 10배가 넘는 가격이에요.","display_text":"리셀가\\n500만원+","emotion":"shock","transition":"Dissolve"}
 ]
-(continue — each rank scene must have "rank": N and a specific price/stat)
+(continue — each rank scene has "rank": N, 2-3 sentences with specific price/stat)
 ''',
     "origin_story": '''
 Example (topic: "라면의 탄생"):
 [
-  {"scene_num":1,"narration":"라면이 원래 전쟁 때문에 생긴 거 알아요?","display_text":"전쟁이 만든\\n라면?","emotion":"shock","transition":"Fade_In"},
-  {"scene_num":2,"narration":"1958년 일본, 안도 모모후쿠가 발명했어요.","display_text":"1958년\\n안도 모모후쿠","emotion":"neutral","transition":"Dissolve"},
-  {"scene_num":3,"narration":"전후 식량난에 미국이 밀가루를 원조했거든요.","display_text":"미국 밀가루\\n원조","emotion":"serious","transition":"Dissolve"}
+  {"scene_num":1,"narration":"라면이 원래 전쟁 때문에 생긴 거 알아요? 진짜 뜻밖의 탄생 배경이 있거든요.","display_text":"전쟁이 만든\\n라면?","emotion":"shock","transition":"Fade_In"},
+  {"scene_num":2,"narration":"1958년 일본에서 안도 모모후쿠라는 사람이 발명했어요. 당시 나이가 48세였거든요.","display_text":"1958년\\n안도 모모후쿠","emotion":"neutral","transition":"Dissolve"},
+  {"scene_num":3,"narration":"2차 대전 후 일본이 식량난이었는데, 미국이 밀가루를 원조했어요. 이걸로 뭘 만들까 고민한 거예요.","display_text":"전후 식량난\\n밀가루 원조","emotion":"serious","transition":"Dissolve"}
 ]
-(continue — use years, names, specific historical events)
+(continue — each narration 2-3 sentences with years, names, specific historical events)
 ''',
     "vs_comparison": '''
 Example (topic: "아이폰 vs 갤럭시"):
 [
-  {"scene_num":1,"narration":"둘 중 뭐가 더 나을까요?","display_text":"아이폰 vs\\n갤럭시","emotion":"shock","transition":"Fade_In"},
-  {"scene_num":2,"narration":"아이폰 16 프로 카메라는 4800만 화소예요.","display_text":"아이폰\\n4800만 화소","emotion":"serious","transition":"Dissolve"},
-  {"scene_num":3,"narration":"갤럭시 S25 울트라는 2억 화소거든요.","display_text":"갤럭시\\n2억 화소","emotion":"shock","transition":"Dissolve"}
+  {"scene_num":1,"narration":"아이폰이랑 갤럭시, 진짜 어느 쪽이 더 나을까요? 스펙으로 비교해볼게요.","display_text":"아이폰 vs\\n갤럭시","emotion":"shock","transition":"Fade_In"},
+  {"scene_num":2,"narration":"아이폰 16 프로 카메라는 4800만 화소예요. 근데 센서 크기가 1/1.14인치로 커졌거든요.","display_text":"아이폰\\n4800만 화소","emotion":"serious","transition":"Dissolve"},
+  {"scene_num":3,"narration":"갤럭시 S25 울트라는 2억 화소예요. 숫자만 보면 4배 차이가 나는 거예요.","display_text":"갤럭시\\n2억 화소","emotion":"shock","transition":"Dissolve"}
 ]
-(continue — always include specific specs, prices, benchmark numbers)
+(continue — each narration 2-3 sentences with specific specs, prices, benchmark numbers)
 ''',
     "myth_buster": '''
 Example (topic: "달걀 하루 3개 먹으면 콜레스테롤 위험할까"):
 [
-  {"scene_num":1,"narration":"달걀 3개, 진짜 위험할까요?","display_text":"달걀 3개\\n위험?","emotion":"shock","transition":"Fade_In"},
-  {"scene_num":2,"narration":"하루 3개 이상이면 콜레스테롤 폭발한다고 했죠.","display_text":"콜레스테롤\\n폭발설","emotion":"serious","transition":"Dissolve"},
-  {"scene_num":3,"narration":"2024년 하버드 연구에서 3개까지 안전하다고 나왔어요.","display_text":"하버드 연구\\n3개 안전","emotion":"shock","transition":"Dissolve"}
+  {"scene_num":1,"narration":"달걀 하루 3개 먹으면 진짜 위험할까요? 많은 분들이 궁금해하시는 주제예요.","display_text":"달걀 3개\\n위험?","emotion":"shock","transition":"Fade_In"},
+  {"scene_num":2,"narration":"예전엔 하루 1개 이상이면 콜레스테롤이 폭발한다고 했어요. 의사들도 그렇게 말했거든요.","display_text":"콜레스테롤\\n폭발설","emotion":"serious","transition":"Dissolve"},
+  {"scene_num":3,"narration":"2024년 하버드 의대 연구에서 하루 3개까지 안전하다는 결과가 나왔어요. 38만 명 대상 연구였거든요.","display_text":"하버드 연구\\n38만명 대상","emotion":"shock","transition":"Dissolve"}
 ]
-(continue — cite specific studies, numbers, verdicts)
+(continue — each narration 2-3 sentences, cite specific studies with numbers)
 ''',
     "tutorial_steps": '''
 Example (topic: "에어팟 프로 노이즈캔슬링 설정법"):
 [
-  {"scene_num":1,"narration":"노캔이 안 되면 이거 확인해보세요.","display_text":"노캔 안 될 때","emotion":"neutral","transition":"Dissolve"},
-  {"scene_num":2,"narration":"설정 → 블루투스 → 에어팟 옆 i 버튼.","display_text":"Step 1\\n설정 > 블루투스","emotion":"neutral","transition":"Dissolve","rank":1},
-  {"scene_num":3,"narration":"노이즈 컨트롤에서 '소음 차단' 선택하세요.","display_text":"Step 2\\n소음 차단 선택","emotion":"neutral","transition":"Dissolve","rank":2}
+  {"scene_num":1,"narration":"에어팟 프로 노캔이 안 되면 이거 확인해보세요. 설정 하나로 바로 해결돼요.","display_text":"노캔 안 될 때","emotion":"neutral","transition":"Dissolve"},
+  {"scene_num":2,"narration":"먼저 설정 앱에서 블루투스로 들어가세요. 에어팟 옆에 있는 i 버튼을 눌러주세요.","display_text":"Step 1\\n설정 > 블루투스","emotion":"neutral","transition":"Dissolve","rank":1},
+  {"scene_num":3,"narration":"노이즈 컨트롤 메뉴에서 소음 차단을 선택하세요. 이게 노이즈캔슬링 활성화 버튼이에요.","display_text":"Step 2\\n소음 차단 선택","emotion":"neutral","transition":"Dissolve","rank":2}
 ]
-(continue — each step must be a specific, actionable instruction)
+(continue — each step is 2 sentences, specific and actionable)
 ''',
     "before_after": '''
 Example (topic: "1년 운동 변화"):
 [
-  {"scene_num":1,"narration":"1년 전엔 계단 3층도 못 올라갔어요.","display_text":"Before\\n계단 3층 실패","emotion":"sad","transition":"Fade_In"},
-  {"scene_num":2,"narration":"체지방률이 32%였거든요.","display_text":"체지방률\\n32%","emotion":"sad","transition":"Dissolve"},
-  {"scene_num":3,"narration":"매일 30분씩 러닝부터 시작했어요.","display_text":"매일 30분\\n러닝 시작","emotion":"neutral","transition":"Dissolve"}
+  {"scene_num":1,"narration":"1년 전엔 계단 3층도 못 올라갔어요. 숨이 턱까지 차서 중간에 쉬어야 했거든요.","display_text":"Before\\n계단 3층 실패","emotion":"sad","transition":"Fade_In"},
+  {"scene_num":2,"narration":"당시 체지방률이 32%였어요. 키 175에 몸무게가 92kg이었거든요.","display_text":"체지방률 32%\\n92kg","emotion":"sad","transition":"Dissolve"},
+  {"scene_num":3,"narration":"매일 아침 30분씩 러닝부터 시작했어요. 처음엔 1km도 못 뛰었거든요.","display_text":"매일 30분\\n러닝 시작","emotion":"neutral","transition":"Dissolve"}
 ]
-(continue — use specific measurements, timelines, before/after numbers)
+(continue — each narration 2-3 sentences with specific measurements and timelines)
 ''',
     "hot_take": '''
 Example (topic: "대학교 안 가도 된다"):
 [
-  {"scene_num":1,"narration":"솔직히 대학 안 가도 돼요.","display_text":"대학\\n필요 없다?","emotion":"shock","transition":"Fade_In"},
-  {"scene_num":2,"narration":"빌 게이츠, 저커버그 다 중퇴했잖아요.","display_text":"빌 게이츠\\n저커버그 중퇴","emotion":"serious","transition":"Dissolve"},
-  {"scene_num":3,"narration":"근데 대졸 평균 연봉이 3400만원 더 높거든요.","display_text":"연봉 차이\\n3400만원","emotion":"serious","transition":"Dissolve"}
+  {"scene_num":1,"narration":"솔직히 대학 안 가도 된다고 생각해요. 근거가 있거든요.","display_text":"대학\\n필요 없다?","emotion":"shock","transition":"Fade_In"},
+  {"scene_num":2,"narration":"빌 게이츠, 저커버그, 잡스 다 중퇴했잖아요. 세계 최고 부자들이 대학을 안 마친 거예요.","display_text":"빌 게이츠\\n저커버그 중퇴","emotion":"serious","transition":"Dissolve"},
+  {"scene_num":3,"narration":"근데 통계를 보면 대졸 평균 연봉이 고졸보다 3400만원 높아요. 생애소득은 5억 차이가 나거든요.","display_text":"연봉 차이\\n3400만원","emotion":"serious","transition":"Dissolve"}
 ]
-(continue — mix strong opinions with counter-data)
+(continue — each narration 2-3 sentences, mix strong opinions with counter-data)
 ''',
 }
 
@@ -136,6 +143,7 @@ def build_template_prompt(
     tone_rule: str = "",
     scene_count: int = 8,
     custom_instruction: str = "",
+    target_duration: str = "30s",
 ) -> str:
     """Build a Gemini prompt. Topic is repeated at start and end to prevent drift.
 
@@ -143,9 +151,13 @@ def build_template_prompt(
     has a structural role (intro/rank/commentary) rather than a retention hook.
     *tone_rule* is appended when non-empty so Gemini respects the same speech style as Groq.
     """
-    body = _build_template_body(topic, lang_name, template_type)
+    today = date.today().isoformat()
+    body = f"★ 오늘 날짜: {today}. 과거 사건은 과거형으로, 미래 사건만 미래형으로 서술하세요.\n\n"
+    body += _build_template_body(topic, lang_name, template_type)
     body += _QUALITY_RULES
+    per_scene_sec = round({"30s": 30, "1min": 60}.get(target_duration, 30) / scene_count, 1) if scene_count else 4
     body += f"\n★ 총 씬 수: 정확히 {scene_count}개 씬으로 구성하세요."
+    body += f"\n★ 목표 영상 길이: {target_duration}. 씬당 약 {per_scene_sec}초 분량으로 작성하세요."
     example = _EXAMPLES.get(template_type, "")
     if example:
         body += f"\n{example}"

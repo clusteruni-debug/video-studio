@@ -493,7 +493,7 @@ def _prepare_bgm_track(
         [
             "-y",
             "-i", str(bgm_source),
-            "-af", f"volume={volume},aloop=loop=-1:size=2e+09,atrim=0:{duration_sec:.2f},afade=t=out:st={max(0, duration_sec - 2):.2f}:d=2",
+            "-af", f"volume={volume},aloop=loop=-1:size=2000000000,atrim=0:{duration_sec:.2f},afade=t=out:st={max(0, duration_sec - 2):.2f}:d=2",
             "-ar", "48000",
             "-ac", "2",
             "-c:a", "pcm_s16le",
@@ -944,6 +944,15 @@ def main() -> int:
     args = parser.parse_args()
 
     project_root = Path(args.project_root).resolve()
+
+    # Load .env so adapter env vars (VIDEO_STUDIO_*) are available
+    env_file = project_root / ".env"
+    if env_file.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(env_file, override=False)
+        except ImportError:
+            pass
     manifest_path = (
         Path(args.manifest_path).resolve()
         if args.manifest_path

@@ -77,6 +77,38 @@ _SUBTITLE_STYLE_MAP: dict[str, dict] = {
     "impact": {"font_size": 20.0, "font_color": "#FFFF00", "border_width": 0.18},
 }
 
+# --- Brand Kit: template-specific visual presets ---
+_BRAND_PRESETS: dict[str, dict] = {
+    "news_explainer": {
+        "font_color": "#FFFFFF", "font_size": 14.0,
+        "intro_animation": "Fade_In", "shadow_distance": 6.0,
+        "hook_font_size": 18.0, "hook_intro": "Zoom_In",
+        "hook_bg_color": "#000000", "hook_bg_alpha": 0.5,
+    },
+    "community_read": {
+        "font_color": "#FFFFFF", "font_size": 14.0,
+        "intro_animation": "Fade_In", "shadow_distance": 5.0,
+        "hook_font_size": 16.0, "hook_intro": "Zoom_In",
+    },
+    "hot_take": {
+        "font_color": "#FFD700", "font_size": 16.0,
+        "intro_animation": "Zoom_In", "shadow_distance": 8.0,
+        "hook_font_size": 20.0, "hook_intro": "Zoom_In",
+        "hook_bg_color": "#FF0000", "hook_bg_alpha": 0.4,
+    },
+    "ranking_list": {
+        "font_color": "#FFFFFF", "font_size": 16.0,
+        "intro_animation": "Slide_Left", "shadow_distance": 5.0,
+        "hook_font_size": 18.0, "hook_intro": "Fade_In",
+    },
+    "myth_buster": {
+        "font_color": "#FFFFFF", "font_size": 14.0,
+        "intro_animation": "Fade_In", "shadow_distance": 6.0,
+        "hook_font_size": 18.0, "hook_intro": "Zoom_In",
+        "hook_bg_color": "#CC0000", "hook_bg_alpha": 0.5,
+    },
+}
+
 
 
 # ---------------------------------------------------------------------------
@@ -212,16 +244,16 @@ def create_draft_route():
         audio_path = tts_subdir / f"scene_{n}.mp3"
 
         # Determine TTS tone based on scene metadata
-        tts_rate = "+40%"
+        tts_rate = "+10%"
         tts_pitch = "+0Hz"
         tts_text = scene["narration"]
         if scene.get("is_commentary"):
-            # Commentary slides: slightly slower than default fast pace
-            tts_rate = "+30%"
+            tts_rate = "+5%"
             tts_pitch = "+0Hz"
         if scene.get("rank") is not None and tts_text.strip():
-            # Rank slides: SSML pause before rank number for dramatic effect
-            tts_text = f'<speak><break time="500ms"/>{tts_text}</speak>'
+            # Rank slides: add a brief text pause for dramatic effect
+            # (SSML is NOT supported by edge-tts or ElevenLabs — use text ellipsis instead)
+            tts_text = f"... {tts_text}"
 
         try:
             generate_tts(
@@ -264,29 +296,43 @@ def create_draft_route():
         n = scene["scene_num"]
         dur = scene["_tts_duration"] + 0.5
 
-        # Background image
+        # Background image (handle both URLs and local file paths from Imagen 3)
         scene_transition = scene.get("transition", "Dissolve") if n > 1 else None
         if scene_transition == "none":
             scene_transition = None
-        if scene.get("_image_url"):
+        img_ref = scene.get("_image_url")
+        if img_ref:
+            # Imagen 3 returns local file paths — convert to file:// URI for VectCutAPI
+            if img_ref and not img_ref.startswith(("http://", "https://")):
+                img_ref = Path(img_ref).resolve().as_uri()
             vb_add_image(
-                draft_id, scene["_image_url"], cumulative_time, cumulative_time + dur,
+                draft_id, img_ref, cumulative_time, cumulative_time + dur,
                 transition=scene_transition,
             )
 
-        # Text subtitle with style overrides
+        # Text subtitle with Brand Kit + style overrides
         subtitle_text = scene.get("display_text") or scene["narration"]
         is_rank_scene = scene.get("rank") is not None
+        is_hook = (n == 1)
+        brand = _BRAND_PRESETS.get(template_type, {})
         text_params = {
-            "font_color": "#FFFFFF",
-            "font_size": 18.0 if is_rank_scene else 12.0,
+            "font_color": brand.get("font_color", "#FFFFFF"),
+            "font_size": 18.0 if is_rank_scene else brand.get("font_size", 12.0),
             "transform_y": -0.2 if is_rank_scene else -0.35,
             "border_width": 0.12,
-            "shadow_distance": 5.0,
+            "shadow_distance": brand.get("shadow_distance", 5.0),
+            "intro_animation": brand.get("intro_animation", "Fade_In"),
         }
+        # Hook scene: larger text + zoom animation + optional background
+        if is_hook:
+            text_params["font_size"] = brand.get("hook_font_size", text_params["font_size"])
+            text_params["intro_animation"] = brand.get("hook_intro", "Zoom_In")
+            if brand.get("hook_bg_color"):
+                text_params["background_color"] = brand["hook_bg_color"]
+                text_params["background_alpha"] = brand.get("hook_bg_alpha", 0.5)
+        # Subtitle style map overrides (user-selected in UI)
         style_overrides = _SUBTITLE_STYLE_MAP.get(subtitle_style, {}).copy()
         if is_rank_scene:
-            # Rank scenes keep their own font_size and position — don't override
             style_overrides.pop("font_size", None)
             style_overrides.pop("transform_y", None)
         text_params.update(style_overrides)

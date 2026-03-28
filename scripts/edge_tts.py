@@ -8,6 +8,12 @@ Requires: pip install edge-tts
 
 from __future__ import annotations
 
+# Prevent this script's directory from shadowing the real edge_tts package
+import sys as _sys
+_script_dir = __import__("os").path.dirname(__import__("os").path.abspath(__file__))
+if _script_dir in _sys.path:
+    _sys.path.remove(_script_dir)
+
 import argparse
 import asyncio
 import json

@@ -1,12 +1,14 @@
 """
-Image routing — emotion-based auto-selection between Pexels (stock) and Klipy (meme/GIF).
+Image routing — emotion-based auto-selection between Imagen 3 (AI), Pexels (stock), and Klipy (meme/GIF).
 Klipy is a Tenor v2-compatible API (same endpoint structure, different base URL).
 Gemini prompts emit "tenor" as image_source — this is a routing token that maps to Klipy.
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
+from pathlib import Path
 from urllib import request as urllib_request
 
 
@@ -19,6 +21,37 @@ def _get_key(name: str) -> str:
 REACTION_EMOTIONS = {"funny", "shock", "anger"}
 
 
+def generate_imagen3(prompt: str, output_dir: str | None = None, aspect_ratio: str = "9:16") -> str | None:
+    """Generate image via Gemini Imagen 3 API. Returns local file path or None."""
+    api_key = _get_key("GEMINI_API_KEY") or _get_key("GOOGLE_API_KEY")
+    if not api_key:
+        return None
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key={api_key}"
+        payload = json.dumps({
+            "instances": [{"prompt": prompt}],
+            "parameters": {"sampleCount": 1, "aspectRatio": aspect_ratio},
+        }).encode("utf-8")
+        req = urllib_request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        with urllib_request.urlopen(req, timeout=60) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        b64_data = body["predictions"][0]["bytesBase64Encoded"]
+        image_bytes = base64.b64decode(b64_data)
+
+        # Save to temp file and return path
+        save_dir = Path(output_dir) if output_dir else Path("storage/cache")
+        save_dir.mkdir(parents=True, exist_ok=True)
+        import hashlib
+        name_hash = hashlib.md5(prompt.encode()).hexdigest()[:12]
+        save_path = save_dir / f"imagen3_{name_hash}.png"
+        save_path.write_bytes(image_bytes)
+        print(f"[imagen3] Generated {len(image_bytes)} bytes → {save_path}")
+        return str(save_path)
+    except Exception as e:
+        print(f"[imagen3] Failed for '{prompt[:50]}': {e}")
+        return None
+
+
 def search_pexels(query: str, orientation: str = "portrait") -> str | None:
     """Search Pexels for a stock image. Returns URL or None."""
     api_key = _get_key("PEXELS_API_KEY")
@@ -27,7 +60,7 @@ def search_pexels(query: str, orientation: str = "portrait") -> str | None:
     try:
         from urllib.parse import quote_plus
         safe_query = quote_plus(query)
-        url = f"https://api.pexels.com/v1/search?query={safe_query}&orientation={orientation}&per_page=1"
+        url = f"https://api.pexels.com/v1/search?query={safe_query}&orientation={orientation}&per_page=5"
         req = urllib_request.Request(url, headers={
             "Authorization": api_key,
             "User-Agent": "VideoStudio/1.0",
@@ -36,6 +69,10 @@ def search_pexels(query: str, orientation: str = "portrait") -> str | None:
             data = json.loads(resp.read())
             photos = data.get("photos", [])
             if photos:
+                # Prefer portrait-oriented photos
+                for p in photos:
+                    if p.get("height", 0) > p.get("width", 0):
+                        return p["src"]["portrait"]
                 return photos[0]["src"]["portrait"]
     except Exception as e:
         print(f"[pexels] Search failed for '{query}': {e}")
@@ -137,7 +174,15 @@ def route_image(scene: dict) -> tuple[str | None, str | None]:
             if url:
                 return url, "klipy"
 
-    # Default: Pexels
+    # Try Imagen 3 AI generation first (produces better visuals than stock)
+    # Returns local file path (not URL) — callers must handle both path and URL
+    ai_path = generate_imagen3(image_prompt)
+    if ai_path:
+        from pathlib import Path
+        abs_path = str(Path(ai_path).resolve())
+        return abs_path, "imagen3"
+
+    # Fallback: Pexels stock
     url = search_pexels(image_prompt)
     if not url and fallback:
         url = search_pexels(fallback)
