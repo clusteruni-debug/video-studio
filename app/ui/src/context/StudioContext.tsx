@@ -1,0 +1,362 @@
+import { createContext, useContext, useEffect, useMemo, useReducer, useRef } from "react";
+import {
+  checkHealth, createDraft as apiCreateDraft, submitJob as apiSubmitJob,
+  createBatch as apiCreateBatch, getBatchStatus, listBatches as apiListBatches,
+  listJobs as apiListJobs,
+  type BridgeHealth, type DraftResult, type Scene, type TemplateType, type TonePreset,
+  type BatchStatus, type JobStatus,
+} from "../lib/bridge";
+import { type QueueItem, ImageGenerationQueue } from "../lib/image-queue";
+import { loadStoredProjects, saveStoredProjects } from "../lib/storage";
+import type { StudioProjectRecord } from "../lib/planner";
+import type { BridgeStatus } from "../components/shared";
+
+// ── Tab type ──
+
+export type StudioTab = "storyboard" | "images" | "sources" | "batch" | "jobs";
+
+// ── State ──
+
+export interface StudioState {
+  bridgeStatus: BridgeStatus;
+  bridgeHealth: BridgeHealth | null;
+  availableProviders: string[];
+  availableTemplates: TemplateType[];
+
+  prompt: string;
+  lang: "ko" | "en";
+  templateType: TemplateType;
+  tone: TonePreset;
+  ttsProvider: string;
+  voiceGender: "female" | "male";
+  subtitleStyle: string;
+
+  activeTab: StudioTab;
+  selectedSceneIndex: number | null;
+  debugOpen: boolean;
+
+  creating: boolean;
+  error: string | null;
+  draftResult: DraftResult | null;
+
+  projects: StudioProjectRecord[];
+  activeProjectId: string | null;
+
+  imageItems: QueueItem[];
+  imageQueueProcessing: boolean;
+
+  activeBatchId: string | null;
+  batchStatus: BatchStatus | null;
+  batches: BatchStatus[];
+
+  jobs: JobStatus[];
+}
+
+const initialState: StudioState = {
+  bridgeStatus: "checking",
+  bridgeHealth: null,
+  availableProviders: ["edge"],
+  availableTemplates: ["community_read", "news_explainer", "reddit_translation", "ranking_list", "origin_story", "vs_comparison", "myth_buster", "tutorial_steps", "before_after", "hot_take"],
+
+  prompt: "",
+  lang: "ko",
+  templateType: "news_explainer",
+  tone: "casual_heyo",
+  ttsProvider: "edge",
+  voiceGender: "female",
+  subtitleStyle: "",
+
+  activeTab: "storyboard",
+  selectedSceneIndex: null,
+  debugOpen: false,
+
+  creating: false,
+  error: null,
+  draftResult: null,
+
+  projects: [],
+  activeProjectId: null,
+
+  imageItems: [],
+  imageQueueProcessing: false,
+
+  activeBatchId: null,
+  batchStatus: null,
+  batches: [],
+
+  jobs: [],
+};
+
+// ── Reducer ──
+
+type Action =
+  | { type: "SET_FIELD"; field: keyof StudioState; value: unknown }
+  | { type: "BRIDGE_READY"; health: BridgeHealth }
+  | { type: "BRIDGE_OFFLINE" }
+  | { type: "DRAFT_START" }
+  | { type: "DRAFT_OK"; result: DraftResult }
+  | { type: "DRAFT_FAIL"; error: string }
+  | { type: "SET_PROJECTS"; projects: StudioProjectRecord[] }
+  | { type: "DELETE_PROJECT"; id: string }
+  | { type: "IMAGE_QUEUE_UPDATE"; items: QueueItem[]; processing: boolean }
+  | { type: "BATCH_UPDATE"; status: BatchStatus }
+  | { type: "BATCHES_LOADED"; batches: BatchStatus[] }
+  | { type: "JOBS_LOADED"; jobs: JobStatus[] };
+
+function reducer(state: StudioState, action: Action): StudioState {
+  switch (action.type) {
+    case "SET_FIELD":
+      return { ...state, [action.field]: action.value };
+    case "BRIDGE_READY":
+      return {
+        ...state,
+        bridgeStatus: "connected",
+        bridgeHealth: action.health,
+        availableProviders: action.health.tts_providers ?? ["edge"],
+        availableTemplates: (action.health.template_types?.length ? action.health.template_types : state.availableTemplates),
+      };
+    case "BRIDGE_OFFLINE":
+      return { ...state, bridgeStatus: "offline", bridgeHealth: null };
+    case "DRAFT_START":
+      return { ...state, creating: true, error: null, draftResult: null, selectedSceneIndex: null };
+    case "DRAFT_OK":
+      return { ...state, creating: false, draftResult: action.result };
+    case "DRAFT_FAIL":
+      return { ...state, creating: false, error: action.error };
+    case "SET_PROJECTS":
+      return { ...state, projects: action.projects };
+    case "DELETE_PROJECT":
+      return { ...state, projects: state.projects.filter((p) => p.id !== action.id) };
+    case "IMAGE_QUEUE_UPDATE":
+      return { ...state, imageItems: action.items, imageQueueProcessing: action.processing };
+    case "BATCH_UPDATE":
+      return { ...state, batchStatus: action.status };
+    case "BATCHES_LOADED":
+      return { ...state, batches: action.batches };
+    case "JOBS_LOADED":
+      return { ...state, jobs: action.jobs };
+    default:
+      return state;
+  }
+}
+
+// ── Actions interface ──
+
+export interface StudioActions {
+  setPrompt(v: string): void;
+  setLang(v: "ko" | "en"): void;
+  setTemplateType(v: TemplateType): void;
+  setTone(v: TonePreset): void;
+  setTtsProvider(v: string): void;
+  setVoiceGender(v: "female" | "male"): void;
+  setSubtitleStyle(v: string): void;
+  setActiveTab(tab: StudioTab): void;
+  selectScene(index: number | null): void;
+  toggleDebug(): void;
+  handleCreate(): Promise<void>;
+  setDraftResult(result: DraftResult): void;
+  recheckBridge(): Promise<void>;
+  enqueueImages(scenes: Scene[]): void;
+  retryImage(id: string): void;
+  clearImages(): void;
+  deleteProject(id: string): void;
+  startBatch(variants: number): Promise<string | null>;
+  refreshBatches(): Promise<void>;
+  submitJob(): Promise<string | null>;
+  refreshJobs(): Promise<void>;
+}
+
+// ── Contexts ──
+
+const StateCtx = createContext<StudioState>(initialState);
+const ActionsCtx = createContext<StudioActions>(null!);
+
+export function useStudioState() { return useContext(StateCtx); }
+export function useStudioActions() { return useContext(ActionsCtx); }
+
+// ── Provider ──
+
+export function StudioProvider({ children }: { children: React.ReactNode }) {
+  const [state, dispatch] = useReducer(reducer, initialState, (init) => ({
+    ...init,
+    projects: loadStoredProjects(),
+  }));
+
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  // Image queue ref
+  const queueRef = useRef<ImageGenerationQueue | null>(null);
+  if (!queueRef.current) {
+    queueRef.current = new ImageGenerationQueue({
+      onItemUpdate(items) {
+        dispatch({ type: "IMAGE_QUEUE_UPDATE", items: [...items], processing: true });
+      },
+      onComplete() {
+        dispatch({ type: "IMAGE_QUEUE_UPDATE", items: queueRef.current?.getItems() ?? [], processing: false });
+      },
+    });
+  }
+
+  // Persist projects
+  const prevProjectsRef = useRef(state.projects);
+  useEffect(() => {
+    if (state.projects !== prevProjectsRef.current) {
+      prevProjectsRef.current = state.projects;
+      saveStoredProjects(state.projects);
+    }
+  }, [state.projects]);
+
+  // Bridge health on mount
+  useEffect(() => {
+    checkHealth().then((h) => {
+      if (h) dispatch({ type: "BRIDGE_READY", health: h });
+      else dispatch({ type: "BRIDGE_OFFLINE" });
+    });
+  }, []);
+
+  // Batch polling — use stateRef to avoid stale closure
+  useEffect(() => {
+    if (!state.activeBatchId) return;
+    const batchId = state.activeBatchId;
+    const id = setInterval(async () => {
+      const s = await getBatchStatus(batchId);
+      if (s.ok) {
+        dispatch({ type: "BATCH_UPDATE", status: s });
+        // Use progress/total (backend) with completed/failed as fallback
+        const done = (s.completed ?? s.progress ?? 0) + (s.failed ?? 0);
+        const total = s.variants ?? s.total ?? 1;
+        if (done >= total) {
+          dispatch({ type: "SET_FIELD", field: "activeBatchId", value: null });
+        }
+      }
+    }, 3000);
+    return () => clearInterval(id);
+  }, [state.activeBatchId]);
+
+  // Actions
+  const actions = useMemo<StudioActions>(() => ({
+    setPrompt(v) { dispatch({ type: "SET_FIELD", field: "prompt", value: v }); },
+    setLang(v) { dispatch({ type: "SET_FIELD", field: "lang", value: v }); },
+    setTemplateType(v) { dispatch({ type: "SET_FIELD", field: "templateType", value: v }); },
+    setTone(v) { dispatch({ type: "SET_FIELD", field: "tone", value: v }); },
+    setTtsProvider(v) { dispatch({ type: "SET_FIELD", field: "ttsProvider", value: v }); },
+    setVoiceGender(v) { dispatch({ type: "SET_FIELD", field: "voiceGender", value: v }); },
+    setSubtitleStyle(v) { dispatch({ type: "SET_FIELD", field: "subtitleStyle", value: v }); },
+    setActiveTab(tab) { dispatch({ type: "SET_FIELD", field: "activeTab", value: tab }); },
+    selectScene(index) { dispatch({ type: "SET_FIELD", field: "selectedSceneIndex", value: index }); },
+    toggleDebug() {
+      dispatch({ type: "SET_FIELD", field: "debugOpen", value: !stateRef.current.debugOpen });
+    },
+
+    async handleCreate() {
+      const s = stateRef.current;
+      if (!s.prompt.trim() || s.creating) return;
+      dispatch({ type: "DRAFT_START" });
+      try {
+        const result = await apiCreateDraft(s.prompt, s.lang, s.ttsProvider, s.voiceGender, s.templateType, s.subtitleStyle, s.tone);
+        if (result.ok) dispatch({ type: "DRAFT_OK", result });
+        else dispatch({ type: "DRAFT_FAIL", error: result.error || "Failed to create draft" });
+      } catch (e: unknown) {
+        dispatch({ type: "DRAFT_FAIL", error: e instanceof Error ? e.message : "Bridge connection failed" });
+      }
+    },
+
+    setDraftResult(result) {
+      dispatch({ type: "DRAFT_OK", result });
+    },
+
+    async recheckBridge() {
+      dispatch({ type: "SET_FIELD", field: "bridgeStatus", value: "checking" });
+      const h = await checkHealth();
+      if (h) dispatch({ type: "BRIDGE_READY", health: h });
+      else dispatch({ type: "BRIDGE_OFFLINE" });
+    },
+
+    enqueueImages(scenes) {
+      const q = queueRef.current!;
+      for (const scene of scenes) {
+        if (scene.image_prompt) {
+          q.enqueue({
+            id: `scene-${scene.scene_num}-${Date.now()}`,
+            prompt: scene.image_prompt,
+            originalPrompt: scene.image_prompt,
+            width: 1080,
+            height: 1920,
+            engine: "flux",
+            filename: `scene_${scene.scene_num}.webp`,
+          });
+        }
+      }
+      q.start();
+    },
+
+    retryImage(id) {
+      queueRef.current?.retry(id);
+    },
+
+    clearImages() {
+      queueRef.current?.stop();
+      queueRef.current?.clear();
+      dispatch({ type: "IMAGE_QUEUE_UPDATE", items: [], processing: false });
+    },
+
+    deleteProject(id) {
+      dispatch({ type: "DELETE_PROJECT", id });
+    },
+
+    async startBatch(variants) {
+      const s = stateRef.current;
+      if (!s.prompt.trim()) return null;
+      const res = await apiCreateBatch({
+        prompt: s.prompt, variants,
+        template_type: s.templateType, lang: s.lang,
+        tts_provider: s.ttsProvider, voice_gender: s.voiceGender,
+        subtitle_style: s.subtitleStyle, tone: s.tone,
+      });
+      if (res.ok && res.batch_id) {
+        dispatch({ type: "SET_FIELD", field: "activeBatchId", value: res.batch_id });
+        return res.batch_id;
+      }
+      dispatch({ type: "DRAFT_FAIL", error: res.error || "Batch creation failed" });
+      return null;
+    },
+
+    async refreshBatches() {
+      const res = await apiListBatches();
+      if (res.ok && res.batches) dispatch({ type: "BATCHES_LOADED", batches: res.batches });
+    },
+
+    async submitJob() {
+      const s = stateRef.current;
+      if (!s.prompt.trim()) return null;
+      const res = await apiSubmitJob({
+        prompt: s.prompt, lang: s.lang, tts_provider: s.ttsProvider,
+        voice_gender: s.voiceGender, template_type: s.templateType,
+        tone: s.tone, subtitle_style: s.subtitleStyle,
+      });
+      if (res.ok) {
+        const list = await apiListJobs();
+        if (list.ok && list.jobs) dispatch({ type: "JOBS_LOADED", jobs: list.jobs });
+        return res.job_id ?? null;
+      }
+      dispatch({ type: "DRAFT_FAIL", error: res.error || "Job submission failed" });
+      return null;
+    },
+
+    async refreshJobs() {
+      const res = await apiListJobs();
+      if (res.ok && res.jobs) {
+        dispatch({ type: "JOBS_LOADED", jobs: res.jobs });
+      }
+    },
+  }), []);
+
+  return (
+    <StateCtx.Provider value={state}>
+      <ActionsCtx.Provider value={actions}>
+        {children}
+      </ActionsCtx.Provider>
+    </StateCtx.Provider>
+  );
+}

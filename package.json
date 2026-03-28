@@ -14,6 +14,7 @@
     "verify:bridge": "powershell -ExecutionPolicy Bypass -File scripts/verify-bridge.ps1"
   },
   "dependencies": {
+    "lucide-react": "^1.7.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
