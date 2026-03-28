@@ -123,6 +123,16 @@ class BatchManager:
         with self._lock:
             return self._jobs.get(batch_id)
 
+    def delete_batch(self, batch_id: str) -> bool:
+        with self._lock:
+            job = self._jobs.get(batch_id)
+            if not job:
+                return False
+            if job.status == "running":
+                return False
+            del self._jobs[batch_id]
+            return True
+
     def list_jobs(self, limit: int = 20) -> list[dict]:
         with self._lock:
             jobs = sorted(self._jobs.values(), key=lambda j: j.created_at, reverse=True)

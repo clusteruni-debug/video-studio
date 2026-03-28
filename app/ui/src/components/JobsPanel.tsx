@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Briefcase, Loader, CheckCircle, XCircle, Clock, Play } from "lucide-react";
+import { Briefcase, Loader, CheckCircle, XCircle, Clock, Play, Trash2 } from "lucide-react";
 import { useStudioState, useStudioActions } from "../context/StudioContext";
 
 const STATUS_CONFIG: Record<string, { icon: typeof CheckCircle; color: string; dimBg: string; label: string }> = {
@@ -92,6 +92,16 @@ export default function JobsPanel() {
                     </div>
                   )}
                 </div>
+                {job.status !== "running" && (
+                  <button
+                    className="scene-action-btn scene-action-delete"
+                    title="작업 삭제"
+                    style={{ flexShrink: 0 }}
+                    onClick={() => actions.deleteJob(job.job_id)}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
             );
           })}

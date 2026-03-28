@@ -69,6 +69,17 @@ class JobQueue:
         with self._lock:
             return self._jobs.get(job_id)
 
+    def delete_job(self, job_id: str) -> bool:
+        with self._lock:
+            if job_id in self._jobs:
+                job = self._jobs[job_id]
+                if job.status in ("queued", "completed", "failed"):
+                    del self._jobs[job_id]
+                    if job_id in self._queue:
+                        self._queue.remove(job_id)
+                    return True
+            return False
+
     def list_jobs(self, limit: int = 20) -> list[dict]:
         with self._lock:
             jobs = list(self._jobs.values())[-limit:]

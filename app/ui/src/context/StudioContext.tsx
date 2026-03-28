@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useReducer, useRef } fro
 import {
   checkHealth, createDraft as apiCreateDraft, submitJob as apiSubmitJob,
   createBatch as apiCreateBatch, getBatchStatus, listBatches as apiListBatches,
-  listJobs as apiListJobs,
+  listJobs as apiListJobs, deleteBatch as apiDeleteBatch, deleteJob as apiDeleteJob,
   type BridgeHealth, type DraftResult, type Scene, type TemplateType, type TonePreset,
   type BatchStatus, type JobStatus,
 } from "../lib/bridge";
@@ -208,6 +208,9 @@ export interface StudioActions {
   deleteScene(index: number): void;
   addScene(afterIndex: number): void;
   reorderScene(fromIndex: number, toIndex: number): void;
+  clearDraft(): void;
+  deleteBatch(batchId: string): Promise<void>;
+  deleteJob(jobId: string): Promise<void>;
   deleteProject(id: string): void;
   startBatch(variants: number): Promise<string | null>;
   refreshBatches(): Promise<void>;
@@ -361,6 +364,23 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     },
     reorderScene(fromIndex, toIndex) {
       dispatch({ type: "REORDER_SCENE", fromIndex, toIndex });
+    },
+    clearDraft() {
+      dispatch({ type: "SET_FIELD", field: "draftResult", value: null });
+      dispatch({ type: "SET_FIELD", field: "selectedSceneIndex", value: null });
+    },
+    async deleteBatch(batchId) {
+      await apiDeleteBatch(batchId);
+      if (stateRef.current.activeBatchId === batchId) {
+        dispatch({ type: "SET_FIELD", field: "activeBatchId", value: null });
+      }
+      const res = await apiListBatches();
+      if (res.ok && res.batches) dispatch({ type: "BATCHES_LOADED", batches: res.batches });
+    },
+    async deleteJob(jobId) {
+      await apiDeleteJob(jobId);
+      const res = await apiListJobs();
+      if (res.ok && res.jobs) dispatch({ type: "JOBS_LOADED", jobs: res.jobs });
     },
     deleteProject(id) {
       dispatch({ type: "DELETE_PROJECT", id });

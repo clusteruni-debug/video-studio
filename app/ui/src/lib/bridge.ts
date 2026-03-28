@@ -311,6 +311,10 @@ export function listBatches(): Promise<BatchListResult> {
   return _apiFetch<BatchListResult>("/api/batch", { timeout: 10_000 });
 }
 
+export function deleteBatch(batchId: string): Promise<{ ok: boolean; error?: string }> {
+  return _apiFetch(`/api/batch/${encodeURIComponent(batchId)}`, { method: "DELETE", timeout: 10_000 });
+}
+
 // ── Jobs ──
 
 export function submitJob(opts: {
@@ -331,6 +335,14 @@ export function getJobStatus(jobId: string): Promise<JobStatus> {
 
 export function listJobs(): Promise<JobListResult> {
   return _apiFetch<JobListResult>("/api/jobs", { timeout: 10_000 });
+}
+
+export function deleteJob(jobId: string): Promise<{ ok: boolean; error?: string }> {
+  return _apiFetch(`/api/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE", timeout: 10_000 });
+}
+
+export function deleteDraft(draftId: string): Promise<{ ok: boolean; error?: string }> {
+  return _apiFetch(`/api/draft/${encodeURIComponent(draftId)}`, { method: "DELETE", timeout: 10_000 });
 }
 
 // ── URL helpers ──

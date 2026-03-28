@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from "react";
-import { Film, Plus, Trash2, ChevronUp, ChevronDown, Play, Square } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Film, Plus, Trash2, ChevronUp, ChevronDown, Play, Square, RotateCcw } from "lucide-react";
 import { useStudioState, useStudioActions } from "../context/StudioContext";
 import SceneDetailPanel from "./SceneDetailPanel";
 
@@ -71,6 +71,28 @@ export default function StoryboardPanel() {
   const { draftResult, selectedSceneIndex } = useStudioState();
   const actions = useStudioActions();
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+
+  const playTts = useCallback((url: string) => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+    }
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    setPlaying(true);
+    audio.play().catch(() => {});
+    audio.addEventListener("ended", () => setPlaying(false), { once: true });
+  }, []);
+
+  const stopTts = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current = null;
+    }
+    setPlaying(false);
+  }, []);
 
   if (!draftResult) {
     return (
@@ -84,32 +106,23 @@ export default function StoryboardPanel() {
 
   const scenes = draftResult.scenes ?? [];
 
-  const playTts = (url: string) => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
-    }
-    const audio = new Audio(url);
-    audioRef.current = audio;
-    audio.play().catch(() => {});
-  };
-
-  const stopTts = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
-      audioRef.current = null;
-    }
-  };
-
   return (
     <div>
       {/* Header summary */}
       <div className="canvas-header">
         <span className="canvas-header-title">{draftResult.message || "초안 생성 완료"}</span>
-        <span className="canvas-header-meta">
-          {scenes.length}씬 / {draftResult.total_duration?.toFixed(1)}s / {draftResult.tts_provider}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="canvas-header-meta">
+            {scenes.length}씬 / {draftResult.total_duration?.toFixed(1)}s / {draftResult.tts_provider}
+          </span>
+          <button
+            className="scene-action-btn"
+            title="새로 시작"
+            onClick={() => { stopTts(); actions.clearDraft(); }}
+          >
+            <RotateCcw size={14} />
+          </button>
+        </div>
       </div>
 
       {/* Scene list (vertical) */}
@@ -181,7 +194,7 @@ export default function StoryboardPanel() {
                   <Play size={14} />
                 </button>
               ) : null}
-              {audioRef.current && (
+              {playing && (
                 <button
                   className="scene-action-btn"
                   title="정지"

@@ -541,8 +541,15 @@ def create_batch_route():
     return jsonify({"ok": True, "batch_id": batch_id}), 202
 
 
-@app.route("/api/batch/<batch_id>", methods=["GET"])
-def get_batch_status_route(batch_id: str):
+@app.route("/api/batch/<batch_id>", methods=["GET", "DELETE"])
+def batch_detail_route(batch_id: str):
+    if flask_request.method == "DELETE":
+        if batch_manager.delete_batch(batch_id):
+            return jsonify({"ok": True})
+        job = batch_manager.get_status(batch_id)
+        if job and job.status == "running":
+            return jsonify({"ok": False, "error": "cannot delete running batch"}), 409
+        return jsonify({"ok": False, "error": "batch not found"}), 404
     job = batch_manager.get_status(batch_id)
     if not job:
         return jsonify({"ok": False, "error": "batch not found"}), 404
@@ -566,12 +573,28 @@ def jobs_route():
     return jsonify({"ok": True, "jobs": job_queue.list_jobs()})
 
 
-@app.route("/api/jobs/<job_id>", methods=["GET"])
-def get_job_route(job_id: str):
+@app.route("/api/jobs/<job_id>", methods=["GET", "DELETE"])
+def job_detail_route(job_id: str):
+    if flask_request.method == "DELETE":
+        if job_queue.delete_job(job_id):
+            return jsonify({"ok": True})
+        return jsonify({"ok": False, "error": "job not found or still running"}), 404
     job = job_queue.get_job(job_id)
     if not job:
         return jsonify({"ok": False, "error": "job not found"}), 404
     return jsonify({"ok": True, **job.to_dict()})
+
+
+@app.route("/api/draft/<draft_id>", methods=["DELETE"])
+def delete_draft_route(draft_id: str):
+    import shutil
+    safe_path = _safe_resolve(str(CAPCUT_DRAFT_DIR / draft_id), CAPCUT_DRAFT_DIR)
+    if not safe_path:
+        return jsonify({"ok": False, "error": "invalid draft id"}), 400
+    if safe_path.exists() and safe_path.is_dir():
+        shutil.rmtree(safe_path, ignore_errors=True)
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "draft not found"}), 404
 
 
 # ---------------------------------------------------------------------------

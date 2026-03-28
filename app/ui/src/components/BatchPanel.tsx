@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Layers, Loader, CheckCircle, XCircle } from "lucide-react";
+import { Layers, Loader, CheckCircle, XCircle, Trash2 } from "lucide-react";
 import { useStudioState, useStudioActions } from "../context/StudioContext";
 
 export default function BatchPanel() {
@@ -120,9 +120,17 @@ export default function BatchPanel() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: "0.82rem", fontWeight: 500 }}>{b.topic || b.batch_id}</div>
                   <div style={{ fontSize: "0.72rem", color: "var(--text-tertiary)" }}>
-                    {b.completed}/{b.variants} 완료 {b.failed > 0 ? `· ${b.failed} 실패` : ""}
+                    {b.progress ?? b.completed ?? 0}/{b.variants ?? b.total ?? 0} 완료
+                    {(b.failed ?? 0) > 0 ? ` · ${b.failed} 실패` : ""}
                   </div>
                 </div>
+                <button
+                  className="scene-action-btn scene-action-delete"
+                  title="배치 삭제"
+                  onClick={() => actions.deleteBatch(b.batch_id)}
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
             ))}
           </div>
