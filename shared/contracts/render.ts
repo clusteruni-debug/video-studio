@@ -5,7 +5,7 @@ export type VisualKind = "image" | "video";
 export type AudioKind = "voiceover" | "native" | "none";
 export type AssetSourceOrigin = "generated" | "uploaded";
 export type MotionPreset = "zoom_in" | "zoom_out" | "pan_left" | "pan_right" | "drift_up" | "drift_down" | "random" | "none";
-export type TransitionType = "fade" | "dissolve" | "wipeleft" | "none";
+export type TransitionType = "fade" | "dissolve" | "wipeleft" | "wiperight" | "slideright" | "slideleft" | "circleopen" | "circleclose" | "none";
 
 export interface RenderAssetSpec {
     id: string;

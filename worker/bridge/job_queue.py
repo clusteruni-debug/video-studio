@@ -41,6 +41,8 @@ class JobSpec:
 class JobQueue:
     """Simple in-memory FIFO job queue with a single worker thread."""
 
+    MAX_JOBS = 500
+
     def __init__(self, execute_fn=None) -> None:
         self._queue: deque[str] = deque()
         self._jobs: dict[str, JobSpec] = {}
@@ -57,13 +59,15 @@ class JobQueue:
         now = datetime.now(timezone.utc).isoformat()
         job = JobSpec(job_id=job_id, created_at=now, payload=payload)
         with self._lock:
+            self._evict_old_jobs()
             self._jobs[job_id] = job
             self._queue.append(job_id)
         self._ensure_worker()
         return job_id
 
     def get_job(self, job_id: str) -> JobSpec | None:
-        return self._jobs.get(job_id)
+        with self._lock:
+            return self._jobs.get(job_id)
 
     def list_jobs(self, limit: int = 20) -> list[dict]:
         with self._lock:
@@ -71,6 +75,19 @@ class JobQueue:
         return [j.to_dict() for j in jobs]
 
     # -- internal --
+
+    def _evict_old_jobs(self) -> None:
+        """Remove oldest completed/failed jobs when over capacity.  Caller holds _lock."""
+        if len(self._jobs) < self.MAX_JOBS:
+            return
+        done = [
+            (jid, j) for jid, j in self._jobs.items()
+            if j.status in ("completed", "failed")
+        ]
+        done.sort(key=lambda x: x[1].created_at)
+        to_remove = max(1, len(done) // 2)
+        for jid, _ in done[:to_remove]:
+            del self._jobs[jid]
 
     def _ensure_worker(self) -> None:
         with self._lock:

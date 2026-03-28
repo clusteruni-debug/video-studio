@@ -412,7 +412,29 @@ def _write_scene_subtitle(path: Path, subtitle_text: str, duration_sec: float) -
     )
 
 
-def _write_project_subtitles(path: Path, scenes: list[dict]) -> None:
+def _write_project_subtitles(
+    path: Path,
+    scenes: list[dict],
+    subtitle_style: str = "",
+) -> None:
+    # If a subtitle style preset is requested, emit ASS instead of SRT
+    if subtitle_style:
+        from worker.render.subtitles import SUBTITLE_PRESETS, write_styled_ass
+        style = SUBTITLE_PRESETS.get(subtitle_style)
+        if style:
+            ass_path = path.with_suffix(".ass")
+            entries = [
+                {
+                    "start_sec": s["startSec"],
+                    "end_sec": s["endSec"],
+                    "text": s["subtitleText"],
+                }
+                for s in scenes
+            ]
+            write_styled_ass(ass_path, entries, style)
+            return
+
+    # Default: SRT output (backwards compatible)
     lines: list[str] = []
     for index, scene in enumerate(scenes, start=1):
         lines.extend(
@@ -606,7 +628,11 @@ def compose_smoke_render(
         ass_path = scene_cache_dir / f"{scene_id}.card.ass"
         raw_tts_path = scene_cache_dir / f"{scene_id}.tts.raw.wav"
 
+        visual_input_path: Path = poster_path  # safe default for all branches
         motion_preset = _get_scene_motion_preset(scene)
+        # Hook optimisation: scene 1 always zooms in for visual impact
+        if index == 0 and motion_preset == "random":
+            motion_preset = "zoom_in"
         frequency = 440 + (index * 70)
 
         local_media_result = generate_local_visual_asset(
@@ -777,7 +803,18 @@ def compose_smoke_render(
         scene_clip_paths.append(clip_path)
         scene_durations.append(scene["durationSec"])
 
-    _write_project_subtitles(subtitle_file_path, manifest["scenes"])
+    _write_project_subtitles(
+        subtitle_file_path,
+        manifest["scenes"],
+        subtitle_style=manifest.get("subtitleStyle", ""),
+    )
+    # When ASS subtitles are written, the actual file has .ass suffix
+    actual_subtitle_path = subtitle_file_path
+    if manifest.get("subtitleStyle"):
+        ass_candidate = subtitle_file_path.with_suffix(".ass")
+        if ass_candidate.exists():
+            actual_subtitle_path = ass_candidate
+
     _write_concat_file(concat_file_path, scene_clip_paths)
 
     # Final concatenation: use xfade transitions or simple concat
@@ -786,7 +823,7 @@ def compose_smoke_render(
         durations=scene_durations,
         transition_type=transition_type,
         transition_duration=transition_duration,
-        subtitle_file=subtitle_file_path,
+        subtitle_file=actual_subtitle_path,
         output_scale="1080:1920",
     )
 

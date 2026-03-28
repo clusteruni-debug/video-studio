@@ -9,17 +9,25 @@ from pathlib import Path
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 
+_ffmpeg_cache: str | None = None
+
+
 def _find_ffmpeg() -> str:
-    """Resolve ffmpeg binary path."""
+    """Resolve ffmpeg binary path (cached after first successful probe)."""
+    global _ffmpeg_cache
+    if _ffmpeg_cache is not None:
+        return _ffmpeg_cache
     for candidate in ("ffmpeg", r"C:\ffmpeg\bin\ffmpeg.exe"):
         try:
             subprocess.run(
                 [candidate, "-version"],
                 capture_output=True,
                 creationflags=CREATE_NO_WINDOW,
+                timeout=5,
             )
+            _ffmpeg_cache = candidate
             return candidate
-        except FileNotFoundError:
+        except (FileNotFoundError, subprocess.TimeoutExpired):
             continue
     return "ffmpeg"
 
@@ -85,6 +93,7 @@ def generate_thumbnail(
         capture_output=True,
         text=True,
         creationflags=CREATE_NO_WINDOW,
+        timeout=120,
     )
 
     return result.returncode == 0 and output_path.exists()
@@ -138,6 +147,7 @@ def generate_thumbnail_from_image(
         capture_output=True,
         text=True,
         creationflags=CREATE_NO_WINDOW,
+        timeout=120,
     )
 
     return result.returncode == 0 and output_path.exists()

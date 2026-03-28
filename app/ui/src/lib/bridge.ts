@@ -1,6 +1,7 @@
 const BRIDGE_URL = "http://127.0.0.1:5161";
 
 export type TemplateType = "community_read" | "news_explainer" | "reddit_translation" | "ranking_list" | "origin_story" | "vs_comparison" | "myth_buster" | "tutorial_steps" | "before_after" | "hot_take";
+export type TonePreset = "casual_heyo" | "commentary" | "banmal" | "story" | "formal_soft";
 
 export interface BridgeHealth {
   bridge: string;
@@ -10,6 +11,7 @@ export interface BridgeHealth {
   klipy: string;
   gemini: string;
   template_types: TemplateType[];
+  tone_presets: Record<string, string>;
   capcut_draft_dir: string;
   capcut_draft_dir_exists: boolean;
 }
@@ -55,6 +57,7 @@ export async function createDraft(
   voiceGender: string,
   templateType: TemplateType = "news_explainer",
   subtitleStyle: string = "",
+  tone: TonePreset = "casual_heyo",
 ): Promise<DraftResult> {
   const resp = await fetch(`${BRIDGE_URL}/api/create-draft`, {
     method: "POST",
@@ -66,6 +69,7 @@ export async function createDraft(
       voice_gender: voiceGender,
       template_type: templateType,
       subtitle_style: subtitleStyle,
+      tone,
     }),
     signal: AbortSignal.timeout(300_000), // 5 min — pipeline can be slow
   });

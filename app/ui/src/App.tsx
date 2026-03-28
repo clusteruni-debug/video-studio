@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { checkHealth, createDraft, type BridgeHealth, type DraftResult, type TemplateType } from "./lib/bridge";
+import { checkHealth, createDraft, type BridgeHealth, type DraftResult, type TemplateType, type TonePreset } from "./lib/bridge";
 
 const TEMPLATE_LABELS: Record<TemplateType, string> = {
   community_read: "커뮤니티 글 읽기",
@@ -12,6 +12,14 @@ const TEMPLATE_LABELS: Record<TemplateType, string> = {
   tutorial_steps: "단계별 튜토리얼",
   before_after: "비포/애프터",
   hot_take: "핫테이크/논쟁",
+};
+
+const TONE_LABELS: Record<TonePreset, string> = {
+  casual_heyo: "해요체 (캐주얼)",
+  commentary: "해설체",
+  banmal: "반말",
+  story: "이야기체",
+  formal_soft: "존댓말 (부드러운)",
 };
 
 const TTS_LABELS: Record<string, string> = {
@@ -68,6 +76,7 @@ export default function App() {
   const [prompt, setPrompt] = useState("");
   const [lang, setLang] = useState<"ko" | "en">("ko");
   const [templateType, setTemplateType] = useState<TemplateType>("news_explainer");
+  const [tone, setTone] = useState<TonePreset>("casual_heyo");
   const [ttsProvider, setTtsProvider] = useState("edge");
   const [voiceGender, setVoiceGender] = useState<"female" | "male">("female");
   const [subtitleStyle, setSubtitleStyle] = useState("");
@@ -96,7 +105,7 @@ export default function App() {
     setError(null);
     setDraftResult(null);
     try {
-      const result = await createDraft(prompt, lang, ttsProvider, voiceGender, templateType, subtitleStyle);
+      const result = await createDraft(prompt, lang, ttsProvider, voiceGender, templateType, subtitleStyle, tone);
       if (result.ok) {
         setDraftResult(result);
       } else {
@@ -152,6 +161,13 @@ export default function App() {
           style={{ ...selectStyle, minWidth: 140 }}>
           {availableTemplates.map((t) => (
             <option key={t} value={t}>{TEMPLATE_LABELS[t] || t}</option>
+          ))}
+        </select>
+
+        <select value={tone} onChange={(e) => setTone(e.target.value as TonePreset)}
+          style={{ ...selectStyle, minWidth: 120 }}>
+          {(Object.keys(TONE_LABELS) as TonePreset[]).map((t) => (
+            <option key={t} value={t}>{TONE_LABELS[t]}</option>
           ))}
         </select>
 

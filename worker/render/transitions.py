@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-TRANSITION_TYPES = ("fade", "dissolve", "wipeleft", "none")
+TRANSITION_TYPES = ("fade", "dissolve", "wipeleft", "wiperight", "slideright", "slideleft", "circleopen", "circleclose", "none")
 DEFAULT_TRANSITION_DURATION = 0.5
 
 

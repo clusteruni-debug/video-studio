@@ -19,12 +19,18 @@ _HOOK_INSTRUCTION = """CRITICAL — Scene 1 MUST be a viewer-retention hook:
 """
 
 
+_HOOK_EXEMPT = frozenset({"reddit_translation", "ranking_list", "tutorial_steps"})
+
+
 def build_template_prompt(topic: str, lang_name: str, template_type: str) -> str:
     """Build a Gemini prompt. Topic is repeated at start and end to prevent drift.
 
-    All templates are prepended with ``_HOOK_INSTRUCTION`` to maximise first-3-second retention.
+    Templates in ``_HOOK_EXEMPT`` skip the hook instruction because their scene 1
+    has a structural role (intro/rank/commentary) rather than a retention hook.
     """
     body = _build_template_body(topic, lang_name, template_type)
+    if template_type in _HOOK_EXEMPT:
+        return body
     return f"{_HOOK_INSTRUCTION}\n{body}"
 
 

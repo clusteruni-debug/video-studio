@@ -45,22 +45,38 @@ class BatchJob:
 
 
 # Prompt variation suffixes to diversify LLM output across batch variants
-_VARIANT_SUFFIXES = [
-    "",
-    " (다른 관점에서)",
-    " (더 짧고 임팩트 있게)",
-    " (유머러스하게)",
-    " (감성적으로)",
-    " (데이터 중심으로)",
-    " (스토리텔링으로)",
-    " (반전 포함)",
-    " (최신 트렌드 반영)",
-    " (초보자 눈높이에서)",
-]
+_VARIANT_SUFFIXES: dict[str, list[str]] = {
+    "ko": [
+        "",
+        " (다른 관점에서)",
+        " (더 짧고 임팩트 있게)",
+        " (유머러스하게)",
+        " (감성적으로)",
+        " (데이터 중심으로)",
+        " (스토리텔링으로)",
+        " (반전 포함)",
+        " (최신 트렌드 반영)",
+        " (초보자 눈높이에서)",
+    ],
+    "en": [
+        "",
+        " (from a different perspective)",
+        " (shorter and more impactful)",
+        " (with humor)",
+        " (emotionally)",
+        " (data-driven)",
+        " (as a story)",
+        " (with a twist)",
+        " (trending now)",
+        " (for beginners)",
+    ],
+}
 
 
 class BatchManager:
     """Thread-safe batch job manager."""
+
+    MAX_BATCHES = 100
 
     def __init__(self) -> None:
         self._jobs: dict[str, BatchJob] = {}
@@ -88,6 +104,15 @@ class BatchManager:
             subtitle_style=subtitle_style,
         )
         with self._lock:
+            # Evict oldest completed batches when over capacity
+            if len(self._jobs) >= self.MAX_BATCHES:
+                done = [
+                    (bid, b) for bid, b in self._jobs.items()
+                    if b.status in ("completed", "failed")
+                ]
+                done.sort(key=lambda x: x[1].created_at)
+                for bid, _ in done[: max(1, len(done) // 2)]:
+                    del self._jobs[bid]
             self._jobs[batch_id] = job
         return batch_id
 
@@ -108,8 +133,11 @@ class BatchManager:
             return
         job.status = "running"
 
+        lang_key = "en" if job.lang.startswith("en") else "ko"
+        suffixes = _VARIANT_SUFFIXES.get(lang_key, _VARIANT_SUFFIXES["ko"])
+
         for i in range(job.variants):
-            suffix = _VARIANT_SUFFIXES[i % len(_VARIANT_SUFFIXES)]
+            suffix = suffixes[i % len(suffixes)]
             variant_topic = f"{job.topic}{suffix}"
             try:
                 result = generate_fn({

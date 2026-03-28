@@ -73,82 +73,99 @@ _TEMPLATE_HINTS = {
 }
 
 
-_SCENE_JSON_HINT = 'JSON 배열로 반환. 각 원소: {{"scene_num":N,"narration":"한국어 나레이션","display_text":"한국어 자막 3줄 이내","image_prompt":"구체적인 영어 이미지 검색어","emotion":"neutral","image_source":"pexels","transition":"Dissolve"}}'
+_SCENE_JSON_HINT = 'JSON 배열로 반환. 각 원소: {{"scene_num":N,"narration":"한국어 나레이션","display_text":"한국어 자막 2줄 이내","image_prompt":"구체적 영어 이미지 검색어","emotion":"neutral","image_source":"pexels","transition":"Dissolve"}}'
 
+# --- Tone presets (종결어미) — independent from template ---
+TONE_PRESETS = {
+    "casual_heyo": {
+        "label": "해요체 (캐주얼)",
+        "rule": '종결어미: "~이에요", "~거든요", "~인데요", "~하더라고요" 체만 사용.',
+        "example_endings": ["~이에요", "~거든요", "~인데요"],
+    },
+    "commentary": {
+        "label": "해설체",
+        "rule": '종결어미: "~인 거죠", "~한 셈이죠", "~라고 하죠" 체만 사용.',
+        "example_endings": ["~인 거죠", "~한 셈이죠", "~라고 하죠"],
+    },
+    "banmal": {
+        "label": "반말",
+        "rule": '종결어미: "~임", "~인데", "~거든", "~한 거지" 체만 사용.',
+        "example_endings": ["~임", "~인데", "~거든"],
+    },
+    "story": {
+        "label": "이야기체",
+        "rule": '종결어미: "~였는데요", "~했대요", "~이래요" 체만 사용.',
+        "example_endings": ["~였는데요", "~했대요", "~이래요"],
+    },
+    "formal_soft": {
+        "label": "존댓말 (부드러운)",
+        "rule": '종결어미: "~합니다", "~인데요", "~이죠" 체만 사용.',
+        "example_endings": ["~합니다", "~인데요", "~이죠"],
+    },
+}
+
+# --- Template structure (구조만, 말투 없음) ---
 _TEMPLATE_PROMPTS = {
     "community_read": (
-        '다음 글을 유튜브 쇼츠 "커뮤니티 글 읽어주기" 스타일로 읽어줘. '
-        '원본 글의 핵심을 살려서 5~8개 씬으로 나눠줘. '
-        '말투: "~했다는데요", "~래요", "~이거 실화냐" 같은 한국 온라인 구어체. '
-        '딱딱한 뉴스 문체 절대 금지. 실제 유튜버가 읽어주는 느낌으로. '
-        '감정 태그: 놀라운 부분은 "shock", 웃긴 부분은 "funny". '
+        '유튜브 쇼츠 커뮤니티 글 읽어주기. 5~8개 씬으로 분할. '
+        'emotion: 놀라운 부분 "shock", 웃긴 부분 "funny". '
     ),
     "news_explainer": (
-        '유튜브 쇼츠 뉴스 해설 영상 스크립트를 만들어줘. 8개 씬. '
-        '구조: 충격적 사실(1) → 배경(2-3) → 핵심 팩트와 숫자(4-5) → 전망(6-7) → 질문 유도(8). '
-        '말투: 뉴스 해설자 톤이지만 딱딱하지 않게. "~인 거죠", "~한 셈입니다", "~라고 합니다". '
-        '핵심 숫자는 display_text에 크게. 씬1은 반드시 emotion "shock". '
+        '유튜브 쇼츠 뉴스 해설. 8개 씬. '
+        '구조: 충격(1) → 배경(2-3) → 핵심 숫자(4-5) → 전망(6-7) → 질문(8). '
+        '숫자는 display_text에 크게. 씬1 emotion "shock". '
     ),
     "reddit_translation": (
-        '해외 커뮤니티 글을 한국어로 번역해서 읽어주는 유튜브 쇼츠 스크립트. 6~8개 씬. '
-        '문화 차이가 있는 부분은 괄호로 설명 추가. '
-        '말투: "~인데요", "~거든요", "~하더라고요" 같은 구어체. '
-        '리액션 필요한 부분은 emotion "funny" 또는 "shock". '
+        '해외 글 번역 읽어주기 유튜브 쇼츠. 6~8개 씬. 문화차이 괄호 설명. '
+        'emotion: 리액션 "funny"/"shock". '
     ),
     "ranking_list": (
-        '"Top N" 랭킹 유튜브 쇼츠 스크립트. '
-        '구조: 인트로(1) → 각 항목(2씬씩: 순위+설명) → 아웃트로. '
-        '말투: "N위는 바로~", "이건 진짜 몰랐죠?", "저장 필수입니다". '
+        'Top N 랭킹 유튜브 쇼츠. 구조: 인트로(1) → 항목(2씬씩) → 아웃트로. '
         '순위 씬에 "rank": N 필드 추가. '
     ),
     "origin_story": (
-        '"~의 탄생 비화" 스타일 유튜브 쇼츠 스크립트. 8개 씬. '
-        '구조: 의외의 사실(1) → 기원(2-3) → 전환점(4-5) → 현재(6-7) → 한 줄 정리(8). '
-        '말투: 이야기체. "~였는데요", "~했다고 합니다", "알고 보면~". '
+        '탄생 비화 유튜브 쇼츠. 8개 씬. '
+        '구조: 의외(1) → 기원(2-3) → 전환(4-5) → 현재(6-7) → 정리(8). '
     ),
     "vs_comparison": (
-        'A vs B 비교 유튜브 쇼츠 스크립트. 8개 씬. '
-        '구조: "뭐가 더 좋을까?"(1) → A 소개(2-3) → B 소개(4-5) → 비교(6-7) → 결론(8). '
-        '말투: "~한 반면", "~쪽이 더", "결국 정답은~". 공정한 비교. '
+        'A vs B 비교 유튜브 쇼츠. 8개 씬. '
+        '구조: 훅(1) → A(2-3) → B(4-5) → 비교(6-7) → 결론(8). '
     ),
     "myth_buster": (
-        '팩트체크 유튜브 쇼츠 스크립트. 8개 씬. '
-        '구조: "이거 진짜?"(1) → 통념(2) → 근거 찬성(3-4) → 근거 반대(5-6) → 판정(7) → 마무리(8). '
-        '말투: "사실일까요?", "확인해보겠습니다", "결론은~". 판정 씬은 emotion "shock". '
+        '팩트체크 유튜브 쇼츠. 8개 씬. '
+        '구조: 질문(1) → 통념(2) → 찬성(3-4) → 반대(5-6) → 판정(7) → 마무리(8). 판정 emotion "shock". '
     ),
     "tutorial_steps": (
-        '단계별 튜토리얼 유튜브 쇼츠 스크립트. 8개 씬. '
-        '구조: 문제(1) → Step 1(2-3) → Step 2(4-5) → Step 3(6-7) → 완성(8). '
-        '말투: "먼저~", "다음으로~", "마지막으로~". 쉽고 친절. Step 씬에 "rank": N 추가. '
+        '단계별 튜토리얼 유튜브 쇼츠. 8개 씬. '
+        '구조: 문제(1) → Step1(2-3) → Step2(4-5) → Step3(6-7) → 완성(8). Step에 "rank": N. '
     ),
     "before_after": (
-        '비포/애프터 유튜브 쇼츠 스크립트. 8개 씬. '
-        '구조: Before 훅(1) → Before 상세(2-3) → 전환(4) → After 공개(5-6) → 임팩트(7) → 마무리(8). '
-        '말투: 드라마틱. "예전에는~", "그런데~", "지금은~". Before "sad", 전환 "shock", After "funny". '
+        '비포/애프터 유튜브 쇼츠. 8개 씬. '
+        '구조: Before(1-3) → 전환(4) → After(5-6) → 임팩트(7) → 마무리(8). '
+        'Before "sad", 전환 "shock", After "funny". '
     ),
     "hot_take": (
-        '핫테이크 유튜브 쇼츠 스크립트. 8개 씬. '
-        '구조: 강한 주장(1) → 배경(2-3) → 찬성(4-5) → 반론(6) → 결론(7) → 댓글 유도(8). '
-        '말투: "솔직히~", "~라고 생각합니다", "여러분은 어떠세요?". 씬1 emotion "shock". '
+        '핫테이크 유튜브 쇼츠. 8개 씬. '
+        '구조: 주장(1) → 배경(2-3) → 찬성(4-5) → 반론(6) → 결론(7) → 댓글(8). 씬1 emotion "shock". '
     ),
 }
 
 
-def _build_scene_prompt(topic: str, template_type: str) -> str:
-    base = _TEMPLATE_PROMPTS.get(template_type, _TEMPLATE_PROMPTS["news_explainer"])
+def _build_scene_prompt(topic: str, template_type: str, tone: str = "casual_heyo") -> str:
+    structure = _TEMPLATE_PROMPTS.get(template_type, _TEMPLATE_PROMPTS["news_explainer"])
+    tone_preset = TONE_PRESETS.get(tone, TONE_PRESETS["casual_heyo"])
+    tone_rule = tone_preset["rule"]
+    examples = tone_preset["example_endings"]
     return (
         f'주제: {topic}\n\n'
-        f'{base}\n'
-        f'중요 규칙:\n'
-        f'- 나레이션은 짧게. 한 문장 최대 25자. 숏폼이니까 빠르게.\n'
-        f'- 문어체("~입니다", "~습니다", "~것입니다") 절대 금지.\n'
-        f'- 구어체/반말 OK: "~임", "~인데", "~거든", "~인 거지", "~한 셈이지". 유튜브 숏폼 톤.\n'
-        f'- 자막은 나레이션 핵심만, 2줄 이내.\n'
-        f'- image_prompt는 "{topic}" 직접 관련 영어. 일반적 표현("futuristic", "abstract") 금지.\n'
-        f'- emotion 다양하게: shock, serious, funny, neutral 골고루.\n\n'
-        f'좋은 예시:\n'
-        f'{{"scene_num":1,"narration":"이거 아는 사람 별로 없는데","display_text":"아는 사람 별로 없는","image_prompt":"surprised person looking at phone","emotion":"shock"}}\n'
-        f'{{"scene_num":2,"narration":"사실 이건 어제오늘 일이 아님","display_text":"어제오늘 일 아님","image_prompt":"calendar with dates highlighted","emotion":"serious"}}\n\n'
+        f'{structure}\n'
+        f'★ 말투 통일 (절대 규칙): {tone_rule} 다른 종결어미 절대 섞지 마.\n'
+        f'나레이션 예시 톤: "{examples[0]}", "{examples[1]}", "{examples[2]}"\n\n'
+        f'추가 규칙:\n'
+        f'- 나레이션 한 문장 최대 25자.\n'
+        f'- 자막(display_text)은 핵심만, 2줄 이내.\n'
+        f'- image_prompt는 "{topic}" 직접 관련 영어. 일반적 표현 금지.\n'
+        f'- emotion 다양하게: shock, serious, funny, neutral.\n\n'
         f'{_SCENE_JSON_HINT}'
     )
 
@@ -253,13 +270,14 @@ def _call_gemini(prompt: str) -> str | None:
         return None
 
 
-def _generate_scenes_llm(topic: str, lang: str, template_type: str = "news_explainer") -> tuple[list[dict], str]:
+def _generate_scenes_llm(topic: str, lang: str, template_type: str = "news_explainer", tone: str = "casual_heyo") -> tuple[list[dict], str]:
     """Generate scene script. Groq first (topic-faithful), Gemini fallback, then template."""
     lang_name = "Korean" if not lang.startswith("en") else "English"
     if template_type not in TEMPLATE_TYPES:
         template_type = "news_explainer"
-    # Use short Korean prompt for Groq (topic-faithful), rich template for Gemini
-    short_prompt = _build_scene_prompt(topic, template_type)
+    if tone not in TONE_PRESETS:
+        tone = "casual_heyo"
+    short_prompt = _build_scene_prompt(topic, template_type, tone)
     rich_prompt = build_template_prompt(topic, lang_name, template_type)
 
     # Try Groq first (free, fast, topic-faithful) with short Korean prompt
@@ -353,6 +371,7 @@ def health():
         "groq": "ready" if GROQ_API_KEY else "no_key",
         "gemini": "ready" if GEMINI_API_KEY else "no_key",
         "template_types": list(TEMPLATE_TYPES),
+        "tone_presets": {k: v["label"] for k, v in TONE_PRESETS.items()},
         "capcut_draft_dir": str(CAPCUT_DRAFT_DIR),
         "capcut_draft_dir_exists": CAPCUT_DRAFT_DIR.exists(),
     })
@@ -421,10 +440,11 @@ def create_draft_route():
     tts_provider = data.get("tts_provider", "edge")
     voice_gender = data.get("voice_gender", "female")
     template_type = data.get("template_type", "news_explainer")
+    tone = data.get("tone", "casual_heyo")
 
     steps_log = []
     # ── Step 1: Generate script ──────────────────────────────────────────
-    scenes, script_source = _generate_scenes_llm(topic, lang, template_type)
+    scenes, script_source = _generate_scenes_llm(topic, lang, template_type, tone)
     # Force line-wrap long narrations so text doesn't overflow screen
     for s in scenes:
         narr = s.get("narration", "")
@@ -667,7 +687,18 @@ def create_draft_route():
                         elif ct == "image/png":
                             ext = ".png"
                         img_path = image_dest / f"image_{img_hash}{ext}"
-                        img_path.write_bytes(resp.read(20 * 1024 * 1024))
+                        # Stream download in 64 KB chunks with 5 MB hard cap
+                        max_bytes = 5 * 1024 * 1024
+                        with open(str(img_path), "wb") as fp:
+                            total = 0
+                            while True:
+                                chunk = resp.read(65536)
+                                if not chunk:
+                                    break
+                                total += len(chunk)
+                                if total > max_bytes:
+                                    break
+                                fp.write(chunk)
                 except Exception as e:
                     print(f"[download] Image failed: {e}")
 
@@ -845,6 +876,38 @@ def news_headlines_route():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/sources/news/auto", methods=["POST"])
+def news_auto_generate_route():
+    """Auto-select top news headline and generate a draft using news_explainer."""
+    data = flask_request.get_json(silent=True) or {}
+    query = data.get("q", "")
+    country = data.get("country", "kr")
+    category = data.get("category", "general")
+    try:
+        from worker.sources.news import fetch_news_headlines, headline_to_prompt
+        articles = fetch_news_headlines(query=query, country=country, category=category, page_size=5)
+        if not articles:
+            return jsonify({"ok": False, "error": "No headlines found"}), 404
+
+        best = articles[0]  # Top headline
+        prompt = headline_to_prompt(best)
+        result = _execute_draft_via_test_client({
+            "prompt": prompt,
+            "lang": data.get("lang", "ko"),
+            "tts_provider": data.get("tts_provider", "edge"),
+            "voice_gender": data.get("voice_gender", "female"),
+            "template_type": "news_explainer",
+        })
+        result["source_article"] = {
+            "title": best["title"],
+            "source": best["source"],
+            "url": best["url"],
+        }
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 # ---------------------------------------------------------------------------
 # Batch generation & async job queue (imports at top of section; classes in batch.py / job_queue.py)
 # ---------------------------------------------------------------------------
@@ -943,7 +1006,7 @@ def main():
     print(f"  Templates     : {', '.join(TEMPLATE_TYPES)}")
     print(f"  VectCutAPI    : {VECTCUT_DIR}")
     print(f"  CapCut drafts : {CAPCUT_DRAFT_DIR}")
-    app.run(host=BRIDGE_HOST, port=BRIDGE_PORT, debug=False)
+    app.run(host=BRIDGE_HOST, port=BRIDGE_PORT, debug=False, threaded=True)
 
 
 if __name__ == "__main__":
