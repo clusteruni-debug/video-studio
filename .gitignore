@@ -7,3 +7,7 @@ __pycache__/
 dist/
 .vite/
 output/
+
+# Reference analysis assets
+reference/
+HEdbg0vaEAASMCQ.jpg

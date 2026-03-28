@@ -87,12 +87,12 @@ _TEMPLATE_LAYOUTS: dict[str, dict] = {
         # Full bg + heavy blur → bottom dark bar with white text
         "img": {"scale_x": 1.4, "scale_y": 1.4, "background_blur": 4},
         "text": {
-            "font_color": "#FFFFFF", "font_size": 13.0, "transform_y": -0.40,
+            "font_color": "#FFFFFF", "font_size": 8.0, "transform_y": -0.40,
             "background_color": "#000000", "background_alpha": 0.55,
             "intro_animation": "Fade_In", "shadow_distance": 4.0,
         },
         "hook": {
-            "text": {"font_size": 20.0, "transform_y": -0.15, "intro_animation": "Zoom_In",
+            "text": {"font_size": 12.0, "transform_y": -0.15, "intro_animation": "Zoom_In",
                      "background_color": "#000000", "background_alpha": 0.65},
         },
     },
@@ -100,23 +100,23 @@ _TEMPLATE_LAYOUTS: dict[str, dict] = {
         # Image pushed to top half, text in bottom half with speech-bubble bg
         "img": {"scale_x": 1.0, "scale_y": 1.0, "transform_y": 0.20},
         "text": {
-            "font_color": "#FFFFFF", "font_size": 14.0, "transform_y": -0.38,
+            "font_color": "#FFFFFF", "font_size": 8.0, "transform_y": -0.38,
             "background_color": "#1A1A1A", "background_alpha": 0.65,
             "intro_animation": "Fade_In", "shadow_distance": 3.0,
         },
         "hook": {
-            "text": {"font_size": 18.0, "transform_y": -0.20, "intro_animation": "Zoom_In"},
+            "text": {"font_size": 11.0, "transform_y": -0.20, "intro_animation": "Zoom_In"},
         },
     },
     "hot_take": {
         # Full bg blur, CENTER large yellow text, red accent on hook
         "img": {"scale_x": 1.5, "scale_y": 1.5, "background_blur": 3},
         "text": {
-            "font_color": "#FFD700", "font_size": 16.0, "transform_y": -0.20,
+            "font_color": "#FFD700", "font_size": 9.0, "transform_y": -0.20,
             "intro_animation": "Zoom_In", "shadow_distance": 8.0,
         },
         "hook": {
-            "text": {"font_size": 24.0, "transform_y": 0.0, "font_color": "#FFD700",
+            "text": {"font_size": 14.0, "transform_y": 0.0, "font_color": "#FFD700",
                      "background_color": "#CC0000", "background_alpha": 0.55},
         },
     },
@@ -124,11 +124,11 @@ _TEMPLATE_LAYOUTS: dict[str, dict] = {
         # Clean image, rank badge as separate large layer
         "img": {"scale_x": 1.2, "scale_y": 1.2},
         "text": {
-            "font_color": "#FFFFFF", "font_size": 13.0, "transform_y": -0.35,
+            "font_color": "#FFFFFF", "font_size": 8.0, "transform_y": -0.35,
             "intro_animation": "Fade_In", "shadow_distance": 5.0,
         },
         "hook": {
-            "text": {"font_size": 18.0, "transform_y": -0.15},
+            "text": {"font_size": 11.0, "transform_y": -0.15},
         },
         "rank": {
             "text": {"intro_animation": "Slide_Left"},
@@ -143,12 +143,12 @@ _TEMPLATE_LAYOUTS: dict[str, dict] = {
         # Image at top, two-tone text: normal + gold commentary
         "img": {"scale_x": 1.0, "scale_y": 1.0, "transform_y": 0.15},
         "text": {
-            "font_color": "#F0F0F0", "font_size": 13.0, "transform_y": -0.38,
+            "font_color": "#F0F0F0", "font_size": 8.0, "transform_y": -0.38,
             "background_color": "#1A1A1A", "background_alpha": 0.50,
             "intro_animation": "Fade_In", "shadow_distance": 4.0,
         },
         "hook": {
-            "text": {"font_size": 16.0, "transform_y": -0.20,
+            "text": {"font_size": 11.0, "transform_y": -0.20,
                      "background_color": "#FF4500", "background_alpha": 0.45},
         },
         "commentary": {
@@ -159,22 +159,22 @@ _TEMPLATE_LAYOUTS: dict[str, dict] = {
         # Cinematic: heavy zoom + blur, centered cream text with fade
         "img": {"scale_x": 1.6, "scale_y": 1.6, "background_blur": 2},
         "text": {
-            "font_color": "#FFF8E1", "font_size": 15.0, "transform_y": -0.25,
+            "font_color": "#FFF8E1", "font_size": 9.0, "transform_y": -0.25,
             "intro_animation": "Fade_In", "shadow_distance": 6.0,
         },
         "hook": {
-            "text": {"font_size": 20.0, "transform_y": -0.10, "intro_animation": "Zoom_In"},
+            "text": {"font_size": 12.0, "transform_y": -0.10, "intro_animation": "Zoom_In"},
         },
     },
     "vs_comparison": {
         # Normal image, text with side labels
         "img": {"scale_x": 1.3, "scale_y": 1.3, "background_blur": 2},
         "text": {
-            "font_color": "#FFFFFF", "font_size": 14.0, "transform_y": -0.35,
+            "font_color": "#FFFFFF", "font_size": 8.0, "transform_y": -0.35,
             "intro_animation": "Slide_Left", "shadow_distance": 6.0,
         },
         "hook": {
-            "text": {"font_size": 22.0, "transform_y": -0.05, "intro_animation": "Zoom_In",
+            "text": {"font_size": 13.0, "transform_y": -0.05, "intro_animation": "Zoom_In",
                      "background_color": "#1A1A2E", "background_alpha": 0.6},
         },
     },
@@ -182,11 +182,11 @@ _TEMPLATE_LAYOUTS: dict[str, dict] = {
         # Full bg, verdict scenes get colored verdict badge
         "img": {"scale_x": 1.3, "scale_y": 1.3, "background_blur": 1},
         "text": {
-            "font_color": "#FFFFFF", "font_size": 14.0, "transform_y": -0.35,
+            "font_color": "#FFFFFF", "font_size": 8.0, "transform_y": -0.35,
             "intro_animation": "Fade_In", "shadow_distance": 6.0,
         },
         "hook": {
-            "text": {"font_size": 20.0, "transform_y": -0.10, "intro_animation": "Zoom_In",
+            "text": {"font_size": 12.0, "transform_y": -0.10, "intro_animation": "Zoom_In",
                      "background_color": "#CC0000", "background_alpha": 0.55},
         },
     },
@@ -194,11 +194,11 @@ _TEMPLATE_LAYOUTS: dict[str, dict] = {
         # Smaller image (screen recording feel), step counter badge
         "img": {"scale_x": 0.85, "scale_y": 0.85, "transform_y": 0.10},
         "text": {
-            "font_color": "#FFFFFF", "font_size": 13.0, "transform_y": -0.38,
+            "font_color": "#FFFFFF", "font_size": 8.0, "transform_y": -0.38,
             "intro_animation": "Fade_In", "shadow_distance": 4.0,
         },
         "hook": {
-            "text": {"font_size": 16.0, "transform_y": -0.20},
+            "text": {"font_size": 11.0, "transform_y": -0.20},
         },
         "rank": {
             "text": {},
@@ -213,11 +213,11 @@ _TEMPLATE_LAYOUTS: dict[str, dict] = {
         # Normal image, "Before"/"After" label badge per scene half
         "img": {"scale_x": 1.2, "scale_y": 1.2},
         "text": {
-            "font_color": "#FFFFFF", "font_size": 14.0, "transform_y": -0.35,
+            "font_color": "#FFFFFF", "font_size": 8.0, "transform_y": -0.35,
             "intro_animation": "Fade_In", "shadow_distance": 5.0,
         },
         "hook": {
-            "text": {"font_size": 20.0, "transform_y": -0.10, "intro_animation": "Zoom_In",
+            "text": {"font_size": 12.0, "transform_y": -0.10, "intro_animation": "Zoom_In",
                      "background_color": "#333333", "background_alpha": 0.55},
         },
         "emotion_labels": {
@@ -237,12 +237,32 @@ _TEMPLATE_LAYOUTS: dict[str, dict] = {
 _DEFAULT_LAYOUT: dict = {
     "img": {"scale_x": 1.3, "scale_y": 1.3},
     "text": {
-        "font_color": "#FFFFFF", "font_size": 13.0, "transform_y": -0.35,
+        "font_color": "#FFFFFF", "font_size": 8.0, "transform_y": -0.35,
         "intro_animation": "Fade_In", "shadow_distance": 5.0,
     },
-    "hook": {"text": {"font_size": 18.0, "transform_y": -0.15, "intro_animation": "Zoom_In"}},
+    "hook": {"text": {"font_size": 12.0, "transform_y": -0.15, "intro_animation": "Zoom_In"}},
 }
 
+
+
+import re as _re
+
+
+def _split_sentences(text: str) -> list[str]:
+    """Split Korean narration into display sentences for sequential subtitles."""
+    # Split on newlines first, then on Korean sentence endings
+    parts: list[str] = []
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        # Split on sentence-ending patterns (요. 요! 요? 다. 다! 다? etc.)
+        sents = _re.split(r'(?<=[.!?])\s+', line)
+        for s in sents:
+            s = s.strip()
+            if s:
+                parts.append(s)
+    return parts if parts else [text]
 
 
 # ---------------------------------------------------------------------------
@@ -526,7 +546,25 @@ def create_draft_route():
         # Subtitle style map overrides (user-selected in UI)
         style_overrides = _SUBTITLE_STYLE_MAP.get(subtitle_style, {}).copy()
         text_params.update(style_overrides)
-        vb_add_subtitle(draft_id, subtitle_text, cumulative_time, cumulative_time + dur, n, **text_params)
+
+        # Split narration into sentences — show one at a time (sequential subtitles)
+        sentences = _split_sentences(subtitle_text)
+        if len(sentences) <= 1:
+            vb_add_subtitle(draft_id, subtitle_text, cumulative_time, cumulative_time + dur, n, **text_params)
+        else:
+            total_chars = sum(len(s) for s in sentences)
+            sent_offset = 0.0
+            for si, sent in enumerate(sentences):
+                # Proportional duration based on character count
+                sent_dur = dur * (len(sent) / total_chars) if total_chars > 0 else dur / len(sentences)
+                vb_add_subtitle(
+                    draft_id, sent,
+                    cumulative_time + sent_offset,
+                    cumulative_time + sent_offset + sent_dur,
+                    n * 10 + si,  # unique scene_num per sentence
+                    **text_params,
+                )
+                sent_offset += sent_dur
 
         # Audio narration
         if scene.get("_tts_url"):

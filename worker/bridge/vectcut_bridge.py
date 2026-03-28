@@ -284,9 +284,13 @@ def save_draft_to_capcut(
 
     # -- Copy BGM into draft assets --
     if bgm_path and Path(bgm_path).exists():
+        bgm_hash = _hash(bgm_path)
         bgm_ext = Path(bgm_path).suffix.lstrip(".") or "mp3"
-        bgm_material = f"audio_{_hash(bgm_path)}.{bgm_ext}"
+        bgm_material = f"audio_{bgm_hash}.{bgm_ext}"
         shutil.copy2(bgm_path, str(audio_dest / bgm_material))
+        # VectCutAPI may register the material with .mp3 extension regardless of source format
+        if bgm_ext != "mp3":
+            shutil.copy2(bgm_path, str(audio_dest / f"audio_{bgm_hash}.mp3"))
 
     # -- Download/copy images into draft assets --
     image_dest = dest / "assets" / "image"
@@ -296,12 +300,15 @@ def save_draft_to_capcut(
             img_url = scene.get("_image_url")
             if not img_url:
                 continue
-            img_hash = _hash(img_url)
             try:
                 # Local file path (from Imagen AI) — copy directly
+                # Hash must match the file:// URI that server.py passes to VectCutAPI
                 if not img_url.startswith(("http://", "https://", "file://")):
                     local_src = Path(img_url)
                     if local_src.exists():
+                        # VectCutAPI received file:// URI, so hash that for material matching
+                        file_uri = local_src.resolve().as_uri()
+                        img_hash = _hash(file_uri)
                         ext = local_src.suffix or ".png"
                         img_path = image_dest / f"image_{img_hash}{ext}"
                         shutil.copy2(str(local_src), str(img_path))
@@ -313,6 +320,7 @@ def save_draft_to_capcut(
                 if img_url.startswith("file://"):
                     from urllib.parse import unquote
                     from urllib.request import url2pathname
+                    img_hash = _hash(img_url)
                     local_path = Path(url2pathname(unquote(img_url[7:])))
                     if local_path.exists():
                         ext = local_path.suffix or ".png"
@@ -320,6 +328,7 @@ def save_draft_to_capcut(
                         shutil.copy2(str(local_path), str(img_path))
                     continue
                 # HTTP URL — download
+                img_hash = _hash(img_url)
                 req = urllib_request.Request(img_url, headers={"User-Agent": "VideoStudio/1.0"})
                 with urllib_request.urlopen(req, timeout=15) as resp:
                     ct = resp.headers.get("Content-Type", "").split(";")[0].strip()
@@ -371,6 +380,25 @@ def save_draft_to_capcut(
 
     # -- Save project file --
     cached_script.dump(str(dest / "draft_content.json"))
+
+    # -- Sync font_size: CapCut reads top-level font_size, VectCutAPI only sets styles.size --
+    draft_json_path = dest / "draft_content.json"
+    with open(str(draft_json_path), "r", encoding="utf-8") as f:
+        draft_data = json.load(f)
+    for text_mat in draft_data.get("materials", {}).get("texts", []):
+        content = text_mat.get("content", "")
+        if isinstance(content, str):
+            try:
+                c = json.loads(content)
+            except (json.JSONDecodeError, TypeError):
+                continue
+        else:
+            c = content
+        styles = c.get("styles", [])
+        if styles and "size" in styles[0]:
+            text_mat["font_size"] = styles[0]["size"]
+    with open(str(draft_json_path), "w", encoding="utf-8") as f:
+        json.dump(draft_data, f, ensure_ascii=False)
 
     # -- Fix draft_meta_info.json --
     meta_path = dest / "draft_meta_info.json"
