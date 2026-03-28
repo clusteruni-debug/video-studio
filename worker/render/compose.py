@@ -434,7 +434,24 @@ def _write_project_subtitles(
             write_styled_ass(ass_path, entries, style)
             return
 
-    # Default: SRT output (backwards compatible)
+    # Default: word-highlight ASS (karaoke style) with SRT fallback
+    try:
+        from worker.render.subtitles import write_highlight_ass, SubtitleStyle
+        ass_path = path.with_suffix(".ass")
+        entries = [
+            {
+                "start_sec": s["startSec"],
+                "end_sec": s["endSec"],
+                "text": s["subtitleText"],
+            }
+            for s in scenes
+        ]
+        write_highlight_ass(ass_path, entries, SubtitleStyle())
+        return
+    except Exception as e:
+        print(f"[subtitle] highlight ASS failed, falling back to SRT: {e}")
+
+    # SRT fallback
     lines: list[str] = []
     for index, scene in enumerate(scenes, start=1):
         lines.extend(
@@ -808,12 +825,11 @@ def compose_smoke_render(
         manifest["scenes"],
         subtitle_style=manifest.get("subtitleStyle", ""),
     )
-    # When ASS subtitles are written, the actual file has .ass suffix
+    # When ASS subtitles are written (styled or default highlight), the actual file has .ass suffix
     actual_subtitle_path = subtitle_file_path
-    if manifest.get("subtitleStyle"):
-        ass_candidate = subtitle_file_path.with_suffix(".ass")
-        if ass_candidate.exists():
-            actual_subtitle_path = ass_candidate
+    ass_candidate = subtitle_file_path.with_suffix(".ass")
+    if ass_candidate.exists():
+        actual_subtitle_path = ass_candidate
 
     _write_concat_file(concat_file_path, scene_clip_paths)
 
@@ -857,7 +873,7 @@ def compose_smoke_render(
                 "-f", "concat",
                 "-safe", "0",
                 "-i", concat_file_path.name,
-                "-vf", f"subtitles={subtitle_file_path.name},scale=1080:1920,format=yuv420p",
+                "-vf", f"subtitles={_ffmpeg_filter_path(actual_subtitle_path)},scale=1080:1920,format=yuv420p",
                 "-c:v", "libx264",
                 "-pix_fmt", "yuv420p",
                 "-c:a", "aac",

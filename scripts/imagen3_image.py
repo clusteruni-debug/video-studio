@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from urllib import error, request
 
-IMAGEN_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict"
+IMAGEN_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-fast-generate-001:predict"
 DEFAULT_TIMEOUT_SEC = 120.0
 DEFAULT_MAX_ATTEMPTS = 3
 RETRYABLE_HTTP_STATUS = {429, 500, 502, 503, 504}
@@ -87,7 +87,7 @@ def main() -> int:
                 output_path.write_bytes(image_bytes)
                 print(json.dumps({
                     "ok": True, "promptPath": str(prompt_path),
-                    "outputPath": str(output_path), "model": "imagen-3.0-generate-002",
+                    "outputPath": str(output_path), "model": "imagen-4.0-fast-generate-001",
                     "bytes": len(image_bytes), "attempt": attempt,
                 }, ensure_ascii=False))
                 return 0

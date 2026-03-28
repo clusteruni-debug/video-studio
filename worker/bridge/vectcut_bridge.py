@@ -103,16 +103,19 @@ def add_image(
     track_name: str = "background",
     scale_x: float = 1.3,
     scale_y: float = 1.3,
+    transform_y: float = 0,
     relative_index: int = 0,
     intro_animation: str = "Fade_In",
     intro_animation_duration: float = 0.5,
     transition: str | None = None,
     transition_duration: float = 0.7,
+    background_blur: int | None = None,
+    mask_type: str | None = None,
 ) -> bool:
     """Add a background image to the draft.  Returns True on success."""
     _image = _get_vectcut().image
     try:
-        _image(
+        kwargs = dict(
             image_url=image_url,
             width=1080, height=1920,
             start=start, end=end,
@@ -125,6 +128,13 @@ def add_image(
             transition=transition,
             transition_duration=transition_duration,
         )
+        if transform_y != 0:
+            kwargs["transform_y"] = transform_y
+        if background_blur is not None:
+            kwargs["background_blur"] = background_blur
+        if mask_type is not None:
+            kwargs["mask_type"] = mask_type
+        _image(**kwargs)
         return True
     except Exception as e:
         print(f"[vectcut] add_image: {e}")
@@ -271,7 +281,7 @@ def save_draft_to_capcut(
             material_name = f"audio_{_hash(tts_url)}.mp3"
             shutil.copy2(tts_path, str(audio_dest / material_name))
 
-    # -- Download images into draft assets --
+    # -- Download/copy images into draft assets --
     image_dest = dest / "assets" / "image"
     image_dest.mkdir(parents=True, exist_ok=True)
     if has_images:
@@ -281,6 +291,28 @@ def save_draft_to_capcut(
                 continue
             img_hash = _hash(img_url)
             try:
+                # Local file path (from Imagen AI) — copy directly
+                if not img_url.startswith(("http://", "https://", "file://")):
+                    local_src = Path(img_url)
+                    if local_src.exists():
+                        ext = local_src.suffix or ".png"
+                        img_path = image_dest / f"image_{img_hash}{ext}"
+                        shutil.copy2(str(local_src), str(img_path))
+                        # Also copy as .png alias for VectCutAPI material matching
+                        if ext != ".png":
+                            shutil.copy2(str(local_src), str(image_dest / f"image_{img_hash}.png"))
+                    continue
+                # file:// URI — convert to local path
+                if img_url.startswith("file://"):
+                    from urllib.parse import unquote
+                    from urllib.request import url2pathname
+                    local_path = Path(url2pathname(unquote(img_url[7:])))
+                    if local_path.exists():
+                        ext = local_path.suffix or ".png"
+                        img_path = image_dest / f"image_{img_hash}{ext}"
+                        shutil.copy2(str(local_path), str(img_path))
+                    continue
+                # HTTP URL — download
                 req = urllib_request.Request(img_url, headers={"User-Agent": "VideoStudio/1.0"})
                 with urllib_request.urlopen(req, timeout=15) as resp:
                     ct = resp.headers.get("Content-Type", "").split(";")[0].strip()

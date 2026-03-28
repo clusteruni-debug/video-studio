@@ -6,6 +6,7 @@ Gemini prompts emit "tenor" as image_source — this is a routing token that map
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -22,12 +23,14 @@ REACTION_EMOTIONS = {"funny", "shock", "anger"}
 
 
 def generate_imagen3(prompt: str, output_dir: str | None = None, aspect_ratio: str = "9:16") -> str | None:
-    """Generate image via Gemini Imagen 3 API. Returns local file path or None."""
+    """Generate image via Google Imagen API. Returns local file path or None."""
     api_key = _get_key("GEMINI_API_KEY") or _get_key("GOOGLE_API_KEY")
     if not api_key:
         return None
+    # Imagen 3 was shut down; use Imagen 4 (fast variant for speed)
+    model = "imagen-4.0-fast-generate-001"
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:predict?key={api_key}"
         payload = json.dumps({
             "instances": [{"prompt": prompt}],
             "parameters": {"sampleCount": 1, "aspectRatio": aspect_ratio},
@@ -41,7 +44,6 @@ def generate_imagen3(prompt: str, output_dir: str | None = None, aspect_ratio: s
         # Save to temp file and return path
         save_dir = Path(output_dir) if output_dir else Path("storage/cache")
         save_dir.mkdir(parents=True, exist_ok=True)
-        import hashlib
         name_hash = hashlib.md5(prompt.encode()).hexdigest()[:12]
         save_path = save_dir / f"imagen3_{name_hash}.png"
         save_path.write_bytes(image_bytes)

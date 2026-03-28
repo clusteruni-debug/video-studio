@@ -78,34 +78,81 @@ _SUBTITLE_STYLE_MAP: dict[str, dict] = {
 }
 
 # --- Brand Kit: template-specific visual presets ---
+# --- Brand Kit: template-specific visual presets ---
+# Text params: font_color, font_size, transform_y, intro_animation, shadow_distance
+# Hook params: hook_font_size, hook_intro, hook_transform_y, hook_bg_color, hook_bg_alpha
+# Image params: img_scale_x, img_scale_y, img_transform_y, img_blur, img_mask_type
 _BRAND_PRESETS: dict[str, dict] = {
     "news_explainer": {
-        "font_color": "#FFFFFF", "font_size": 14.0,
+        "font_color": "#FFFFFF", "font_size": 14.0, "transform_y": -0.35,
         "intro_animation": "Fade_In", "shadow_distance": 6.0,
-        "hook_font_size": 18.0, "hook_intro": "Zoom_In",
+        "hook_font_size": 18.0, "hook_intro": "Zoom_In", "hook_transform_y": -0.15,
         "hook_bg_color": "#000000", "hook_bg_alpha": 0.5,
+        "img_scale_x": 1.3, "img_scale_y": 1.3, "img_blur": 2,
     },
     "community_read": {
-        "font_color": "#FFFFFF", "font_size": 14.0,
+        "font_color": "#FFFFFF", "font_size": 14.0, "transform_y": -0.40,
         "intro_animation": "Fade_In", "shadow_distance": 5.0,
-        "hook_font_size": 16.0, "hook_intro": "Zoom_In",
+        "hook_font_size": 16.0, "hook_intro": "Zoom_In", "hook_transform_y": -0.20,
+        "img_scale_x": 1.0, "img_scale_y": 1.0, "img_transform_y": -0.15,
     },
     "hot_take": {
-        "font_color": "#FFD700", "font_size": 16.0,
+        "font_color": "#FFD700", "font_size": 16.0, "transform_y": -0.30,
         "intro_animation": "Zoom_In", "shadow_distance": 8.0,
-        "hook_font_size": 20.0, "hook_intro": "Zoom_In",
+        "hook_font_size": 22.0, "hook_intro": "Zoom_In", "hook_transform_y": -0.10,
         "hook_bg_color": "#FF0000", "hook_bg_alpha": 0.4,
+        "img_scale_x": 1.4, "img_scale_y": 1.4, "img_blur": 3,
     },
     "ranking_list": {
-        "font_color": "#FFFFFF", "font_size": 16.0,
+        "font_color": "#FFFFFF", "font_size": 16.0, "transform_y": -0.25,
         "intro_animation": "Slide_Left", "shadow_distance": 5.0,
-        "hook_font_size": 18.0, "hook_intro": "Fade_In",
+        "hook_font_size": 20.0, "hook_intro": "Fade_In",
+        "img_scale_x": 1.2, "img_scale_y": 1.2,
+        "rank_font_size": 24.0, "rank_transform_y": -0.15,
     },
     "myth_buster": {
-        "font_color": "#FFFFFF", "font_size": 14.0,
+        "font_color": "#FFFFFF", "font_size": 14.0, "transform_y": -0.35,
         "intro_animation": "Fade_In", "shadow_distance": 6.0,
         "hook_font_size": 18.0, "hook_intro": "Zoom_In",
         "hook_bg_color": "#CC0000", "hook_bg_alpha": 0.5,
+        "img_scale_x": 1.3, "img_scale_y": 1.3,
+    },
+    "reddit_translation": {
+        "font_color": "#F0F0F0", "font_size": 13.0, "transform_y": -0.40,
+        "intro_animation": "Fade_In", "shadow_distance": 4.0,
+        "hook_font_size": 16.0, "hook_intro": "Fade_In", "hook_transform_y": -0.20,
+        "hook_bg_color": "#FF4500", "hook_bg_alpha": 0.4,
+        "img_scale_x": 1.0, "img_scale_y": 1.0, "img_transform_y": -0.20,
+        "commentary_font_color": "#FFD700",
+    },
+    "origin_story": {
+        "font_color": "#FFF8E1", "font_size": 14.0, "transform_y": -0.38,
+        "intro_animation": "Fade_In", "shadow_distance": 5.0,
+        "hook_font_size": 18.0, "hook_intro": "Zoom_In", "hook_transform_y": -0.15,
+        "img_scale_x": 1.3, "img_scale_y": 1.3, "img_blur": 1,
+    },
+    "vs_comparison": {
+        "font_color": "#FFFFFF", "font_size": 15.0, "transform_y": -0.30,
+        "intro_animation": "Slide_Left", "shadow_distance": 6.0,
+        "hook_font_size": 20.0, "hook_intro": "Zoom_In", "hook_transform_y": -0.10,
+        "hook_bg_color": "#1A1A2E", "hook_bg_alpha": 0.6,
+        "img_scale_x": 1.2, "img_scale_y": 1.2,
+    },
+    "tutorial_steps": {
+        "font_color": "#FFFFFF", "font_size": 14.0, "transform_y": -0.35,
+        "intro_animation": "Fade_In", "shadow_distance": 5.0,
+        "hook_font_size": 16.0, "hook_intro": "Fade_In",
+        "rank_font_size": 20.0, "rank_transform_y": -0.20,
+        "rank_bg_color": "#2196F3", "rank_bg_alpha": 0.5,
+        "img_scale_x": 1.1, "img_scale_y": 1.1,
+    },
+    "before_after": {
+        "font_color": "#FFFFFF", "font_size": 14.0, "transform_y": -0.35,
+        "intro_animation": "Fade_In", "shadow_distance": 5.0,
+        "hook_font_size": 18.0, "hook_intro": "Zoom_In", "hook_transform_y": -0.15,
+        "hook_bg_color": "#333333", "hook_bg_alpha": 0.5,
+        "img_scale_x": 1.2, "img_scale_y": 1.2,
+        "img_mask_type": "Rectangle",
     },
 }
 
@@ -292,49 +339,68 @@ def create_draft_route():
         return jsonify({"ok": False, "error": str(e)}), 500
 
     cumulative_time = 0.0
+    brand = _BRAND_PRESETS.get(template_type, {})
     for scene in scenes:
         n = scene["scene_num"]
         dur = scene["_tts_duration"] + 0.5
+        is_hook = (n == 1)
+        is_rank_scene = scene.get("rank") is not None
+        is_commentary = scene.get("is_commentary", False)
 
-        # Background image (handle both URLs and local file paths from Imagen 3)
+        # ── Background image with Brand Kit layout ──
         scene_transition = scene.get("transition", "Dissolve") if n > 1 else None
         if scene_transition == "none":
             scene_transition = None
         img_ref = scene.get("_image_url")
         if img_ref:
-            # Imagen 3 returns local file paths — convert to file:// URI for VectCutAPI
-            if img_ref and not img_ref.startswith(("http://", "https://")):
+            if not img_ref.startswith(("http://", "https://")):
                 img_ref = Path(img_ref).resolve().as_uri()
+            img_params = {
+                "scale_x": brand.get("img_scale_x", 1.3),
+                "scale_y": brand.get("img_scale_y", 1.3),
+            }
+            if brand.get("img_blur"):
+                img_params["background_blur"] = brand["img_blur"]
+            if brand.get("img_transform_y") is not None:
+                img_params["transform_y"] = brand["img_transform_y"]
+            if brand.get("img_mask_type"):
+                img_params["mask_type"] = brand["img_mask_type"]
             vb_add_image(
                 draft_id, img_ref, cumulative_time, cumulative_time + dur,
-                transition=scene_transition,
+                transition=scene_transition, **img_params,
             )
 
-        # Text subtitle with Brand Kit + style overrides
+        # ── Text subtitle with Brand Kit + scene-type overrides ──
         subtitle_text = scene.get("display_text") or scene["narration"]
-        is_rank_scene = scene.get("rank") is not None
-        is_hook = (n == 1)
-        brand = _BRAND_PRESETS.get(template_type, {})
         text_params = {
             "font_color": brand.get("font_color", "#FFFFFF"),
-            "font_size": 18.0 if is_rank_scene else brand.get("font_size", 12.0),
-            "transform_y": -0.2 if is_rank_scene else -0.35,
+            "font_size": brand.get("font_size", 12.0),
+            "transform_y": brand.get("transform_y", -0.35),
             "border_width": 0.12,
             "shadow_distance": brand.get("shadow_distance", 5.0),
             "intro_animation": brand.get("intro_animation", "Fade_In"),
         }
-        # Hook scene: larger text + zoom animation + optional background
+        # Hook scene: larger text, different position, zoom animation
         if is_hook:
             text_params["font_size"] = brand.get("hook_font_size", text_params["font_size"])
             text_params["intro_animation"] = brand.get("hook_intro", "Zoom_In")
+            if brand.get("hook_transform_y") is not None:
+                text_params["transform_y"] = brand["hook_transform_y"]
             if brand.get("hook_bg_color"):
                 text_params["background_color"] = brand["hook_bg_color"]
                 text_params["background_alpha"] = brand.get("hook_bg_alpha", 0.5)
+        # Rank scene: dedicated size/position
+        elif is_rank_scene:
+            text_params["font_size"] = brand.get("rank_font_size", 18.0)
+            text_params["transform_y"] = brand.get("rank_transform_y", -0.20)
+            if brand.get("rank_bg_color"):
+                text_params["background_color"] = brand["rank_bg_color"]
+                text_params["background_alpha"] = brand.get("rank_bg_alpha", 0.5)
+        # Commentary scene (reddit_translation): accent color
+        elif is_commentary and brand.get("commentary_font_color"):
+            text_params["font_color"] = brand["commentary_font_color"]
         # Subtitle style map overrides (user-selected in UI)
         style_overrides = _SUBTITLE_STYLE_MAP.get(subtitle_style, {}).copy()
-        if is_rank_scene:
-            style_overrides.pop("font_size", None)
-            style_overrides.pop("transform_y", None)
         text_params.update(style_overrides)
         vb_add_subtitle(draft_id, subtitle_text, cumulative_time, cumulative_time + dur, n, **text_params)
 
@@ -399,7 +465,7 @@ def create_draft_route():
         "tts_provider": tts_provider,
         "total_duration": round(cumulative_time, 1),
         "steps": steps_log,
-        "message": "CapCut에서 초안을 열 수 있습니다" if draft_path else "초안 생성됨",
+        "message": "Draft saved — open in CapCut" if draft_path else "Draft created",
     })
 
 

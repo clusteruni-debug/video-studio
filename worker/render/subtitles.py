@@ -156,3 +156,95 @@ def write_styled_ass(
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(header + "\n" + "\n".join(dialogues) + "\n", encoding="utf-8")
+
+
+def _estimate_word_timings(text: str, duration_sec: float) -> list[dict]:
+    """Estimate per-word timing proportionally by character count.
+
+    Korean words have roughly uniform duration per character, so character-count
+    proportional timing is a reasonable approximation.
+    """
+    if duration_sec <= 0:
+        return []
+    tokens = text.strip().split()
+    if not tokens:
+        return []
+    total_chars = sum(len(w) for w in tokens)
+    if total_chars == 0:
+        return []
+
+    result = []
+    cursor = 0.0
+    for word in tokens:
+        word_dur = (len(word) / total_chars) * duration_sec
+        result.append({"text": word, "start": cursor, "end": cursor + word_dur})
+        cursor += word_dur
+    return result
+
+
+def write_highlight_ass(
+    path: Path,
+    entries: list[dict],
+    style: SubtitleStyle | None = None,
+    highlight_color: str = "&H0000FFFF",  # yellow in ASS BGR
+) -> None:
+    """Write ASS subtitles with karaoke-style word-by-word highlight.
+
+    Each entry: ``{"start_sec": float, "end_sec": float, "text": str}``.
+    Words are highlighted progressively using ASS ``\\k`` (karaoke) tags.
+    """
+    s = style or SubtitleStyle()
+    bold_flag = -1 if s.bold else 0
+
+    header = "\n".join([
+        "[Script Info]",
+        "ScriptType: v4.00+",
+        "PlayResX: 1080",
+        "PlayResY: 1920",
+        "WrapStyle: 2",
+        "ScaledBorderAndShadow: yes",
+        "",
+        "[V4+ Styles]",
+        "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,"
+        "OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,"
+        "ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,"
+        "Alignment,MarginL,MarginR,MarginV,Encoding",
+        # PrimaryColour = highlight (karaoke target), SecondaryColour = pre-highlight
+        f"Style: Highlight,{s.font_name},{s.font_size},"
+        f"{highlight_color},{s.primary_color},"
+        f"{s.outline_color},{s.back_color},"
+        f"{bold_flag},0,0,0,"
+        f"100,100,0,0,"
+        f"1,{s.outline_width:.1f},{s.shadow_distance:.1f},"
+        f"{s.alignment},{s.margin_l},{s.margin_r},{s.margin_v},1",
+        "",
+        "[Events]",
+        "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text",
+    ])
+
+    dialogues: list[str] = []
+    for entry in entries:
+        start = _format_ass_time(entry["start_sec"])
+        end = _format_ass_time(entry["end_sec"])
+        duration = entry["end_sec"] - entry["start_sec"]
+        words = _estimate_word_timings(entry["text"], duration)
+
+        if not words:
+            text = _ass_escape(entry["text"])
+            dialogues.append(f"Dialogue: 0,{start},{end},Highlight,,0,0,0,,{text}")
+            continue
+
+        # Build karaoke line: \kN per word (N in centiseconds)
+        # Include space INSIDE each \k tag (after first word) so highlight covers it
+        karaoke_parts = []
+        for i, w in enumerate(words):
+            dur_cs = max(1, int(round((w["end"] - w["start"]) * 100)))
+            prefix = " " if i > 0 else ""
+            karaoke_parts.append(f"{{\\k{dur_cs}}}{prefix}{_ass_escape(w['text'])}")
+        karaoke_text = "".join(karaoke_parts)
+        dialogues.append(
+            f"Dialogue: 0,{start},{end},Highlight,,0,0,0,,{karaoke_text}"
+        )
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(header + "\n" + "\n".join(dialogues) + "\n", encoding="utf-8")
