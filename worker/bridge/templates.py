@@ -12,7 +12,7 @@ TEMPLATE_TYPES = (
     "vs_comparison", "myth_buster", "tutorial_steps", "before_after", "hot_take",
 )
 
-_JSON_FORMAT = """Each element: {{ "scene_num": N, "narration": "full spoken text for TTS (40-60 Korean chars, 2-3 sentences)", "display_text": "KEY phrase extracted FROM narration (max 12 chars/line, max 2 lines)", "image_prompt": "English image search query", "image_source": "pexels", "emotion": "neutral|funny|serious|shock|sad", "fallback_prompt": "alt query", "transition": "Dissolve" }}"""
+_JSON_FORMAT = """Each element: {{ "scene_num": N, "narration": "full spoken text for TTS (40-60 Korean chars, 2-3 sentences)", "display_text": "KEY phrase extracted FROM narration (max 12 chars/line, max 2 lines)", "image_prompt": "English image search query", "emotion": "neutral|funny|serious|shock|sad", "fallback_prompt": "alt query", "transition": "Dissolve" }}"""
 
 _QUALITY_RULES = """
 NARRATION QUALITY RULES (must follow):

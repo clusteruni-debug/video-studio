@@ -252,6 +252,7 @@ def save_draft_to_capcut(
     scenes: list[dict],
     capcut_draft_dir: Path,
     has_images: bool,
+    bgm_path: str | None = None,
 ) -> str | None:
     """Save the completed draft to CapCut's project directory.
 
@@ -280,6 +281,12 @@ def save_draft_to_capcut(
         if tts_path and tts_url and Path(tts_path).exists():
             material_name = f"audio_{_hash(tts_url)}.mp3"
             shutil.copy2(tts_path, str(audio_dest / material_name))
+
+    # -- Copy BGM into draft assets --
+    if bgm_path and Path(bgm_path).exists():
+        bgm_ext = Path(bgm_path).suffix.lstrip(".") or "mp3"
+        bgm_material = f"audio_{_hash(bgm_path)}.{bgm_ext}"
+        shutil.copy2(bgm_path, str(audio_dest / bgm_material))
 
     # -- Download/copy images into draft assets --
     image_dest = dest / "assets" / "image"

@@ -3,6 +3,7 @@ import {
   checkHealth, createDraft as apiCreateDraft, submitJob as apiSubmitJob,
   createBatch as apiCreateBatch, getBatchStatus, listBatches as apiListBatches,
   listJobs as apiListJobs, deleteBatch as apiDeleteBatch, deleteJob as apiDeleteJob,
+  regenerateSceneTts as apiRegenerateTts,
   type BridgeHealth, type DraftResult, type Scene, type TemplateType, type TonePreset,
   type BatchStatus, type JobStatus,
 } from "../lib/bridge";
@@ -217,6 +218,8 @@ export interface StudioActions {
   clearDraft(): void;
   deleteBatch(batchId: string): Promise<void>;
   deleteJob(jobId: string): Promise<void>;
+  uploadSceneImage(index: number, file: File): void;
+  regenerateSceneTts(index: number): Promise<void>;
   deleteProject(id: string): void;
   startBatch(variants: number): Promise<string | null>;
   refreshBatches(): Promise<void>;
@@ -337,13 +340,16 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       const q = queueRef.current!;
       for (const scene of scenes) {
         if (scene.image_prompt) {
+          const engine = scene.image_source === "pexels" ? "pexels"
+            : scene.image_source === "imagen" ? "imagen"
+            : "flux";
           q.enqueue({
             id: `scene-${scene.scene_num}-${Date.now()}`,
             prompt: scene.image_prompt,
             originalPrompt: scene.image_prompt,
             width: 1080,
             height: 1920,
-            engine: "flux",
+            engine,
             filename: `scene_${scene.scene_num}.webp`,
           });
         }
@@ -373,7 +379,33 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     reorderScene(fromIndex, toIndex) {
       dispatch({ type: "REORDER_SCENE", fromIndex, toIndex });
     },
+    uploadSceneImage(index, file) {
+      const oldPreview = stateRef.current.draftResult?.scenes?.[index]?._upload_preview;
+      if (oldPreview) URL.revokeObjectURL(oldPreview);
+      const previewUrl = URL.createObjectURL(file);
+      dispatch({ type: "EDIT_SCENE", index, field: "_upload_preview", value: previewUrl });
+      dispatch({ type: "EDIT_SCENE", index, field: "image_source", value: "upload" });
+      dispatch({ type: "EDIT_SCENE", index, field: "has_image", value: true });
+    },
+    async regenerateSceneTts(index) {
+      const s = stateRef.current;
+      const scene = s.draftResult?.scenes?.[index];
+      if (!scene) return;
+      const res = await apiRegenerateTts(scene.narration, scene.scene_num, s.lang, s.ttsProvider, s.voiceGender);
+      if (res.ok && res._tts_url) {
+        dispatch({ type: "EDIT_SCENE", index, field: "_tts_url", value: res._tts_url });
+        if (res.duration) dispatch({ type: "EDIT_SCENE", index, field: "duration", value: res.duration });
+      } else if (!res.ok) {
+        dispatch({ type: "SET_FIELD", field: "error", value: res.error || "TTS 재생성 실패" });
+      }
+    },
     clearDraft() {
+      const scenes = stateRef.current.draftResult?.scenes;
+      if (scenes) {
+        for (const s of scenes) {
+          if (s._upload_preview) URL.revokeObjectURL(s._upload_preview);
+        }
+      }
       dispatch({ type: "SET_FIELD", field: "draftResult", value: null });
       dispatch({ type: "SET_FIELD", field: "selectedSceneIndex", value: null });
     },

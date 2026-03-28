@@ -30,6 +30,7 @@ export interface Scene {
   rank: number | null;
   image_source?: string;
   _tts_url?: string | null;
+  _upload_preview?: string | null;
   is_commentary?: boolean;
   transition?: string;
 }
@@ -104,8 +105,8 @@ export interface BatchStatus {
   batch_id: string;
   topic: string;
   variants: number;
-  completed: number;
-  failed: number;
+  completed?: number;
+  failed?: number;
   progress?: number;
   total?: number;
   results: DraftResult[];
@@ -352,6 +353,27 @@ export function deleteJob(jobId: string): Promise<{ ok: boolean; error?: string 
 
 export function deleteDraft(draftId: string): Promise<{ ok: boolean; error?: string }> {
   return _apiFetch(`/api/draft/${encodeURIComponent(draftId)}`, { method: "DELETE", timeout: 10_000 });
+}
+
+// ── Scene-level TTS regeneration ──
+
+export interface RegenerateTtsResult {
+  ok: boolean;
+  _tts_url?: string;
+  duration?: number;
+  error?: string;
+}
+
+export function regenerateSceneTts(
+  narration: string,
+  sceneNum: number,
+  lang = "ko",
+  ttsProvider = "edge",
+  voiceGender = "female",
+): Promise<RegenerateTtsResult> {
+  return _post<RegenerateTtsResult>("/api/regenerate-scene-tts", {
+    narration, scene_num: sceneNum, lang, tts_provider: ttsProvider, voice_gender: voiceGender,
+  }, 60_000);
 }
 
 // ── URL helpers ──

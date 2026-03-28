@@ -77,83 +77,170 @@ _SUBTITLE_STYLE_MAP: dict[str, dict] = {
     "impact": {"font_size": 20.0, "font_color": "#FFFF00", "border_width": 0.18},
 }
 
-# --- Brand Kit: template-specific visual presets ---
-# --- Brand Kit: template-specific visual presets ---
-# Text params: font_color, font_size, transform_y, intro_animation, shadow_distance
-# Hook params: hook_font_size, hook_intro, hook_transform_y, hook_bg_color, hook_bg_alpha
-# Image params: img_scale_x, img_scale_y, img_transform_y, img_blur, img_mask_type
-_BRAND_PRESETS: dict[str, dict] = {
+# --- Template layouts: structurally different compositions per template ---
+# Each layout defines dramatic visual differences (not just color tweaks).
+# "img": image layer params, "text": narration text params,
+# "hook": overrides for scene 1, "rank": overrides for rank scenes,
+# "badge": optional second text layer (rank number, step counter, label)
+_TEMPLATE_LAYOUTS: dict[str, dict] = {
     "news_explainer": {
-        "font_color": "#FFFFFF", "font_size": 14.0, "transform_y": -0.35,
-        "intro_animation": "Fade_In", "shadow_distance": 6.0,
-        "hook_font_size": 18.0, "hook_intro": "Zoom_In", "hook_transform_y": -0.15,
-        "hook_bg_color": "#000000", "hook_bg_alpha": 0.5,
-        "img_scale_x": 1.3, "img_scale_y": 1.3, "img_blur": 2,
+        # Full bg + heavy blur → bottom dark bar with white text
+        "img": {"scale_x": 1.4, "scale_y": 1.4, "background_blur": 4},
+        "text": {
+            "font_color": "#FFFFFF", "font_size": 13.0, "transform_y": -0.40,
+            "background_color": "#000000", "background_alpha": 0.55,
+            "intro_animation": "Fade_In", "shadow_distance": 4.0,
+        },
+        "hook": {
+            "text": {"font_size": 20.0, "transform_y": -0.15, "intro_animation": "Zoom_In",
+                     "background_color": "#000000", "background_alpha": 0.65},
+        },
     },
     "community_read": {
-        "font_color": "#FFFFFF", "font_size": 14.0, "transform_y": -0.40,
-        "intro_animation": "Fade_In", "shadow_distance": 5.0,
-        "hook_font_size": 16.0, "hook_intro": "Zoom_In", "hook_transform_y": -0.20,
-        "img_scale_x": 1.0, "img_scale_y": 1.0, "img_transform_y": -0.15,
+        # Image pushed to top half, text in bottom half with speech-bubble bg
+        "img": {"scale_x": 1.0, "scale_y": 1.0, "transform_y": 0.20},
+        "text": {
+            "font_color": "#FFFFFF", "font_size": 14.0, "transform_y": -0.38,
+            "background_color": "#1A1A1A", "background_alpha": 0.65,
+            "intro_animation": "Fade_In", "shadow_distance": 3.0,
+        },
+        "hook": {
+            "text": {"font_size": 18.0, "transform_y": -0.20, "intro_animation": "Zoom_In"},
+        },
     },
     "hot_take": {
-        "font_color": "#FFD700", "font_size": 16.0, "transform_y": -0.30,
-        "intro_animation": "Zoom_In", "shadow_distance": 8.0,
-        "hook_font_size": 22.0, "hook_intro": "Zoom_In", "hook_transform_y": -0.10,
-        "hook_bg_color": "#FF0000", "hook_bg_alpha": 0.4,
-        "img_scale_x": 1.4, "img_scale_y": 1.4, "img_blur": 3,
+        # Full bg blur, CENTER large yellow text, red accent on hook
+        "img": {"scale_x": 1.5, "scale_y": 1.5, "background_blur": 3},
+        "text": {
+            "font_color": "#FFD700", "font_size": 16.0, "transform_y": -0.20,
+            "intro_animation": "Zoom_In", "shadow_distance": 8.0,
+        },
+        "hook": {
+            "text": {"font_size": 24.0, "transform_y": 0.0, "font_color": "#FFD700",
+                     "background_color": "#CC0000", "background_alpha": 0.55},
+        },
     },
     "ranking_list": {
-        "font_color": "#FFFFFF", "font_size": 16.0, "transform_y": -0.25,
-        "intro_animation": "Slide_Left", "shadow_distance": 5.0,
-        "hook_font_size": 20.0, "hook_intro": "Fade_In",
-        "img_scale_x": 1.2, "img_scale_y": 1.2,
-        "rank_font_size": 24.0, "rank_transform_y": -0.15,
-    },
-    "myth_buster": {
-        "font_color": "#FFFFFF", "font_size": 14.0, "transform_y": -0.35,
-        "intro_animation": "Fade_In", "shadow_distance": 6.0,
-        "hook_font_size": 18.0, "hook_intro": "Zoom_In",
-        "hook_bg_color": "#CC0000", "hook_bg_alpha": 0.5,
-        "img_scale_x": 1.3, "img_scale_y": 1.3,
+        # Clean image, rank badge as separate large layer
+        "img": {"scale_x": 1.2, "scale_y": 1.2},
+        "text": {
+            "font_color": "#FFFFFF", "font_size": 13.0, "transform_y": -0.35,
+            "intro_animation": "Fade_In", "shadow_distance": 5.0,
+        },
+        "hook": {
+            "text": {"font_size": 18.0, "transform_y": -0.15},
+        },
+        "rank": {
+            "text": {"intro_animation": "Slide_Left"},
+            "badge": {
+                "font_size": 32.0, "transform_y": -0.08, "font_color": "#FFD700",
+                "background_color": "#1A1A2E", "background_alpha": 0.75,
+                "intro_animation": "Slide_Left",
+            },
+        },
     },
     "reddit_translation": {
-        "font_color": "#F0F0F0", "font_size": 13.0, "transform_y": -0.40,
-        "intro_animation": "Fade_In", "shadow_distance": 4.0,
-        "hook_font_size": 16.0, "hook_intro": "Fade_In", "hook_transform_y": -0.20,
-        "hook_bg_color": "#FF4500", "hook_bg_alpha": 0.4,
-        "img_scale_x": 1.0, "img_scale_y": 1.0, "img_transform_y": -0.20,
-        "commentary_font_color": "#FFD700",
+        # Image at top, two-tone text: normal + gold commentary
+        "img": {"scale_x": 1.0, "scale_y": 1.0, "transform_y": 0.15},
+        "text": {
+            "font_color": "#F0F0F0", "font_size": 13.0, "transform_y": -0.38,
+            "background_color": "#1A1A1A", "background_alpha": 0.50,
+            "intro_animation": "Fade_In", "shadow_distance": 4.0,
+        },
+        "hook": {
+            "text": {"font_size": 16.0, "transform_y": -0.20,
+                     "background_color": "#FF4500", "background_alpha": 0.45},
+        },
+        "commentary": {
+            "text": {"font_color": "#FFD700"},
+        },
     },
     "origin_story": {
-        "font_color": "#FFF8E1", "font_size": 14.0, "transform_y": -0.38,
-        "intro_animation": "Fade_In", "shadow_distance": 5.0,
-        "hook_font_size": 18.0, "hook_intro": "Zoom_In", "hook_transform_y": -0.15,
-        "img_scale_x": 1.3, "img_scale_y": 1.3, "img_blur": 1,
+        # Cinematic: heavy zoom + blur, centered cream text with fade
+        "img": {"scale_x": 1.6, "scale_y": 1.6, "background_blur": 2},
+        "text": {
+            "font_color": "#FFF8E1", "font_size": 15.0, "transform_y": -0.25,
+            "intro_animation": "Fade_In", "shadow_distance": 6.0,
+        },
+        "hook": {
+            "text": {"font_size": 20.0, "transform_y": -0.10, "intro_animation": "Zoom_In"},
+        },
     },
     "vs_comparison": {
-        "font_color": "#FFFFFF", "font_size": 15.0, "transform_y": -0.30,
-        "intro_animation": "Slide_Left", "shadow_distance": 6.0,
-        "hook_font_size": 20.0, "hook_intro": "Zoom_In", "hook_transform_y": -0.10,
-        "hook_bg_color": "#1A1A2E", "hook_bg_alpha": 0.6,
-        "img_scale_x": 1.2, "img_scale_y": 1.2,
+        # Normal image, text with side labels
+        "img": {"scale_x": 1.3, "scale_y": 1.3, "background_blur": 2},
+        "text": {
+            "font_color": "#FFFFFF", "font_size": 14.0, "transform_y": -0.35,
+            "intro_animation": "Slide_Left", "shadow_distance": 6.0,
+        },
+        "hook": {
+            "text": {"font_size": 22.0, "transform_y": -0.05, "intro_animation": "Zoom_In",
+                     "background_color": "#1A1A2E", "background_alpha": 0.6},
+        },
+    },
+    "myth_buster": {
+        # Full bg, verdict scenes get colored verdict badge
+        "img": {"scale_x": 1.3, "scale_y": 1.3, "background_blur": 1},
+        "text": {
+            "font_color": "#FFFFFF", "font_size": 14.0, "transform_y": -0.35,
+            "intro_animation": "Fade_In", "shadow_distance": 6.0,
+        },
+        "hook": {
+            "text": {"font_size": 20.0, "transform_y": -0.10, "intro_animation": "Zoom_In",
+                     "background_color": "#CC0000", "background_alpha": 0.55},
+        },
     },
     "tutorial_steps": {
-        "font_color": "#FFFFFF", "font_size": 14.0, "transform_y": -0.35,
-        "intro_animation": "Fade_In", "shadow_distance": 5.0,
-        "hook_font_size": 16.0, "hook_intro": "Fade_In",
-        "rank_font_size": 20.0, "rank_transform_y": -0.20,
-        "rank_bg_color": "#2196F3", "rank_bg_alpha": 0.5,
-        "img_scale_x": 1.1, "img_scale_y": 1.1,
+        # Smaller image (screen recording feel), step counter badge
+        "img": {"scale_x": 0.85, "scale_y": 0.85, "transform_y": 0.10},
+        "text": {
+            "font_color": "#FFFFFF", "font_size": 13.0, "transform_y": -0.38,
+            "intro_animation": "Fade_In", "shadow_distance": 4.0,
+        },
+        "hook": {
+            "text": {"font_size": 16.0, "transform_y": -0.20},
+        },
+        "rank": {
+            "text": {},
+            "badge": {
+                "font_size": 24.0, "transform_y": 0.35, "font_color": "#FFFFFF",
+                "background_color": "#2196F3", "background_alpha": 0.70,
+                "intro_animation": "Fade_In",
+            },
+        },
     },
     "before_after": {
-        "font_color": "#FFFFFF", "font_size": 14.0, "transform_y": -0.35,
-        "intro_animation": "Fade_In", "shadow_distance": 5.0,
-        "hook_font_size": 18.0, "hook_intro": "Zoom_In", "hook_transform_y": -0.15,
-        "hook_bg_color": "#333333", "hook_bg_alpha": 0.5,
-        "img_scale_x": 1.2, "img_scale_y": 1.2,
-        "img_mask_type": "Rectangle",
+        # Normal image, "Before"/"After" label badge per scene half
+        "img": {"scale_x": 1.2, "scale_y": 1.2},
+        "text": {
+            "font_color": "#FFFFFF", "font_size": 14.0, "transform_y": -0.35,
+            "intro_animation": "Fade_In", "shadow_distance": 5.0,
+        },
+        "hook": {
+            "text": {"font_size": 20.0, "transform_y": -0.10, "intro_animation": "Zoom_In",
+                     "background_color": "#333333", "background_alpha": 0.55},
+        },
+        "emotion_labels": {
+            "sad": {"label": "Before", "font_color": "#FF6B6B",
+                    "background_color": "#1A1A1A", "background_alpha": 0.70},
+            "serious": {"label": "Before", "font_color": "#FF6B6B",
+                        "background_color": "#1A1A1A", "background_alpha": 0.70},
+            "shock": {"label": "After", "font_color": "#4ECDC4",
+                      "background_color": "#1A1A1A", "background_alpha": 0.70},
+            "funny": {"label": "After", "font_color": "#4ECDC4",
+                      "background_color": "#1A1A1A", "background_alpha": 0.70},
+        },
     },
+}
+
+# Fallback layout for unknown templates
+_DEFAULT_LAYOUT: dict = {
+    "img": {"scale_x": 1.3, "scale_y": 1.3},
+    "text": {
+        "font_color": "#FFFFFF", "font_size": 13.0, "transform_y": -0.35,
+        "intro_animation": "Fade_In", "shadow_distance": 5.0,
+    },
+    "hook": {"text": {"font_size": 18.0, "transform_y": -0.15, "intro_animation": "Zoom_In"}},
 }
 
 
@@ -291,11 +378,11 @@ def create_draft_route():
         audio_path = tts_subdir / f"scene_{n}.mp3"
 
         # Determine TTS tone based on scene metadata
-        tts_rate = "+10%"
+        tts_rate = "+25%"
         tts_pitch = "+0Hz"
         tts_text = scene["narration"]
         if scene.get("is_commentary"):
-            tts_rate = "+5%"
+            tts_rate = "+15%"
             tts_pitch = "+0Hz"
         if scene.get("rank") is not None and tts_text.strip():
             # Rank slides: add a brief text pause for dramatic effect
@@ -328,6 +415,7 @@ def create_draft_route():
         img_url, used_source = route_image(scene)
         scene["_image_url"] = img_url
         if img_url and used_source:
+            scene["image_source"] = used_source
             image_sources_used.add(used_source)
     has_images = any(s.get("_image_url") for s in scenes)
     steps_log.append(f"images: {'+'.join(sorted(image_sources_used)) if image_sources_used else 'none'}")
@@ -339,7 +427,7 @@ def create_draft_route():
         return jsonify({"ok": False, "error": str(e)}), 500
 
     cumulative_time = 0.0
-    brand = _BRAND_PRESETS.get(template_type, {})
+    layout = _TEMPLATE_LAYOUTS.get(template_type, _DEFAULT_LAYOUT)
     for scene in scenes:
         n = scene["scene_num"]
         dur = scene["_tts_duration"] + 0.5
@@ -347,7 +435,7 @@ def create_draft_route():
         is_rank_scene = scene.get("rank") is not None
         is_commentary = scene.get("is_commentary", False)
 
-        # ── Background image with Brand Kit layout ──
+        # ── Background image with structural layout ──
         scene_transition = scene.get("transition", "Dissolve") if n > 1 else None
         if scene_transition == "none":
             scene_transition = None
@@ -355,50 +443,86 @@ def create_draft_route():
         if img_ref:
             if not img_ref.startswith(("http://", "https://")):
                 img_ref = Path(img_ref).resolve().as_uri()
+            img_cfg = layout.get("img", {})
             img_params = {
-                "scale_x": brand.get("img_scale_x", 1.3),
-                "scale_y": brand.get("img_scale_y", 1.3),
+                "scale_x": img_cfg.get("scale_x", 1.3),
+                "scale_y": img_cfg.get("scale_y", 1.3),
             }
-            if brand.get("img_blur"):
-                img_params["background_blur"] = brand["img_blur"]
-            if brand.get("img_transform_y") is not None:
-                img_params["transform_y"] = brand["img_transform_y"]
-            if brand.get("img_mask_type"):
-                img_params["mask_type"] = brand["img_mask_type"]
+            if img_cfg.get("background_blur"):
+                img_params["background_blur"] = img_cfg["background_blur"]
+            if img_cfg.get("transform_y") is not None:
+                img_params["transform_y"] = img_cfg["transform_y"]
+            if img_cfg.get("mask_type"):
+                img_params["mask_type"] = img_cfg["mask_type"]
             vb_add_image(
                 draft_id, img_ref, cumulative_time, cumulative_time + dur,
                 transition=scene_transition, **img_params,
             )
 
-        # ── Text subtitle with Brand Kit + scene-type overrides ──
-        subtitle_text = scene.get("display_text") or scene["narration"]
+        # ── Text narration with structural layout ──
+        subtitle_text = scene["narration"]
+        base_text = layout.get("text", {})
         text_params = {
-            "font_color": brand.get("font_color", "#FFFFFF"),
-            "font_size": brand.get("font_size", 12.0),
-            "transform_y": brand.get("transform_y", -0.35),
+            "font_color": base_text.get("font_color", "#FFFFFF"),
+            "font_size": base_text.get("font_size", 13.0),
+            "transform_y": base_text.get("transform_y", -0.35),
             "border_width": 0.12,
-            "shadow_distance": brand.get("shadow_distance", 5.0),
-            "intro_animation": brand.get("intro_animation", "Fade_In"),
+            "shadow_distance": base_text.get("shadow_distance", 5.0),
+            "intro_animation": base_text.get("intro_animation", "Fade_In"),
         }
-        # Hook scene: larger text, different position, zoom animation
+        if base_text.get("background_color"):
+            text_params["background_color"] = base_text["background_color"]
+            text_params["background_alpha"] = base_text.get("background_alpha", 0.5)
+
+        # Hook scene overrides
         if is_hook:
-            text_params["font_size"] = brand.get("hook_font_size", text_params["font_size"])
-            text_params["intro_animation"] = brand.get("hook_intro", "Zoom_In")
-            if brand.get("hook_transform_y") is not None:
-                text_params["transform_y"] = brand["hook_transform_y"]
-            if brand.get("hook_bg_color"):
-                text_params["background_color"] = brand["hook_bg_color"]
-                text_params["background_alpha"] = brand.get("hook_bg_alpha", 0.5)
-        # Rank scene: dedicated size/position
-        elif is_rank_scene:
-            text_params["font_size"] = brand.get("rank_font_size", 18.0)
-            text_params["transform_y"] = brand.get("rank_transform_y", -0.20)
-            if brand.get("rank_bg_color"):
-                text_params["background_color"] = brand["rank_bg_color"]
-                text_params["background_alpha"] = brand.get("rank_bg_alpha", 0.5)
-        # Commentary scene (reddit_translation): accent color
-        elif is_commentary and brand.get("commentary_font_color"):
-            text_params["font_color"] = brand["commentary_font_color"]
+            hook_cfg = layout.get("hook", {}).get("text", {})
+            text_params.update({k: v for k, v in hook_cfg.items() if v is not None})
+        # Rank scene overrides + badge layer
+        elif is_rank_scene and layout.get("rank"):
+            rank_cfg = layout["rank"]
+            rank_text_ov = rank_cfg.get("text", {})
+            text_params.update({k: v for k, v in rank_text_ov.items() if v is not None})
+            # Add rank badge as separate text layer
+            badge_cfg = rank_cfg.get("badge")
+            if badge_cfg:
+                rank_label = f"{scene['rank']}"
+                if template_type == "tutorial_steps":
+                    rank_label = f"Step {scene['rank']}"
+                vb_add_subtitle(
+                    draft_id, rank_label,
+                    cumulative_time, cumulative_time + dur,
+                    scene_num=n + 100,  # unique track offset
+                    font_color=badge_cfg.get("font_color", "#FFD700"),
+                    font_size=badge_cfg.get("font_size", 28.0),
+                    transform_y=badge_cfg.get("transform_y", -0.08),
+                    background_color=badge_cfg.get("background_color", ""),
+                    background_alpha=badge_cfg.get("background_alpha", 0.0),
+                    intro_animation=badge_cfg.get("intro_animation", "Fade_In"),
+                )
+        # Commentary scene overrides (reddit_translation)
+        elif is_commentary and layout.get("commentary"):
+            comm_text_ov = layout["commentary"].get("text", {})
+            text_params.update({k: v for k, v in comm_text_ov.items() if v is not None})
+
+        # Emotion-based label badge (before_after: "Before"/"After")
+        emotion_labels = layout.get("emotion_labels")
+        if emotion_labels and not is_hook:
+            emotion = scene.get("emotion", "neutral")
+            label_cfg = emotion_labels.get(emotion)
+            if label_cfg:
+                vb_add_subtitle(
+                    draft_id, label_cfg["label"],
+                    cumulative_time, cumulative_time + dur,
+                    scene_num=n + 200,  # unique track offset
+                    font_color=label_cfg.get("font_color", "#FFFFFF"),
+                    font_size=22.0,
+                    transform_y=0.35,
+                    background_color=label_cfg.get("background_color", ""),
+                    background_alpha=label_cfg.get("background_alpha", 0.0),
+                    intro_animation="Fade_In",
+                )
+
         # Subtitle style map overrides (user-selected in UI)
         style_overrides = _SUBTITLE_STYLE_MAP.get(subtitle_style, {}).copy()
         text_params.update(style_overrides)
@@ -434,6 +558,7 @@ def create_draft_route():
             scenes=scenes,
             capcut_draft_dir=CAPCUT_DRAFT_DIR,
             has_images=has_images,
+            bgm_path=str(bgm_file) if bgm_file else None,
         )
         if draft_path:
             steps_log.append("saved to CapCut")
@@ -467,6 +592,43 @@ def create_draft_route():
         "steps": steps_log,
         "message": "Draft saved — open in CapCut" if draft_path else "Draft created",
     })
+
+
+# ---------------------------------------------------------------------------
+# Scene-level TTS regeneration
+# ---------------------------------------------------------------------------
+
+@app.route("/api/regenerate-scene-tts", methods=["POST"])
+def regenerate_scene_tts_route():
+    """Regenerate TTS for a single scene after narration edit."""
+    data = flask_request.get_json(silent=True) or {}
+    narration = data.get("narration", "").strip()
+    if not narration:
+        return jsonify({"ok": False, "error": "narration is required"}), 400
+    try:
+        scene_num = max(1, min(int(data.get("scene_num", 1)), 100))
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "invalid scene_num"}), 400
+    lang = data.get("lang", "ko")
+    tts_provider = data.get("tts_provider", "edge")
+    voice_gender = data.get("voice_gender", "female")
+
+    regen_ts = str(int(time.time()))
+    regen_dir = TTS_DIR / regen_ts
+    regen_dir.mkdir(parents=True, exist_ok=True)
+    audio_path = regen_dir / f"scene_{scene_num}.mp3"
+
+    try:
+        generate_tts(
+            text=narration, lang=lang, gender=voice_gender,
+            provider=tts_provider, output_path=audio_path,
+            rate="+25%", pitch="+0Hz",
+        )
+        duration = _get_audio_duration(str(audio_path))
+        tts_url = f"http://{BRIDGE_HOST}:{BRIDGE_PORT}/api/tts/{regen_ts}/scene_{scene_num}.mp3"
+        return jsonify({"ok": True, "_tts_url": tts_url, "duration": round(duration, 1)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 # ---------------------------------------------------------------------------

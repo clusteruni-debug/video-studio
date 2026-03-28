@@ -162,6 +162,12 @@ def route_image(scene: dict) -> tuple[str | None, str | None]:
         # Fall back to Pexels if generation fails
         url = search_pexels(image_prompt)
         return (url, "pexels") if url else (None, None)
+    if source == "imagen":
+        ai_path = generate_imagen3(image_prompt)
+        if ai_path:
+            return str(Path(ai_path).resolve()), "imagen3"
+        url = search_pexels(image_prompt)
+        return (url, "pexels") if url else (None, None)
     if source == "dalle":
         url = search_pexels(image_prompt)
         return (url, "pexels") if url else (None, None)

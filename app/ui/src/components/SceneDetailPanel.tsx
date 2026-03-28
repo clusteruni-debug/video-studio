@@ -1,19 +1,54 @@
-import { useState } from "react";
-import { X, ImagePlus, Search } from "lucide-react";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { X, ImagePlus, Search, Upload, Sparkles, Play, Square, RefreshCw } from "lucide-react";
 import { useStudioState, useStudioActions } from "../context/StudioContext";
 
-type ImageSource = "pexels" | "flux";
+type ImageSource = "pexels" | "flux" | "imagen" | "upload";
 
-const SOURCE_LABELS: Record<ImageSource, string> = {
-  pexels: "Pexels",
-  flux: "FLUX AI",
+const SOURCE_LABELS: Record<ImageSource, { label: string; icon: typeof Search }> = {
+  pexels: { label: "Pexels", icon: Search },
+  flux: { label: "FLUX AI", icon: Sparkles },
+  imagen: { label: "Imagen 4", icon: Sparkles },
+  upload: { label: "업로드", icon: Upload },
 };
+const SOURCE_KEYS: ImageSource[] = ["pexels", "flux", "imagen", "upload"];
 
 export default function SceneDetailPanel() {
   const { draftResult, selectedSceneIndex } = useStudioState();
   const actions = useStudioActions();
   const [editingPrompt, setEditingPrompt] = useState(false);
   const [promptDraft, setPromptDraft] = useState("");
+  const [editingNarration, setEditingNarration] = useState(false);
+  const [narrationDraft, setNarrationDraft] = useState("");
+  const [regenerating, setRegenerating] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Cleanup audio on scene switch or unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = "";
+        audioRef.current = null;
+      }
+      setPlaying(false);
+    };
+  }, [selectedSceneIndex]);
+
+  const playTts = useCallback((url: string) => {
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ""; }
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    setPlaying(true);
+    audio.play().catch(() => {});
+    audio.addEventListener("ended", () => setPlaying(false), { once: true });
+  }, []);
+
+  const stopTts = useCallback(() => {
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ""; audioRef.current = null; }
+    setPlaying(false);
+  }, []);
 
   if (selectedSceneIndex === null || !draftResult?.scenes?.[selectedSceneIndex]) return null;
 
@@ -22,6 +57,7 @@ export default function SceneDetailPanel() {
 
   const handleSourceChange = (src: ImageSource) => {
     actions.editScene(selectedSceneIndex, "image_source", src);
+    if (src === "upload") fileInputRef.current?.click();
   };
 
   const handlePromptEdit = () => {
@@ -34,6 +70,33 @@ export default function SceneDetailPanel() {
     if (promptDraft !== scene.image_prompt) {
       actions.editScene(selectedSceneIndex, "image_prompt", promptDraft);
     }
+  };
+
+  const handleNarrationEdit = () => {
+    setNarrationDraft(scene.narration || "");
+    setEditingNarration(true);
+  };
+
+  const commitNarration = () => {
+    setEditingNarration(false);
+    if (narrationDraft !== scene.narration) {
+      actions.editScene(selectedSceneIndex, "narration", narrationDraft);
+    }
+  };
+
+  const handleRegenTts = async () => {
+    setRegenerating(true);
+    try {
+      await actions.regenerateSceneTts(selectedSceneIndex);
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) actions.uploadSceneImage(selectedSceneIndex, file);
+    e.target.value = "";
   };
 
   return (
@@ -54,59 +117,134 @@ export default function SceneDetailPanel() {
       <div style={{ marginBottom: 12 }}>
         <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: 6 }}>이미지 소스</div>
         <div className="mode-toggle duration-toggle">
-          {(["pexels", "flux"] as ImageSource[]).map((src) => (
+          {SOURCE_KEYS.map((src) => (
             <button
               key={src}
               className={`mode-toggle-btn duration-toggle-btn ${currentSource === src ? "active" : ""}`}
               onClick={() => handleSourceChange(src)}
             >
-              {SOURCE_LABELS[src]}
+              {SOURCE_LABELS[src].label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Image prompt */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: 4 }}>
-          {currentSource === "flux" ? "AI 이미지 프롬프트" : "검색어"}
+      {/* Upload preview */}
+      {scene._upload_preview && (
+        <div style={{ marginBottom: 12, borderRadius: 6, overflow: "hidden" }}>
+          <img
+            src={scene._upload_preview}
+            alt="업로드 이미지"
+            style={{ width: "100%", maxHeight: 200, objectFit: "cover", display: "block" }}
+          />
         </div>
-        {editingPrompt ? (
+      )}
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={handleFileUpload}
+      />
+
+      {/* Upload button (when source is upload but no preview yet) */}
+      {currentSource === "upload" && !scene._upload_preview && (
+        <div style={{ marginBottom: 12 }}>
+          <button className="chip" onClick={() => fileInputRef.current?.click()}>
+            <Upload size={12} /> 이미지 선택
+          </button>
+        </div>
+      )}
+
+      {/* Image prompt (for non-upload sources) */}
+      {currentSource !== "upload" && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: 4 }}>
+            {currentSource === "pexels" ? "검색어" : "AI 이미지 프롬프트"}
+          </div>
+          {editingPrompt ? (
+            <textarea
+              className="editable-input"
+              value={promptDraft}
+              onChange={(e) => setPromptDraft(e.target.value)}
+              onBlur={commitPrompt}
+              onKeyDown={(e) => { if (e.key === "Escape") setEditingPrompt(false); }}
+              rows={2}
+              autoFocus
+            />
+          ) : (
+            <div className="editable-text" onClick={handlePromptEdit}>
+              {scene.image_prompt || <span className="editable-placeholder">이미지 프롬프트 입력...</span>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Generate button (for non-upload sources) */}
+      {currentSource !== "upload" && (
+        <div style={{ marginBottom: 12 }}>
+          <button
+            className="chip"
+            onClick={() => {
+              if (scene.image_prompt) {
+                actions.enqueueImages([scene]);
+                actions.setActiveTab("images");
+              }
+            }}
+            disabled={!scene.image_prompt}
+          >
+            {currentSource === "pexels" ? (
+              <><Search size={12} /> Pexels 검색</>
+            ) : (
+              <><ImagePlus size={12} /> {currentSource === "imagen" ? "Imagen 4" : "FLUX"} 생성</>
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* Narration editing */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: 4 }}>나레이션</div>
+        {editingNarration ? (
           <textarea
             className="editable-input"
-            value={promptDraft}
-            onChange={(e) => setPromptDraft(e.target.value)}
-            onBlur={commitPrompt}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setEditingPrompt(false);
-            }}
-            rows={2}
+            value={narrationDraft}
+            onChange={(e) => setNarrationDraft(e.target.value)}
+            onBlur={commitNarration}
+            onKeyDown={(e) => { if (e.key === "Escape") setEditingNarration(false); }}
+            rows={4}
             autoFocus
           />
         ) : (
-          <div className="editable-text" onClick={handlePromptEdit}>
-            {scene.image_prompt || <span className="editable-placeholder">이미지 프롬프트 입력...</span>}
+          <div className="editable-text" onClick={handleNarrationEdit} style={{ lineHeight: 1.6 }}>
+            {scene.narration || <span className="editable-placeholder">나레이션 입력...</span>}
           </div>
         )}
       </div>
 
-      {/* Generate button */}
-      <div style={{ marginBottom: 12 }}>
+      {/* TTS preview + regenerate */}
+      <div style={{ marginBottom: 12, display: "flex", gap: 8 }}>
+        {scene._tts_url && (
+          playing ? (
+            <button className="chip" onClick={stopTts}>
+              <Square size={12} /> 정지
+            </button>
+          ) : (
+            <button className="chip" onClick={() => playTts(scene._tts_url!)}>
+              <Play size={12} /> TTS 미리듣기
+            </button>
+          )
+        )}
         <button
           className="chip"
-          onClick={() => {
-            if (scene.image_prompt) {
-              actions.enqueueImages([scene]);
-              actions.setActiveTab("images");
-            }
-          }}
-          disabled={!scene.image_prompt}
+          onClick={handleRegenTts}
+          disabled={regenerating || !scene.narration}
+          title="나레이션 텍스트로 TTS 재생성"
         >
-          {currentSource === "flux" ? (
-            <><ImagePlus size={12} /> FLUX 이미지 생성</>
-          ) : (
-            <><Search size={12} /> Pexels 검색</>
-          )}
+          <RefreshCw size={12} className={regenerating ? "spin" : ""} />
+          {regenerating ? "생성 중..." : "TTS 재생성"}
         </button>
       </div>
 
@@ -119,30 +257,15 @@ export default function SceneDetailPanel() {
         </div>
       </div>
 
-      {/* Assets */}
-      <div className="scene-detail-assets">
-        {/* Narration */}
-        <div className="scene-detail-asset-row">
-          <div className="scene-detail-asset-info">
-            <span className="scene-detail-asset-status">나레이션</span>
-            <div style={{ fontSize: "0.85rem", lineHeight: 1.6, whiteSpace: "pre-line" }}>
-              {scene.narration}
-            </div>
+      {/* Display text */}
+      {scene.display_text && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: 4 }}>자막 (FFmpeg용)</div>
+          <div style={{ fontSize: "0.85rem", lineHeight: 1.6, whiteSpace: "pre-line", color: "var(--text-secondary)" }}>
+            {scene.display_text}
           </div>
         </div>
-
-        {/* Display text */}
-        {scene.display_text && (
-          <div className="scene-detail-asset-row">
-            <div className="scene-detail-asset-info">
-              <span className="scene-detail-asset-status">자막</span>
-              <div style={{ fontSize: "0.85rem", lineHeight: 1.6, whiteSpace: "pre-line" }}>
-                {scene.display_text}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
