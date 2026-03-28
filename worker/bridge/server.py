@@ -64,9 +64,21 @@ def _generate_scenes_llm(topic: str, lang: str, template_type: str = "news_expla
         template_type = "news_explainer"
     prompt = build_template_prompt(topic, lang_name, template_type)
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={GEMINI_API_KEY}"
+
+    # Minimal Korean prompt — JSON format rules cause Gemini to lose topic focus
+    template_hint = {
+        "community_read": "커뮤니티 글 읽어주기",
+        "news_explainer": "뉴스 해설",
+        "reddit_translation": "해외 글 번역",
+        "ranking_list": "Top N 랭킹",
+        "origin_story": "기원/역사 스토리",
+    }.get(template_type, "뉴스 해설")
+    phase1_prompt = f'{topic}에 대해 유튜브 쇼츠 {template_hint} 영상 스크립트를 만들어줘. 8개 씬. 각 씬마다 나레이션과 영어 이미지 검색어를 포함해줘. JSON 배열로 반환: [{{"scene_num":1,"narration":"나레이션","image_prompt":"english image query"}}]'
+
     payload = json.dumps({
-        "contents": [{"parts": [{"text": prompt}]}],
+        "contents": [{"parts": [{"text": phase1_prompt}]}],
         "generationConfig": {
             "temperature": 0.7,
             "maxOutputTokens": 4096,
@@ -74,7 +86,11 @@ def _generate_scenes_llm(topic: str, lang: str, template_type: str = "news_expla
         },
     }).encode("utf-8")
 
-    req = urllib_request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+    # Debug: save actual prompt being sent
+    with open(str(PROJECT_ROOT / "storage" / "last_prompt.txt"), "w", encoding="utf-8") as dpf:
+        dpf.write(phase1_prompt)
+
+    req = urllib_request.Request(gemini_url, data=payload, headers={"Content-Type": "application/json"})
     try:
         with urllib_request.urlopen(req, timeout=45) as resp:
             raw = resp.read()
@@ -187,10 +203,17 @@ def serve_tts(filename: str):
     return send_from_directory(str(TTS_DIR), filename)
 
 
+@app.route("/api/bgm/<path:filename>", methods=["GET"])
+def serve_bgm(filename: str):
+    return send_from_directory(str(PROJECT_ROOT / "assets" / "bgm"), filename)
+
+
 @app.route("/api/create-draft", methods=["POST"])
 def create_draft_route():
     data = flask_request.get_json(silent=True) or {}
-    topic = data.get("prompt", "").strip() or "AI가 바꾸는 미래"
+    topic = data.get("prompt", "").strip()
+    if not topic:
+        return jsonify({"ok": False, "error": "prompt is required"}), 400
     lang = data.get("lang", "ko")
     tts_provider = data.get("tts_provider", "edge")
     voice_gender = data.get("voice_gender", "female")
@@ -215,7 +238,7 @@ def create_draft_route():
                     continue
                 break
             s["narration"] = narr[:best].rstrip() + "\n" + narr[best:].lstrip()
-    steps_log.append(f"script: {len(scenes)} scenes ({script_source}, {template_type})")
+    steps_log.append(f"script: {len(scenes)} scenes ({script_source}, {template_type}, topic={topic[:30]})")
 
     # ── Step 2: Generate TTS for each scene ──────────────────────────────
     draft_ts = str(int(time.time()))
@@ -324,7 +347,7 @@ def create_draft_route():
                 font_size=18.0 if is_rank_scene else 12.0,
                 track_name=f"text_{n}",
                 width=1080, height=1920,
-                transform_y=-0.3 if is_rank_scene else -0.75,
+                transform_y=-0.2 if is_rank_scene else -0.35,
                 fixed_width=0.85,
                 # Thick black stroke — key for readability
                 border_width=0.12,
@@ -361,6 +384,32 @@ def create_draft_route():
                 print(f"[vectcut] add_audio scene {n}: {e}")
 
         cumulative_time += dur
+
+    # ── Step 4b: Add BGM track ───────────────────────────────────────────
+    bgm_dir = PROJECT_ROOT / "assets" / "bgm"
+    bgm_style = scenes[0].get("bgm_style", "lo-fi") if scenes else "lo-fi"
+    bgm_file = None
+    if bgm_dir.exists():
+        bgm_candidates = [f for f in bgm_dir.iterdir() if f.suffix in (".mp3", ".wav", ".m4a", ".ogg")]
+        if bgm_candidates:
+            # Pick first available (future: match bgm_style)
+            bgm_file = bgm_candidates[0]
+    if bgm_file:
+        bgm_url = f"http://{BRIDGE_HOST}:{BRIDGE_PORT}/api/bgm/{bgm_file.name}"
+        try:
+            add_audio_track(
+                audio_url=bgm_url,
+                start=0,
+                end=cumulative_time,
+                target_start=0,
+                draft_id=draft_id,
+                track_name="bgm",
+                volume=0.12,
+                duration=cumulative_time,
+            )
+            steps_log.append(f"bgm: {bgm_file.name}")
+        except Exception as e:
+            print(f"[vectcut] add_bgm failed: {e}")
 
     steps_log.append(f"draft: {draft_id}")
 
@@ -413,29 +462,28 @@ def create_draft_route():
                 except Exception as e:
                     print(f"[download] Image failed: {e}")
 
-        # ── Step 5c: Match downloaded files to VectCutAPI materials ───────
-        # VectCutAPI registers materials as .png, but downloads are .jpg/.mp4.
-        # Copy actual files to the .png names VectCutAPI expects, then set paths.
+        # ── Step 5c: Set correct paths on VectCutAPI materials ─────────────
+        # VectCutAPI registers as .png, but actual files are .jpg/.mp4.
+        # Point replace_path to the ACTUAL file on disk (not .png).
         actual_by_stem = {}
         for fp in image_dest.iterdir():
             if fp.is_file():
                 actual_by_stem[fp.stem] = fp
 
         if hasattr(cached_script, "materials"):
-            # Fix audio paths
             if hasattr(cached_script.materials, "audios"):
                 for audio in cached_script.materials.audios:
                     audio.replace_path = str(audio_dest / audio.material_name)
-            # Fix image paths — copy .jpg to .png name so CapCut finds it
             if hasattr(cached_script.materials, "videos"):
                 for video in cached_script.materials.videos:
                     if getattr(video, "material_type", "") == "photo":
                         stem = Path(video.material_name).stem
                         actual_fp = actual_by_stem.get(stem)
-                        if actual_fp and actual_fp.suffix != ".png":
-                            target = image_dest / video.material_name
-                            if not target.exists():
-                                shutil.copy2(str(actual_fp), str(target))
+                        if actual_fp:
+                            # Copy actual file to .png name that VectCutAPI expects
+                            png_path = image_dest / video.material_name  # image_xxx.png
+                            if not png_path.exists() and actual_fp.suffix != ".png":
+                                shutil.copy2(str(actual_fp), str(png_path))
                         video.replace_path = str(image_dest / video.material_name)
 
         # ── Step 5d: Save project file ────────────────────────────────────

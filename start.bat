@@ -1,6 +1,7 @@
 @echo off
 title Video Studio
 cd /d "%~dp0"
+set PYTHONDONTWRITEBYTECODE=1
 
 echo Starting Video Studio...
 
