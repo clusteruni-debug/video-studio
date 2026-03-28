@@ -1,16 +1,15 @@
-import { Settings } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { Settings, Film, ImageIcon, Rss, Layers, Briefcase } from "lucide-react";
 import { useStudioState, useStudioActions } from "../context/StudioContext";
 import type { StudioTab } from "../context/StudioContext";
 
-const TAB_LABELS: Record<StudioTab, string> = {
-  storyboard: "스토리보드",
-  images: "이미지",
-  sources: "소싱",
-  batch: "배치",
-  jobs: "작업",
-};
-
-const TABS: StudioTab[] = ["storyboard", "images", "sources", "batch", "jobs"];
+const TAB_CONFIG: { tab: StudioTab; label: string; icon: LucideIcon }[] = [
+  { tab: "storyboard", label: "스토리보드", icon: Film },
+  { tab: "images", label: "이미지", icon: ImageIcon },
+  { tab: "sources", label: "소싱", icon: Rss },
+  { tab: "batch", label: "배치", icon: Layers },
+  { tab: "jobs", label: "작업", icon: Briefcase },
+];
 
 export default function TopBar() {
   const { bridgeStatus, activeTab } = useStudioState();
@@ -28,13 +27,13 @@ export default function TopBar() {
       </div>
 
       <div className="mode-toggle">
-        {TABS.map((tab) => (
+        {TAB_CONFIG.map(({ tab, label, icon: Icon }) => (
           <button
             key={tab}
             className={`mode-toggle-btn ${activeTab === tab ? "active" : ""}`}
             onClick={() => actions.setActiveTab(tab)}
           >
-            {TAB_LABELS[tab]}
+            <Icon size={14} /> {label}
           </button>
         ))}
       </div>

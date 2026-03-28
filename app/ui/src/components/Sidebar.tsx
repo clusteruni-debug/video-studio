@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight, Loader, Sparkles, Trash2 } from "lucide-react";
 import { useStudioState, useStudioActions } from "../context/StudioContext";
 import { TEMPLATE_LABELS, TONE_LABELS, TTS_LABELS, SUBTITLE_STYLE_LABELS } from "../lib/constants";
@@ -8,9 +8,22 @@ export default function Sidebar() {
   const state = useStudioState();
   const actions = useStudioActions();
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (state.creating) {
+      setElapsed(0);
+      timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
+    } else {
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [state.creating]);
 
   const {
     prompt, lang, templateType, tone, ttsProvider, voiceGender, subtitleStyle,
+    targetDuration, customInstruction,
     bridgeStatus, availableProviders, availableTemplates, creating, error,
     projects, activeProjectId,
   } = state;
@@ -53,6 +66,34 @@ export default function Sidebar() {
               <option key={t} value={t}>{TONE_LABELS[t]}</option>
             ))}
           </select>
+        </div>
+      </div>
+
+      {/* Duration + Custom instruction */}
+      <div className="sidebar-section">
+        <div className="sidebar-field compact">
+          <span>영상 길이</span>
+          <div className="mode-toggle duration-toggle">
+            {(["30s", "1min", "custom"] as const).map((d) => (
+              <button
+                key={d}
+                className={`mode-toggle-btn duration-toggle-btn ${targetDuration === d ? "active" : ""}`}
+                onClick={() => actions.setTargetDuration(d)}
+              >
+                {d === "30s" ? "30초" : d === "1min" ? "1분" : "자유"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="sidebar-field compact">
+          <span>추가 지시 (선택)</span>
+          <textarea
+            value={customInstruction}
+            onChange={(e) => actions.setCustomInstruction(e.target.value)}
+            placeholder="예: 숫자 데이터를 많이 포함해줘"
+            rows={2}
+            style={{ fontSize: "0.82rem" }}
+          />
         </div>
       </div>
 
@@ -109,7 +150,7 @@ export default function Sidebar() {
         onClick={actions.handleCreate}
       >
         {creating ? (
-          <><Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> 초안 생성 중...</>
+          <><Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> 생성 중... {elapsed}s</>
         ) : (
           <><Sparkles size={14} /> 초안 생성</>
         )}

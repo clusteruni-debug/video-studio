@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Layers, Loader, CheckCircle, XCircle, Trash2 } from "lucide-react";
 import { useStudioState, useStudioActions } from "../context/StudioContext";
 
@@ -7,6 +7,18 @@ export default function BatchPanel() {
   const actions = useStudioActions();
   const [variants, setVariants] = useState(3);
   const [starting, setStarting] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (activeBatchId) {
+      setElapsed(0);
+      timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
+    } else {
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [activeBatchId]);
 
   // Load batches on mount
   useEffect(() => {
@@ -67,19 +79,29 @@ export default function BatchPanel() {
       )}
 
       {/* Active batch progress */}
-      {isRunning && batchStatus && (
-        <div className="batch-progress" style={{ marginBottom: 16 }}>
-          <span className="batch-progress-stats">
-            {batchDone} / {batchTotal} 완료
-            {(batchStatus.failed ?? 0) > 0 && (
-              <span style={{ color: "var(--error)", marginLeft: 8 }}>실패 {batchStatus.failed}</span>
-            )}
-          </span>
-          <div className="batch-progress-bar">
-            <div className="batch-progress-fill" style={{ width: `${progress * 100}%` }} />
+      {isRunning && batchStatus && (() => {
+        const avgPerItem = batchDone > 1 ? elapsed / batchDone : 0;
+        const remaining = batchTotal - batchDone;
+        const etaSec = batchDone > 1 ? Math.round(avgPerItem * remaining) : 0;
+        return (
+          <div className="batch-progress" style={{ marginBottom: 16 }}>
+            <span className="batch-progress-stats">
+              {batchDone} / {batchTotal} 완료 · {elapsed}s
+              {batchDone > 1 && remaining > 0 && (
+                <span style={{ color: "var(--text-secondary)", marginLeft: 8 }}>
+                  ~{etaSec}s 남음
+                </span>
+              )}
+              {(batchStatus.failed ?? 0) > 0 && (
+                <span style={{ color: "var(--error)", marginLeft: 8 }}>실패 {batchStatus.failed}</span>
+              )}
+            </span>
+            <div className="batch-progress-bar">
+              <div className="batch-progress-fill" style={{ width: `${progress * 100}%` }} />
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Batch results */}
       {batchStatus?.results && batchStatus.results.length > 0 && (

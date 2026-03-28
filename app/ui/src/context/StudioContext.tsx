@@ -30,6 +30,8 @@ export interface StudioState {
   ttsProvider: string;
   voiceGender: "female" | "male";
   subtitleStyle: string;
+  targetDuration: "30s" | "1min" | "custom";
+  customInstruction: string;
 
   activeTab: StudioTab;
   selectedSceneIndex: number | null;
@@ -65,6 +67,8 @@ const initialState: StudioState = {
   ttsProvider: "edge",
   voiceGender: "female",
   subtitleStyle: "",
+  targetDuration: "30s",
+  customInstruction: "",
 
   activeTab: "storyboard",
   selectedSceneIndex: null,
@@ -195,6 +199,8 @@ export interface StudioActions {
   setTtsProvider(v: string): void;
   setVoiceGender(v: "female" | "male"): void;
   setSubtitleStyle(v: string): void;
+  setTargetDuration(v: "30s" | "1min" | "custom"): void;
+  setCustomInstruction(v: string): void;
   setActiveTab(tab: StudioTab): void;
   selectScene(index: number | null): void;
   toggleDebug(): void;
@@ -295,6 +301,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     setTtsProvider(v) { dispatch({ type: "SET_FIELD", field: "ttsProvider", value: v }); },
     setVoiceGender(v) { dispatch({ type: "SET_FIELD", field: "voiceGender", value: v }); },
     setSubtitleStyle(v) { dispatch({ type: "SET_FIELD", field: "subtitleStyle", value: v }); },
+    setTargetDuration(v) { dispatch({ type: "SET_FIELD", field: "targetDuration", value: v }); },
+    setCustomInstruction(v) { dispatch({ type: "SET_FIELD", field: "customInstruction", value: v }); },
     setActiveTab(tab) { dispatch({ type: "SET_FIELD", field: "activeTab", value: tab }); },
     selectScene(index) { dispatch({ type: "SET_FIELD", field: "selectedSceneIndex", value: index }); },
     toggleDebug() {
@@ -306,7 +314,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       if (!s.prompt.trim() || s.creating) return;
       dispatch({ type: "DRAFT_START" });
       try {
-        const result = await apiCreateDraft(s.prompt, s.lang, s.ttsProvider, s.voiceGender, s.templateType, s.subtitleStyle, s.tone);
+        const result = await apiCreateDraft(s.prompt, s.lang, s.ttsProvider, s.voiceGender, s.templateType, s.subtitleStyle, s.tone, s.targetDuration, s.customInstruction);
         if (result.ok) dispatch({ type: "DRAFT_OK", result });
         else dispatch({ type: "DRAFT_FAIL", error: result.error || "Failed to create draft" });
       } catch (e: unknown) {
@@ -394,6 +402,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         template_type: s.templateType, lang: s.lang,
         tts_provider: s.ttsProvider, voice_gender: s.voiceGender,
         subtitle_style: s.subtitleStyle, tone: s.tone,
+        target_duration: s.targetDuration,
+        ...(s.customInstruction ? { custom_instruction: s.customInstruction } : {}),
       });
       if (res.ok && res.batch_id) {
         dispatch({ type: "SET_FIELD", field: "activeBatchId", value: res.batch_id });
@@ -415,6 +425,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         prompt: s.prompt, lang: s.lang, tts_provider: s.ttsProvider,
         voice_gender: s.voiceGender, template_type: s.templateType,
         tone: s.tone, subtitle_style: s.subtitleStyle,
+        target_duration: s.targetDuration,
+        ...(s.customInstruction ? { custom_instruction: s.customInstruction } : {}),
       });
       if (res.ok) {
         const list = await apiListJobs();

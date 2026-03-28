@@ -207,10 +207,14 @@ export function createDraft(
   templateType: TemplateType = "news_explainer",
   subtitleStyle: string = "",
   tone: TonePreset = "casual_heyo",
+  targetDuration: string = "30s",
+  customInstruction: string = "",
 ): Promise<DraftResult> {
   return _post<DraftResult>("/api/create-draft", {
     prompt, lang, tts_provider: ttsProvider, voice_gender: voiceGender,
     template_type: templateType, subtitle_style: subtitleStyle, tone,
+    target_duration: targetDuration,
+    ...(customInstruction ? { custom_instruction: customInstruction } : {}),
   }, 300_000);
 }
 
@@ -299,6 +303,8 @@ export function createBatch(opts: {
   voice_gender?: string;
   subtitle_style?: string;
   tone?: string;
+  target_duration?: string;
+  custom_instruction?: string;
 }): Promise<BatchCreateResult> {
   return _post<BatchCreateResult>("/api/batch/create", opts, 30_000);
 }
@@ -325,6 +331,8 @@ export function submitJob(opts: {
   template_type?: string;
   tone?: string;
   subtitle_style?: string;
+  target_duration?: string;
+  custom_instruction?: string;
 }): Promise<JobSubmitResult> {
   return _post<JobSubmitResult>("/api/jobs", opts, 30_000);
 }

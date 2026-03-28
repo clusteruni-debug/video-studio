@@ -1,6 +1,15 @@
-import { useState } from "react";
-import { ImageIcon, Trash2, RefreshCw } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ImageIcon, Trash2, RefreshCw, X } from "lucide-react";
 import { useStudioState, useStudioActions } from "../context/StudioContext";
+
+function ElapsedTimer() {
+  const [sec, setSec] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setSec((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <>{sec}s</>;
+}
 
 export default function ImageCanvas() {
   const { imageItems, imageQueueProcessing, draftResult } = useStudioState();
@@ -88,19 +97,20 @@ export default function ImageCanvas() {
                 <RefreshCw size={10} />
               </button>
             )}
-            {item.status !== "failed" && (
-              <button className="image-gallery-remove" onClick={() => setSelectedId(null)}>
-                <Trash2 size={10} />
+            {item.status === "done" && selectedId === item.id && (
+              <button className="image-gallery-remove" onClick={() => setSelectedId(null)} title="선택 해제">
+                <X size={10} />
               </button>
             )}
             {item.status === "generating" && (
               <div style={{
                 position: "absolute", inset: 0,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                background: "rgba(0,0,0,0.4)", backdropFilter: "blur(2px)",
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                gap: 4, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(2px)",
                 color: "#fff", fontSize: "0.75rem",
               }}>
-                생성 중...
+                <span>생성 중... <ElapsedTimer /></span>
+                {item.retryCount > 0 && <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>재시도 {item.retryCount}회</span>}
               </div>
             )}
           </div>

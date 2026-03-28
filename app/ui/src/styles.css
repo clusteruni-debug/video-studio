@@ -1217,11 +1217,17 @@ textarea {
 .mode-toggle-btn {
     flex: 1;
     border: none;
-    padding: 7px 0;
+    padding: 8px 12px;
+    min-width: 80px;
     background: var(--bg-surface);
     color: var(--text-secondary);
     font-size: 0.82rem;
     font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: pointer;
 }
 
 .mode-toggle-btn:hover {
@@ -1242,6 +1248,16 @@ textarea {
 .batch-mode-toggle .mode-toggle-btn {
     padding: 5px 0;
     font-size: 0.78rem;
+}
+
+.duration-toggle {
+    border-radius: var(--radius-sm);
+}
+
+.duration-toggle-btn {
+    padding: 4px 8px;
+    font-size: 0.78rem;
+    min-width: 0;
 }
 
 /* ─── Style prefix field ─── */
