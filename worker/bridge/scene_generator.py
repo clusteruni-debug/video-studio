@@ -178,7 +178,27 @@ def _call_gemini(prompt: str, use_search: bool = False) -> str | None:
                 sources = candidate["groundingMetadata"].get("groundingChunks", [])
                 if sources:
                     print(f"[gemini] Grounded with {len(sources)} web sources")
-            return candidate["content"]["parts"][0]["text"]
+            result_text = candidate["content"]["parts"][0]["text"]
+            # --- Usage logging ---
+            try:
+                from worker.usage.db import log_usage
+                usage_meta = data.get("usageMetadata", {})
+                tokens_in = usage_meta.get("promptTokenCount", 0)
+                tokens_out = usage_meta.get("candidatesTokenCount", 0)
+                log_usage(
+                    provider="gemini-2.5-flash",
+                    category="llm",
+                    model=model,
+                    cost_usd=0.0,
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                    units=1.0,
+                    is_free=1,
+                    metadata={"use_search": use_search},
+                )
+            except Exception as _log_err:
+                print(f"[usage] gemini log failed: {_log_err}")
+            return result_text
     except Exception as e:
         print(f"[gemini] Failed: {e}")
         return None

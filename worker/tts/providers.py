@@ -99,7 +99,25 @@ def generate_google_tts(text: str, lang: str, gender: str, output_path: Path) ->
         audio_bytes = base64.b64decode(data["audioContent"])
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(audio_bytes)
-    return output_path.exists() and output_path.stat().st_size > 0
+    success = output_path.exists() and output_path.stat().st_size > 0
+    if success:
+        try:
+            from worker.usage.db import log_usage
+            char_count = len(text)
+            log_usage(
+                provider="google-tts",
+                category="tts",
+                model=voice_cfg["name"],
+                cost_usd=0.0,
+                tokens_in=0,
+                tokens_out=0,
+                units=float(char_count),
+                is_free=1,
+                metadata={"lang": lang, "gender": gender},
+            )
+        except Exception as _log_err:
+            print(f"[usage] google-tts log failed: {_log_err}")
+    return success
 
 
 # ---------------------------------------------------------------------------

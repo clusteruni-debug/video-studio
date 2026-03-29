@@ -110,6 +110,27 @@ def search_klipy(query: str, limit: int = 3) -> str | None:
     return None
 
 
+def _log_image_usage(provider: str, prompt: str) -> None:
+    """Log image usage to the usage DB. Never raises."""
+    try:
+        from worker.usage.db import log_usage
+        is_free = 0 if provider == "imagen" else 1
+        cost = 0.02 if provider == "imagen" else 0.0
+        log_usage(
+            provider=provider,
+            category="image",
+            model="imagen-4.0-fast-generate-001" if provider == "imagen" else None,
+            cost_usd=cost,
+            tokens_in=0,
+            tokens_out=0,
+            units=1.0,
+            is_free=is_free,
+            metadata={"prompt": prompt[:100]},
+        )
+    except Exception as _log_err:
+        print(f"[usage] image log failed: {_log_err}")
+
+
 def route_image(scene: dict) -> tuple[str | None, str | None]:
     """Route image search based on emotion and image_source fields.
     Returns (resolved_image_url, source_name) tuple.
@@ -129,42 +150,62 @@ def route_image(scene: dict) -> tuple[str | None, str | None]:
         if not url and fallback:
             url = search_klipy(fallback)
         if url:
+            _log_image_usage("klipy", image_prompt)
             return url, "klipy"
         url = search_pexels(image_prompt)
-        return (url, "pexels") if url else (None, None)
+        if url:
+            _log_image_usage("pexels", image_prompt)
+            return url, "pexels"
+        return None, None
     if source == "pexels":
         url = search_pexels(image_prompt)
         if not url and fallback:
             url = search_pexels(fallback)
-        return (url, "pexels") if url else (None, None)
+        if url:
+            _log_image_usage("pexels", image_prompt)
+            return url, "pexels"
+        return None, None
     # FLUX / Pollinations — dead (401, paid-only since 2026-03). Route to Imagen 4.
     if source in ("flux", "pollinations", "imagen"):
         ai_path = generate_imagen(image_prompt)
         if ai_path:
+            _log_image_usage("imagen", image_prompt)
             return str(Path(ai_path).resolve()), "imagen"
         url = search_pexels(image_prompt)
-        return (url, "pexels") if url else (None, None)
+        if url:
+            _log_image_usage("pexels", image_prompt)
+            return url, "pexels"
+        return None, None
     if source == "dalle":
         url = search_pexels(image_prompt)
-        return (url, "pexels") if url else (None, None)
+        if url:
+            _log_image_usage("pexels", image_prompt)
+            return url, "pexels"
+        return None, None
 
     # Auto-route by emotion
     if emotion in REACTION_EMOTIONS:
         url = search_klipy(image_prompt)
         if url:
+            _log_image_usage("klipy", image_prompt)
             return url, "klipy"
         if fallback:
             url = search_klipy(fallback)
             if url:
+                _log_image_usage("klipy", fallback)
                 return url, "klipy"
 
     # Default: Imagen 4 AI generation (better visuals than stock)
     ai_path = generate_imagen(image_prompt)
     if ai_path:
+        _log_image_usage("imagen", image_prompt)
         return str(Path(ai_path).resolve()), "imagen"
 
     # Fallback: Pexels stock
     url = search_pexels(image_prompt)
     if not url and fallback:
         url = search_pexels(fallback)
-    return (url, "pexels") if url else (None, None)
+    if url:
+        _log_image_usage("pexels", image_prompt)
+        return url, "pexels"
+    return None, None

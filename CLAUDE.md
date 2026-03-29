@@ -61,6 +61,12 @@
 - `scripts/openai_tts.py` — OpenAI TTS
 - `scripts/suno_bgm.py` — Suno BGM [UNCERTAIN API]
 
+## Usage Tracking
+- Local SQLite DB at `worker/usage/usage.db` (gitignored) — tracks API calls, costs, tokens per session
+- Free-first image policy: Pexels (free, 200 req/hr) is default before Imagen (paid, $0.02/image)
+- Usage stats endpoint: `GET /api/usage-stats` — session counts, limits, monthly cost totals
+- Providers with no free tier (Imagen, Veo3, DALL-E, Sora) require confirmation dialog before use
+
 ## Current Constraints
 - Package manager files are present; keep dependency changes explicit
 - No DB or remote storage yet

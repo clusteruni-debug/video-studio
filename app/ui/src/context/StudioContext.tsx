@@ -4,8 +4,9 @@ import {
   createBatch as apiCreateBatch, getBatchStatus, listBatches as apiListBatches,
   listJobs as apiListJobs, deleteBatch as apiDeleteBatch, deleteJob as apiDeleteJob,
   regenerateSceneTts as apiRegenerateTts, generateImage as apiGenerateImage,
+  fetchUsageStats,
   type BridgeHealth, type DraftResult, type Scene, type TemplateType, type TonePreset,
-  type BatchStatus, type JobStatus,
+  type BatchStatus, type JobStatus, type UsageStats,
 } from "../lib/bridge";
 import { type QueueItem, ImageGenerationQueue } from "../lib/image-queue";
 import { loadStoredProjects, saveStoredProjects } from "../lib/storage";
@@ -53,6 +54,17 @@ export interface StudioState {
   batches: BatchStatus[];
 
   jobs: JobStatus[];
+
+  usageStats: UsageStats | null;
+
+  paidConfirmDialog: {
+    provider: string;
+    action: string;
+    estimatedCost: string;
+    freeAlternative: string;
+    pendingAction: "regenerate-image";
+    pendingIndex: number;
+  } | null;
 }
 
 const initialState: StudioState = {
@@ -90,6 +102,10 @@ const initialState: StudioState = {
   batches: [],
 
   jobs: [],
+
+  usageStats: null,
+
+  paidConfirmDialog: null,
 };
 
 // ── Reducer ──
@@ -110,7 +126,10 @@ type Action =
   | { type: "EDIT_SCENE"; index: number; field: keyof Scene; value: unknown }
   | { type: "DELETE_SCENE"; index: number }
   | { type: "ADD_SCENE"; afterIndex: number }
-  | { type: "REORDER_SCENE"; fromIndex: number; toIndex: number };
+  | { type: "REORDER_SCENE"; fromIndex: number; toIndex: number }
+  | { type: "USAGE_STATS_LOADED"; stats: UsageStats }
+  | { type: "SHOW_PAID_CONFIRM"; dialog: NonNullable<StudioState["paidConfirmDialog"]> }
+  | { type: "CLOSE_PAID_CONFIRM" };
 
 function reducer(state: StudioState, action: Action): StudioState {
   switch (action.type) {
@@ -185,6 +204,12 @@ function reducer(state: StudioState, action: Action): StudioState {
       const scenes = raw.map((s, i) => ({ ...s, scene_num: i + 1 }));
       return { ...state, draftResult: { ...state.draftResult, scenes }, selectedSceneIndex: action.toIndex };
     }
+    case "USAGE_STATS_LOADED":
+      return { ...state, usageStats: action.stats };
+    case "SHOW_PAID_CONFIRM":
+      return { ...state, paidConfirmDialog: action.dialog };
+    case "CLOSE_PAID_CONFIRM":
+      return { ...state, paidConfirmDialog: null };
     default:
       return state;
   }
@@ -226,6 +251,10 @@ export interface StudioActions {
   refreshBatches(): Promise<void>;
   submitJob(): Promise<string | null>;
   refreshJobs(): Promise<void>;
+  refreshUsageStats(): Promise<void>;
+  confirmPaidProceed(): Promise<void>;
+  confirmPaidUseFree(): Promise<void>;
+  closePaidConfirm(): void;
 }
 
 // ── Contexts ──
@@ -296,6 +325,22 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // Usage stats polling — every 30s when bridge is connected
+  useEffect(() => {
+    if (state.bridgeStatus !== "connected") return;
+    // Fetch immediately on connect
+    fetchUsageStats().then((s) => {
+      if (s.ok) dispatch({ type: "USAGE_STATS_LOADED", stats: s });
+    });
+    const id = setInterval(async () => {
+      if (!document.hidden) {
+        const s = await fetchUsageStats();
+        if (s.ok) dispatch({ type: "USAGE_STATS_LOADED", stats: s });
+      }
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [state.bridgeStatus]);
+
   // Batch polling — use stateRef to avoid stale closure
   useEffect(() => {
     if (!state.activeBatchId) return;
@@ -316,7 +361,30 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   }, [state.activeBatchId]);
 
   // Actions
-  const actions = useMemo<StudioActions>(() => ({
+  const actions = useMemo<StudioActions>(() => {
+    async function _doGenerateImage(index: number, source: string) {
+      const scene = stateRef.current.draftResult?.scenes?.[index];
+      if (!scene?.image_prompt) return;
+      try {
+        const res = await apiGenerateImage(scene.image_prompt, source, scene.emotion);
+        if (res.ok && res.image_url) {
+          const oldPreview = scene._upload_preview;
+          if (oldPreview) {
+            URL.revokeObjectURL(oldPreview);
+            dispatch({ type: "EDIT_SCENE", index, field: "_upload_preview", value: null });
+          }
+          dispatch({ type: "EDIT_SCENE", index, field: "_image_url", value: res.image_url });
+          dispatch({ type: "EDIT_SCENE", index, field: "has_image", value: true });
+          if (res.source) dispatch({ type: "EDIT_SCENE", index, field: "image_source", value: res.source });
+        } else {
+          dispatch({ type: "SET_FIELD", field: "error", value: res.error || "이미지 생성 실패" });
+        }
+      } catch (e: unknown) {
+        dispatch({ type: "SET_FIELD", field: "error", value: e instanceof Error ? e.message : "이미지 생성 연결 실패" });
+      }
+    }
+
+    return ({
     setPrompt(v) { dispatch({ type: "SET_FIELD", field: "prompt", value: v }); },
     setLang(v) { dispatch({ type: "SET_FIELD", field: "lang", value: v }); },
     setTemplateType(v) { dispatch({ type: "SET_FIELD", field: "templateType", value: v }); },
@@ -338,8 +406,15 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: "DRAFT_START" });
       try {
         const result = await apiCreateDraft(s.prompt, s.lang, s.ttsProvider, s.voiceGender, s.templateType, s.subtitleStyle, s.tone, s.targetDuration, s.customInstruction);
-        if (result.ok) dispatch({ type: "DRAFT_OK", result });
-        else dispatch({ type: "DRAFT_FAIL", error: result.error || "Failed to create draft" });
+        if (result.ok) {
+          dispatch({ type: "DRAFT_OK", result });
+          // Refresh usage stats after a successful creation
+          fetchUsageStats().then((stats) => {
+            if (stats.ok) dispatch({ type: "USAGE_STATS_LOADED", stats });
+          });
+        } else {
+          dispatch({ type: "DRAFT_FAIL", error: result.error || "Failed to create draft" });
+        }
       } catch (e: unknown) {
         dispatch({ type: "DRAFT_FAIL", error: e instanceof Error ? e.message : "Bridge connection failed" });
       }
@@ -409,24 +484,22 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       const scene = stateRef.current.draftResult?.scenes?.[index];
       if (!scene?.image_prompt) return;
       const source = scene.image_source === "upload" ? "" : (scene.image_source ?? "");
-      try {
-        const res = await apiGenerateImage(scene.image_prompt, source, scene.emotion);
-        if (res.ok && res.image_url) {
-          // Clear upload preview so the new server image is visible
-          const oldPreview = scene._upload_preview;
-          if (oldPreview) {
-            URL.revokeObjectURL(oldPreview);
-            dispatch({ type: "EDIT_SCENE", index, field: "_upload_preview", value: null });
-          }
-          dispatch({ type: "EDIT_SCENE", index, field: "_image_url", value: res.image_url });
-          dispatch({ type: "EDIT_SCENE", index, field: "has_image", value: true });
-          if (res.source) dispatch({ type: "EDIT_SCENE", index, field: "image_source", value: res.source });
-        } else {
-          dispatch({ type: "SET_FIELD", field: "error", value: res.error || "이미지 생성 실패" });
-        }
-      } catch (e: unknown) {
-        dispatch({ type: "SET_FIELD", field: "error", value: e instanceof Error ? e.message : "이미지 생성 연결 실패" });
+      const PAID_PROVIDERS = ["imagen", "dalle3", "veo3", "sora2", "elevenlabs", "openai-tts", "suno"];
+      if (source && PAID_PROVIDERS.includes(source)) {
+        dispatch({
+          type: "SHOW_PAID_CONFIRM",
+          dialog: {
+            provider: "Imagen 4",
+            action: "이미지 1장 재생성",
+            estimatedCost: "$0.02",
+            freeAlternative: "Pexels 검색으로 대체",
+            pendingAction: "regenerate-image",
+            pendingIndex: index,
+          },
+        });
+        return;
       }
+      await _doGenerateImage(index, source);
     },
     async regenerateSceneTts(index) {
       const s = stateRef.current;
@@ -520,7 +593,36 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         dispatch({ type: "JOBS_LOADED", jobs: res.jobs });
       }
     },
-  }), []);
+
+    async refreshUsageStats() {
+      const stats = await fetchUsageStats();
+      if (stats.ok) dispatch({ type: "USAGE_STATS_LOADED", stats });
+    },
+
+    async confirmPaidProceed() {
+      const dialog = stateRef.current.paidConfirmDialog;
+      if (!dialog) return;
+      dispatch({ type: "CLOSE_PAID_CONFIRM" });
+      if (dialog.pendingAction === "regenerate-image") {
+        const scene = stateRef.current.draftResult?.scenes?.[dialog.pendingIndex];
+        const source = scene?.image_source === "upload" ? "" : (scene?.image_source ?? "");
+        await _doGenerateImage(dialog.pendingIndex, source);
+      }
+    },
+
+    async confirmPaidUseFree() {
+      const dialog = stateRef.current.paidConfirmDialog;
+      if (!dialog) return;
+      dispatch({ type: "CLOSE_PAID_CONFIRM" });
+      if (dialog.pendingAction === "regenerate-image") {
+        await _doGenerateImage(dialog.pendingIndex, "pexels");
+      }
+    },
+
+    closePaidConfirm() {
+      dispatch({ type: "CLOSE_PAID_CONFIRM" });
+    },
+  }); }, []);
 
   return (
     <StateCtx.Provider value={state}>

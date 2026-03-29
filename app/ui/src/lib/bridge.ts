@@ -454,3 +454,58 @@ export function getTtsUrl(filename: string): string {
 export function getBgmUrl(filename: string): string {
   return `${BRIDGE_URL}/api/bgm/${encodeURIComponent(filename)}`;
 }
+
+// ── Usage stats ──
+
+export interface UsageStatSession {
+  calls: number;
+  cost_usd: number;
+}
+
+export interface UsageLimitDaily {
+  cycle: "daily";
+  used: number;
+  limit: number;
+  remaining: number;
+  reset_at: string;
+}
+
+export interface UsageLimitHourlyMonthly {
+  cycle: "hourly+monthly";
+  used_hour: number;
+  limit_hour: number;
+  used_month: number;
+  limit_month: number;
+  reset_at_hour?: string;
+}
+
+export interface UsageLimitMonthly {
+  cycle: "monthly";
+  used_chars: number;
+  limit_chars: number;
+}
+
+export interface UsageLimitNone {
+  cycle: "none";
+  total_calls: number;
+  total_cost_usd: number;
+}
+
+export type UsageLimitEntry =
+  | UsageLimitDaily
+  | UsageLimitHourlyMonthly
+  | UsageLimitMonthly
+  | UsageLimitNone;
+
+export interface UsageStats {
+  ok: boolean;
+  session_id: string;
+  session: Record<string, UsageStatSession>;
+  limits: Record<string, UsageLimitEntry>;
+  monthly_total_cost_usd: number;
+  error?: string;
+}
+
+export function fetchUsageStats(): Promise<UsageStats> {
+  return _apiFetch<UsageStats>("/api/usage-stats", { timeout: 10_000 });
+}

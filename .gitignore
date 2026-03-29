@@ -8,6 +8,8 @@ dist/
 .vite/
 output/
 
+worker/usage/usage.db
+
 # Reference analysis assets
 reference/
 HEdbg0vaEAASMCQ.jpg

@@ -33,6 +33,16 @@ from worker.bridge.batch import BatchManager
 from worker.bridge.job_queue import JobQueue
 from worker.bridge.image_router import route_image
 from worker.bridge.cleanup import storage_status, cleanup_storage, format_size
+from worker.usage.db import (
+    init_db as _init_usage_db,
+    SESSION_ID as _USAGE_SESSION_ID,
+    get_session_stats,
+    get_daily_stats,
+    get_monthly_stats,
+    get_hourly_stats,
+    get_monthly_total_cost,
+)
+from worker.usage.limits import FREE_TIER_LIMITS
 
 # VectCutAPI access is fully encapsulated in worker.bridge.vectcut_bridge
 from worker.bridge.vectcut_bridge import (
@@ -1034,9 +1044,82 @@ def delete_draft_route(draft_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Usage stats
+# ---------------------------------------------------------------------------
+
+@app.route("/api/usage-stats", methods=["GET"])
+def usage_stats_route():
+    """Return session + limit stats for all tracked API providers."""
+    session = get_session_stats()
+
+    limits: dict = {}
+
+    try:
+        from worker.usage.limits import next_daily_reset_utc, next_hourly_reset_utc
+
+        # --- Gemini (daily) ---
+        daily = get_daily_stats("gemini-2.5-flash")
+        gemini_info = FREE_TIER_LIMITS.get("gemini-2.5-flash", {})
+        gemini_used = daily["calls"]
+        gemini_limit = gemini_info.get("rpd", 250)
+        limits["gemini-2.5-flash"] = {
+            "cycle": "daily",
+            "used": gemini_used,
+            "limit": gemini_limit,
+            "remaining": max(0, gemini_limit - gemini_used),
+            "reset_at": next_daily_reset_utc(),
+        }
+
+        # --- Pexels (hourly + monthly) ---
+        pexels_hour = get_hourly_stats("pexels")
+        pexels_month = get_monthly_stats("pexels")
+        pexels_info = FREE_TIER_LIMITS.get("pexels", {})
+        limits["pexels"] = {
+            "cycle": "hourly+monthly",
+            "used_hour": pexels_hour["calls"],
+            "limit_hour": pexels_info.get("rph", 200),
+            "used_month": pexels_month["calls"],
+            "limit_month": pexels_info.get("rpm_month", 20_000),
+            "reset_at_hour": next_hourly_reset_utc(),
+        }
+
+        # --- Google TTS (monthly chars) ---
+        tts_month = get_monthly_stats("google-tts")
+        tts_info = FREE_TIER_LIMITS.get("google-tts", {})
+        limits["google-tts"] = {
+            "cycle": "monthly",
+            "used_chars": int(tts_month["total_units"]),
+            "limit_chars": tts_info.get("wavenet_chars", 1_000_000),
+        }
+
+        # --- No-free-tier providers (cumulative cost) ---
+        for prov in ("imagen", "veo3", "dalle3", "sora2"):
+            prov_month = get_monthly_stats(prov)
+            limits[prov] = {
+                "cycle": "none",
+                "total_calls": prov_month["calls"],
+                "total_cost_usd": round(prov_month["cost_usd"], 4),
+            }
+
+        monthly_total = get_monthly_total_cost()
+    except Exception as e:
+        print(f"[usage] usage_stats_route failed: {e}")
+        monthly_total = 0.0
+
+    return jsonify({
+        "ok": True,
+        "session_id": _USAGE_SESSION_ID,
+        "session": session,
+        "limits": limits,
+        "monthly_total_cost_usd": round(monthly_total, 4),
+    })
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
+    _init_usage_db()
     print(f"Bridge server: http://{BRIDGE_HOST}:{BRIDGE_PORT}")
     print(f"  TTS providers : {available_providers()}")
     print(f"  Groq          : {'ready' if GROQ_API_KEY else 'no key'}")

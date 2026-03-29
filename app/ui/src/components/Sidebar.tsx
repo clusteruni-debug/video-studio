@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Loader, Sparkles, Trash2 } from "lucide-reac
 import { useStudioState, useStudioActions } from "../context/StudioContext";
 import { TEMPLATE_LABELS, TONE_LABELS, TTS_LABELS, SUBTITLE_STYLE_LABELS } from "../lib/constants";
 import type { TemplateType, TonePreset } from "../lib/bridge";
+import UsageCard from "./UsageCard";
 
 export default function Sidebar() {
   const state = useStudioState();
@@ -25,7 +26,7 @@ export default function Sidebar() {
     prompt, lang, templateType, tone, ttsProvider, voiceGender, subtitleStyle,
     targetDuration, customInstruction,
     bridgeStatus, availableProviders, availableTemplates, creating, error,
-    projects, activeProjectId,
+    projects, activeProjectId, usageStats,
   } = state;
 
   return (
@@ -140,6 +141,9 @@ export default function Sidebar() {
           </div>
         </div>
       )}
+
+      {/* Usage stats */}
+      <UsageCard stats={usageStats} onRefresh={actions.refreshUsageStats} />
 
       <div className="sidebar-divider" />
 
