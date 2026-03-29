@@ -20,6 +20,7 @@ export default function SceneDetailPanel() {
   const [editingNarration, setEditingNarration] = useState(false);
   const [narrationDraft, setNarrationDraft] = useState("");
   const [regenerating, setRegenerating] = useState(false);
+  const [regeneratingImage, setRegeneratingImage] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -93,6 +94,15 @@ export default function SceneDetailPanel() {
     }
   };
 
+  const handleRegenImage = async () => {
+    setRegeneratingImage(true);
+    try {
+      await actions.regenerateSceneImage(selectedSceneIndex);
+    } finally {
+      setRegeneratingImage(false);
+    }
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) actions.uploadSceneImage(selectedSceneIndex, file);
@@ -129,14 +139,22 @@ export default function SceneDetailPanel() {
         </div>
       </div>
 
-      {/* Upload preview */}
-      {scene._upload_preview && (
-        <div style={{ marginBottom: 12, borderRadius: 6, overflow: "hidden" }}>
+      {/* Image preview — upload preview takes priority, then server image */}
+      {(scene._upload_preview || scene._image_url) && (
+        <div style={{ marginBottom: 12, borderRadius: 6, overflow: "hidden", position: "relative" }}>
           <img
-            src={scene._upload_preview}
-            alt="업로드 이미지"
+            src={scene._upload_preview || scene._image_url!}
+            alt={scene._upload_preview ? "업로드 이미지" : "생성된 이미지"}
             style={{ width: "100%", maxHeight: 200, objectFit: "cover", display: "block" }}
           />
+          {scene._image_url && !scene._upload_preview && scene.image_source && (
+            <span style={{
+              position: "absolute", bottom: 4, right: 4, fontSize: "0.65rem",
+              background: "rgba(0,0,0,0.6)", color: "#fff", padding: "2px 6px", borderRadius: 4,
+            }}>
+              {scene.image_source}
+            </span>
+          )}
         </div>
       )}
 
@@ -182,23 +200,20 @@ export default function SceneDetailPanel() {
         </div>
       )}
 
-      {/* Generate button (for non-upload sources) */}
+      {/* Generate / regenerate button (for non-upload sources) */}
       {currentSource !== "upload" && (
         <div style={{ marginBottom: 12 }}>
           <button
             className="chip"
-            onClick={() => {
-              if (scene.image_prompt) {
-                actions.enqueueImages([scene]);
-                actions.setActiveTab("images");
-              }
-            }}
-            disabled={!scene.image_prompt}
+            onClick={handleRegenImage}
+            disabled={!scene.image_prompt || regeneratingImage}
           >
-            {currentSource === "pexels" ? (
-              <><Search size={12} /> Pexels 검색</>
+            {regeneratingImage ? (
+              <><RefreshCw size={12} className="spin" /> 생성 중...</>
+            ) : currentSource === "pexels" ? (
+              <><Search size={12} /> {scene._image_url ? "다른 이미지 검색" : "Pexels 검색"}</>
             ) : (
-              <><ImagePlus size={12} /> {currentSource === "imagen" ? "Imagen 4" : "FLUX"} 생성</>
+              <><ImagePlus size={12} /> {scene._image_url ? "이미지 재생성" : `${currentSource === "imagen" ? "Imagen 4" : "FLUX"} 생성`}</>
             )}
           </button>
         </div>
@@ -253,7 +268,7 @@ export default function SceneDetailPanel() {
         <div className="scene-detail-scores">
           <span>감정: {scene.emotion}</span>
           {scene.rank != null && <span>순위: #{scene.rank}</span>}
-          <span>이미지: {scene.has_image ? "있음" : "없음"}</span>
+          <span>이미지: {(scene._image_url || scene._upload_preview) ? "있음" : scene.has_image ? "CapCut만" : "없음"}</span>
         </div>
       </div>
 

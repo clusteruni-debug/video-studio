@@ -7,6 +7,7 @@ export interface QueueItem {
     width: number;
     height: number;
     engine: string;
+    emotion: string;
     status: QueueItemStatus;
     result?: { url: string; file: File };
     error?: string;
@@ -19,8 +20,8 @@ export interface QueueCallbacks {
     onItemUpdate: (items: QueueItem[]) => void;
     onImageCreated?: (item: QueueItem) => void;
     onComplete?: () => void;
-    /** If provided, attempts bridge proxy when direct API fails */
-    bridgeGenerateImage?: (input: { prompt: string; width: number; height: number; model: string }) => Promise<{ imageBase64: string; mimeType: string } | null>;
+    /** If provided, attempts bridge proxy first; falls back to Pollinations direct API */
+    bridgeGenerateImage?: (input: { prompt: string; width: number; height: number; model: string; emotion: string }) => Promise<{ imageBase64: string; mimeType: string } | null>;
 }
 
 /** Base delay between requests — anonymous tier allows ~1 req at a time */
@@ -107,16 +108,43 @@ export class ImageGenerationQueue {
         this.callbacks.onItemUpdate([...this.items]);
     }
 
-    /** Attempt fetch with retry for 429/500 and model fallback */
+    /** Attempt image generation: bridge first (all providers), Pollinations direct fallback */
     private async fetchWithRetry(
         item: QueueItem,
         signal: AbortSignal,
     ): Promise<{ blob: Blob; usedEngine: string }> {
+        let lastError: Error | null = null;
+
+        // ── 1) Bridge proxy (server-side routing: Pexels, Imagen, FLUX, Klipy) ──
+        if (this.callbacks.bridgeGenerateImage) {
+            if (!this.processing) throw new DOMException("Aborted", "AbortError");
+            try {
+                item.error = "브리지 서버로 이미지 생성 중...";
+                this.notify();
+                const result = await this.callbacks.bridgeGenerateImage({
+                    prompt: item.prompt,
+                    width: item.width,
+                    height: item.height,
+                    model: item.engine,
+                    emotion: item.emotion,
+                });
+                if (result) {
+                    const raw = atob(result.imageBase64);
+                    const binary = new Uint8Array(raw.length);
+                    for (let i = 0; i < raw.length; i++) binary[i] = raw.charCodeAt(i);
+                    const blob = new Blob([binary], { type: result.mimeType });
+                    return { blob, usedEngine: item.engine };
+                }
+            } catch (err) {
+                if (err instanceof DOMException && err.name === "AbortError") throw err;
+                lastError = err instanceof Error ? err : new Error("브리지 생성 실패");
+            }
+        }
+
+        // ── 2) Direct Pollinations fallback (free, no API key) ──
         const modelsToTry = MODEL_FALLBACK_CHAIN.includes(item.engine)
             ? [item.engine, ...MODEL_FALLBACK_CHAIN.filter((m) => m !== item.engine)]
-            : [item.engine, ...MODEL_FALLBACK_CHAIN];
-
-        let lastError: Error | null = null;
+            : ["flux", ...MODEL_FALLBACK_CHAIN];
 
         for (const model of modelsToTry) {
             for (let attempt = 0; attempt < MAX_AUTO_RETRIES; attempt++) {
@@ -126,12 +154,13 @@ export class ImageGenerationQueue {
                 const apiUrl = `https://image.pollinations.ai/prompt/${encoded}?width=${item.width}&height=${item.height}&model=${model}&nologo=true&seed=${Date.now()}`;
 
                 try {
+                    item.error = `Pollinations ${model} 시도 중...`;
+                    this.notify();
                     const response = await fetch(apiUrl, { signal });
 
                     if (response.ok) {
                         const blob = await response.blob();
                         if (blob.size < 1000) {
-                            // Pollinations sometimes returns tiny error responses as 200
                             const text = await blob.text();
                             if (text.includes('"error"')) {
                                 throw new Error(`서버 오류 응답 (${model})`);
@@ -141,7 +170,6 @@ export class ImageGenerationQueue {
                     }
 
                     if (response.status === 429) {
-                        // Rate limited — wait with exponential backoff then retry same model
                         const backoffMs = BASE_DELAY_MS * Math.pow(2, attempt);
                         item.error = `대기 중... (${Math.round(backoffMs / 1000)}초 후 재시도)`;
                         this.notify();
@@ -150,16 +178,13 @@ export class ImageGenerationQueue {
                     }
 
                     if (response.status === 500) {
-                        // Server error — try to parse and check if model is unavailable
                         let body: { message?: string } = {};
                         try { body = await response.json(); } catch { /* ignore */ }
                         const msg = body.message ?? "";
                         if (msg.includes("No active") || msg.includes("servers available")) {
-                            // Model is down — break inner loop, try next model
                             lastError = new Error(`${model} 서버 없음`);
                             break;
                         }
-                        // Other 500 — retry with backoff
                         const backoffMs = BASE_DELAY_MS * Math.pow(2, attempt);
                         item.error = `서버 오류, ${Math.round(backoffMs / 1000)}초 후 재시도...`;
                         this.notify();
@@ -167,14 +192,12 @@ export class ImageGenerationQueue {
                         continue;
                     }
 
-                    // Other HTTP errors — fail immediately
                     throw new Error(`HTTP ${response.status}`);
                 } catch (error) {
                     if (error instanceof DOMException && (error.name === "AbortError" || error.name === "TimeoutError")) {
                         throw error;
                     }
                     lastError = error instanceof Error ? error : new Error("네트워크 오류");
-                    // Network error — backoff and retry
                     if (attempt < MAX_AUTO_RETRIES - 1) {
                         const backoffMs = BASE_DELAY_MS * Math.pow(2, attempt);
                         item.error = `네트워크 오류, ${Math.round(backoffMs / 1000)}초 후 재시도...`;
@@ -185,32 +208,7 @@ export class ImageGenerationQueue {
             }
         }
 
-        // All direct API attempts failed — try bridge proxy as last resort
-        if (this.callbacks.bridgeGenerateImage) {
-            if (!this.processing) throw new DOMException("Aborted", "AbortError");
-            try {
-                item.error = "직접 API 실패, 브리지 프록시 시도 중...";
-                this.notify();
-                const result = await this.callbacks.bridgeGenerateImage({
-                    prompt: item.prompt,
-                    width: item.width,
-                    height: item.height,
-                    model: item.engine,
-                });
-                if (result) {
-                    const binary = new Uint8Array(result.imageBase64.length);
-                    const raw = atob(result.imageBase64);
-                    for (let i = 0; i < raw.length; i++) binary[i] = raw.charCodeAt(i);
-                    const blob = new Blob([binary], { type: result.mimeType });
-                    return { blob, usedEngine: item.engine };
-                }
-            } catch (err) {
-                if (err instanceof DOMException && err.name === "AbortError") throw err;
-                // bridge also failed — fall through to error
-            }
-        }
-
-        throw lastError ?? new Error("모든 모델에서 생성 실패");
+        throw lastError ?? new Error("모든 소스에서 이미지 생성 실패");
     }
 
     /** Interruptible sleep — resolves early if processing is stopped */

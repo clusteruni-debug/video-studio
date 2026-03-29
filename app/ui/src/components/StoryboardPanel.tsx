@@ -133,9 +133,18 @@ export default function StoryboardPanel() {
             className={`scene-row ${selectedSceneIndex === i ? "selected" : ""}`}
             onClick={() => actions.selectScene(selectedSceneIndex === i ? null : i)}
           >
-            {/* Left: scene number + emotion badge */}
+            {/* Left: scene number + thumbnail + emotion badge */}
             <div className="scene-row-num">
-              <span className="scene-num-badge">{scene.scene_num}</span>
+              {(scene._upload_preview || scene._image_url) ? (
+                <img
+                  src={scene._upload_preview || scene._image_url!}
+                  alt={`씬 ${scene.scene_num}`}
+                  style={{ width: 36, height: 48, objectFit: "cover", borderRadius: 4 }}
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                />
+              ) : (
+                <span className="scene-num-badge">{scene.scene_num}</span>
+              )}
               {scene.emotion !== "neutral" && (
                 <span className={`scene-emotion-badge scene-emotion-${scene.emotion}`}>{scene.emotion}</span>
               )}

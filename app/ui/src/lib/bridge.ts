@@ -30,6 +30,7 @@ export interface Scene {
   rank: number | null;
   image_source?: string;
   _tts_url?: string | null;
+  _image_url?: string | null;
   _upload_preview?: string | null;
   is_commentary?: boolean;
   transition?: string;
@@ -374,6 +375,74 @@ export function regenerateSceneTts(
   return _post<RegenerateTtsResult>("/api/regenerate-scene-tts", {
     narration, scene_num: sceneNum, lang, tts_provider: ttsProvider, voice_gender: voiceGender,
   }, 60_000);
+}
+
+// ── Image generation (server-side routing) ──
+
+export interface GenerateImageResult {
+  ok: boolean;
+  image_url?: string;
+  source?: string;
+  error?: string;
+}
+
+export function generateImage(
+  imagePrompt: string,
+  imageSource = "",
+  emotion = "neutral",
+  fallbackPrompt = "",
+): Promise<GenerateImageResult> {
+  return _post<GenerateImageResult>("/api/generate-image", {
+    image_prompt: imagePrompt,
+    image_source: imageSource,
+    emotion,
+    fallback_prompt: fallbackPrompt,
+  }, 60_000);
+}
+
+// ── Storage management ──
+
+export interface StorageCategoryInfo {
+  path: string;
+  items: number;
+  size_bytes: number;
+  size_display: string;
+}
+
+export interface StorageStatusResult {
+  ok: boolean;
+  tts?: StorageCategoryInfo;
+  cache?: StorageCategoryInfo;
+  renders?: StorageCategoryInfo;
+  thumbnails?: StorageCategoryInfo;
+  capcut_drafts?: StorageCategoryInfo;
+  error?: string;
+}
+
+export function getStorageStatus(): Promise<StorageStatusResult> {
+  return _apiFetch<StorageStatusResult>("/api/storage/status", { timeout: 10_000 });
+}
+
+export interface CleanupCategoryResult {
+  removed: number;
+  freed_bytes: number;
+  freed_display: string;
+}
+
+export interface CleanupResult {
+  ok: boolean;
+  dry_run?: boolean;
+  max_age_days?: number;
+  tts?: CleanupCategoryResult;
+  cache?: CleanupCategoryResult;
+  renders?: CleanupCategoryResult;
+  thumbnails?: CleanupCategoryResult;
+  capcut_drafts?: CleanupCategoryResult;
+  error?: string;
+}
+
+export function cleanupStorage(maxAgeDays = 7, dryRun = false): Promise<CleanupResult> {
+  return _post<CleanupResult>("/api/storage/cleanup", { max_age_days: maxAgeDays, dry_run: dryRun }, 30_000);
 }
 
 // ── URL helpers ──

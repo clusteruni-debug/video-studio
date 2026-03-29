@@ -127,6 +127,10 @@ button { cursor: pointer; }
     to { transform: rotate(360deg); }
 }
 
+.spin {
+    animation: spin 1s linear infinite;
+}
+
 /* ─── Studio body (sidebar + canvas) ─── */
 .studio-body {
     display: flex;

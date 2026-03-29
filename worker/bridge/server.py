@@ -32,6 +32,7 @@ from worker.bridge.scene_generator import (
 from worker.bridge.batch import BatchManager
 from worker.bridge.job_queue import JobQueue
 from worker.bridge.image_router import route_image
+from worker.bridge.cleanup import storage_status, cleanup_storage, format_size
 
 # VectCutAPI access is fully encapsulated in worker.bridge.vectcut_bridge
 from worker.bridge.vectcut_bridge import (
@@ -55,6 +56,7 @@ CAPCUT_DRAFT_DIR = Path(os.environ.get(
     "CAPCUT_DRAFT_DIR",
     str(Path.home() / "AppData" / "Local" / "CapCut" / "User Data" / "Projects" / "com.lveditor.draft"),
 ))
+IMAGE_CACHE_DIR = PROJECT_ROOT / "storage" / "cache"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 
@@ -318,6 +320,39 @@ def serve_tts(filename: str):
 @app.route("/api/bgm/<path:filename>", methods=["GET"])
 def serve_bgm(filename: str):
     return send_from_directory(str(PROJECT_ROOT / "assets" / "bgm"), filename)
+
+
+@app.route("/api/images/<path:filename>", methods=["GET"])
+def serve_image(filename: str):
+    """Serve generated images from storage/cache (e.g. Imagen results)."""
+    return send_from_directory(str(IMAGE_CACHE_DIR), filename)
+
+
+def _image_url_for_client(raw_url: str | None) -> str | None:
+    """Convert local file paths to bridge-accessible URLs; pass through HTTP URLs."""
+    if not raw_url:
+        return None
+    if raw_url.startswith(("http://", "https://")):
+        return raw_url
+    # Local file path (e.g. from Imagen) → serve via /api/images/
+    try:
+        p = Path(raw_url).resolve()
+    except (OSError, ValueError):
+        return None
+    cache_root = IMAGE_CACHE_DIR.resolve()
+    # Only serve files under storage/cache — use trailing sep to prevent prefix collision
+    cache_prefix = str(cache_root) + os.sep
+    if str(p).startswith(cache_prefix) or p.parent == cache_root:
+        return f"http://{BRIDGE_HOST}:{BRIDGE_PORT}/api/images/{p.name}"
+    # File is outside cache — copy it in so the serve endpoint can find it
+    if p.exists():
+        import shutil
+        dest = cache_root / p.name
+        if not dest.exists():
+            cache_root.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(p, dest)
+        return f"http://{BRIDGE_HOST}:{BRIDGE_PORT}/api/images/{p.name}"
+    return None
 
 
 def _safe_resolve(user_path: str, allowed_root: Path) -> Path | None:
@@ -620,8 +655,9 @@ def create_draft_route():
                 "duration": round(s["_tts_duration"], 1),
                 "has_image": bool(s.get("_image_url")),
                 "rank": s.get("rank"),
-                "image_source": s.get("image_source", ""),
+                "image_source": _SOURCE_NORMALIZE.get(s.get("image_source", ""), s.get("image_source", "")),
                 "_tts_url": s.get("_tts_url"),
+                "_image_url": _image_url_for_client(s.get("_image_url")),
             }
             for s in scenes
         ],
@@ -665,6 +701,49 @@ def regenerate_scene_tts_route():
         duration = _get_audio_duration(str(audio_path))
         tts_url = f"http://{BRIDGE_HOST}:{BRIDGE_PORT}/api/tts/{regen_ts}/scene_{scene_num}.mp3"
         return jsonify({"ok": True, "_tts_url": tts_url, "duration": round(duration, 1)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Image generation / search (single scene)
+# ---------------------------------------------------------------------------
+
+# Normalize source names so round-trip regeneration works:
+# route_image returns "imagen3"/"klipy" but expects "imagen"/"tenor" as input
+_SOURCE_NORMALIZE: dict[str, str] = {"imagen3": "imagen", "klipy": "tenor"}
+
+
+@app.route("/api/generate-image", methods=["POST"])
+def generate_image_route():
+    """Generate or search for an image using the server-side route_image pipeline.
+
+    Supports all configured providers: Pexels (stock), Klipy (GIF),
+    Imagen 4 (AI), Pollinations FLUX (free AI).
+    """
+    data = flask_request.get_json(silent=True) or {}
+    image_prompt = data.get("image_prompt", "").strip()
+    if not image_prompt:
+        return jsonify({"ok": False, "error": "image_prompt is required"}), 400
+
+    # Normalize incoming source (client may send "imagen3" from a previous response)
+    raw_source = data.get("image_source", "")
+    normalized_source = _SOURCE_NORMALIZE.get(raw_source, raw_source)
+
+    scene = {
+        "image_prompt": image_prompt,
+        "image_source": normalized_source,
+        "emotion": data.get("emotion", "neutral"),
+        "fallback_prompt": data.get("fallback_prompt", ""),
+    }
+    try:
+        raw_url, source = route_image(scene)
+        client_url = _image_url_for_client(raw_url)
+        # Normalize outgoing source for consistent round-trip
+        display_source = _SOURCE_NORMALIZE.get(source, source) if source else source
+        if client_url:
+            return jsonify({"ok": True, "image_url": client_url, "source": display_source})
+        return jsonify({"ok": False, "error": "No image found for this prompt"}), 404
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -813,6 +892,37 @@ def news_auto_generate_route():
 
 
 # ---------------------------------------------------------------------------
+# Storage management
+# ---------------------------------------------------------------------------
+
+@app.route("/api/storage/status", methods=["GET"])
+def storage_status_route():
+    """Return disk usage for all managed storage directories."""
+    return jsonify({"ok": True, **storage_status(PROJECT_ROOT, CAPCUT_DRAFT_DIR)})
+
+
+_cleanup_lock = threading.Lock()
+
+
+@app.route("/api/storage/cleanup", methods=["POST"])
+def storage_cleanup_route():
+    """Remove stale generated assets older than max_age_days."""
+    if not _cleanup_lock.acquire(blocking=False):
+        return jsonify({"ok": False, "error": "Cleanup already in progress"}), 409
+    try:
+        data = flask_request.get_json(silent=True) or {}
+        try:
+            max_age = max(1, min(int(data.get("max_age_days", 7)), 90))
+        except (ValueError, TypeError):
+            max_age = 7
+        dry_run = bool(data.get("dry_run", False))
+        result = cleanup_storage(PROJECT_ROOT, CAPCUT_DRAFT_DIR, max_age_days=max_age, dry_run=dry_run)
+        return jsonify({"ok": True, "dry_run": dry_run, "max_age_days": max_age, **result})
+    finally:
+        _cleanup_lock.release()
+
+
+# ---------------------------------------------------------------------------
 # Batch generation & async job queue (imports at top of section; classes in batch.py / job_queue.py)
 # ---------------------------------------------------------------------------
 
@@ -936,6 +1046,19 @@ def main():
     print(f"  Templates     : {', '.join(TEMPLATE_TYPES)}")
     print(f"  VectCutAPI    : {VECTCUT_DIR}")
     print(f"  CapCut drafts : {CAPCUT_DRAFT_DIR}")
+
+    # Auto-cleanup stale assets on startup (7+ days old)
+    try:
+        result = cleanup_storage(PROJECT_ROOT, CAPCUT_DRAFT_DIR, max_age_days=7)
+        total_removed = sum(v.get("removed", 0) for v in result.values())
+        total_freed = sum(v.get("freed_bytes", 0) for v in result.values())
+        if total_removed > 0:
+            print(f"  Cleanup       : {total_removed} stale items removed ({format_size(total_freed)} freed)")
+        else:
+            print(f"  Cleanup       : nothing to clean")
+    except Exception as e:
+        print(f"  Cleanup       : failed ({e})")
+
     app.run(host=BRIDGE_HOST, port=BRIDGE_PORT, debug=False, threaded=True)
 
 

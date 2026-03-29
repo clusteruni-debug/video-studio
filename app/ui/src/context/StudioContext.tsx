@@ -3,7 +3,7 @@ import {
   checkHealth, createDraft as apiCreateDraft, submitJob as apiSubmitJob,
   createBatch as apiCreateBatch, getBatchStatus, listBatches as apiListBatches,
   listJobs as apiListJobs, deleteBatch as apiDeleteBatch, deleteJob as apiDeleteJob,
-  regenerateSceneTts as apiRegenerateTts,
+  regenerateSceneTts as apiRegenerateTts, generateImage as apiGenerateImage,
   type BridgeHealth, type DraftResult, type Scene, type TemplateType, type TonePreset,
   type BatchStatus, type JobStatus,
 } from "../lib/bridge";
@@ -219,6 +219,7 @@ export interface StudioActions {
   deleteBatch(batchId: string): Promise<void>;
   deleteJob(jobId: string): Promise<void>;
   uploadSceneImage(index: number, file: File): void;
+  regenerateSceneImage(index: number): Promise<void>;
   regenerateSceneTts(index: number): Promise<void>;
   deleteProject(id: string): void;
   startBatch(variants: number): Promise<string | null>;
@@ -255,6 +256,22 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       },
       onComplete() {
         dispatch({ type: "IMAGE_QUEUE_UPDATE", items: queueRef.current?.getItems() ?? [], processing: false });
+      },
+      async bridgeGenerateImage(input) {
+        const source = ["pexels", "flux", "imagen", "tenor"].includes(input.model) ? input.model : "";
+        const res = await apiGenerateImage(input.prompt, source, input.emotion);
+        if (!res.ok || !res.image_url) return null;
+        // Fetch the image from the returned URL and convert to base64
+        try {
+          const resp = await fetch(res.image_url, { signal: AbortSignal.timeout(30_000) });
+          if (!resp.ok) return null;
+          const blob = await resp.blob();
+          const buffer = await blob.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          let binary = "";
+          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+          return { imageBase64: btoa(binary), mimeType: blob.type || "image/png" };
+        } catch { return null; }
       },
     });
   }
@@ -340,16 +357,14 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       const q = queueRef.current!;
       for (const scene of scenes) {
         if (scene.image_prompt) {
-          const engine = scene.image_source === "pexels" ? "pexels"
-            : scene.image_source === "imagen" ? "imagen"
-            : "flux";
           q.enqueue({
             id: `scene-${scene.scene_num}-${Date.now()}`,
             prompt: scene.image_prompt,
             originalPrompt: scene.image_prompt,
             width: 1080,
             height: 1920,
-            engine,
+            engine: scene.image_source || "flux",
+            emotion: scene.emotion || "neutral",
             filename: `scene_${scene.scene_num}.webp`,
           });
         }
@@ -386,6 +401,29 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: "EDIT_SCENE", index, field: "_upload_preview", value: previewUrl });
       dispatch({ type: "EDIT_SCENE", index, field: "image_source", value: "upload" });
       dispatch({ type: "EDIT_SCENE", index, field: "has_image", value: true });
+    },
+    async regenerateSceneImage(index) {
+      const scene = stateRef.current.draftResult?.scenes?.[index];
+      if (!scene?.image_prompt) return;
+      const source = scene.image_source === "upload" ? "" : (scene.image_source ?? "");
+      try {
+        const res = await apiGenerateImage(scene.image_prompt, source, scene.emotion);
+        if (res.ok && res.image_url) {
+          // Clear upload preview so the new server image is visible
+          const oldPreview = scene._upload_preview;
+          if (oldPreview) {
+            URL.revokeObjectURL(oldPreview);
+            dispatch({ type: "EDIT_SCENE", index, field: "_upload_preview", value: null });
+          }
+          dispatch({ type: "EDIT_SCENE", index, field: "_image_url", value: res.image_url });
+          dispatch({ type: "EDIT_SCENE", index, field: "has_image", value: true });
+          if (res.source) dispatch({ type: "EDIT_SCENE", index, field: "image_source", value: res.source });
+        } else {
+          dispatch({ type: "SET_FIELD", field: "error", value: res.error || "이미지 생성 실패" });
+        }
+      } catch (e: unknown) {
+        dispatch({ type: "SET_FIELD", field: "error", value: e instanceof Error ? e.message : "이미지 생성 연결 실패" });
+      }
     },
     async regenerateSceneTts(index) {
       const s = stateRef.current;
