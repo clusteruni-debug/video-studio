@@ -470,7 +470,7 @@ def create_draft_route():
         img_url, used_source = route_image(scene)
         scene["_image_url"] = img_url
         if img_url and used_source:
-            scene["image_source"] = used_source
+            scene["image_source"] = _SOURCE_NORMALIZE.get(used_source, used_source)
             image_sources_used.add(used_source)
     has_images = any(s.get("_image_url") for s in scenes)
     steps_log.append(f"images: {'+'.join(sorted(image_sources_used)) if image_sources_used else 'none'}")
@@ -710,7 +710,8 @@ def regenerate_scene_tts_route():
 # ---------------------------------------------------------------------------
 
 # Normalize source names so round-trip regeneration works:
-# route_image returns "imagen3"/"klipy" but expects "imagen"/"tenor" as input
+# route_image returns "klipy" but expects "tenor" as input.
+# "imagen3" kept for backward compatibility with old cached scenes.
 _SOURCE_NORMALIZE: dict[str, str] = {"imagen3": "imagen", "klipy": "tenor"}
 
 
@@ -718,8 +719,7 @@ _SOURCE_NORMALIZE: dict[str, str] = {"imagen3": "imagen", "klipy": "tenor"}
 def generate_image_route():
     """Generate or search for an image using the server-side route_image pipeline.
 
-    Supports all configured providers: Pexels (stock), Klipy (GIF),
-    Imagen 4 (AI), Pollinations FLUX (free AI).
+    Supports: Imagen 4 (AI), Pexels (stock), Klipy (GIF).
     """
     data = flask_request.get_json(silent=True) or {}
     image_prompt = data.get("image_prompt", "").strip()

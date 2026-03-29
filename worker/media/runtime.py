@@ -83,7 +83,7 @@ def _visual_adapter_key(
     """Choose the visual adapter key for a scene.
 
     If *override* is set and is a known adapter, use it directly.
-    Otherwise prefers ready adapters: for images, tries pollinations → flux.
+    Otherwise prefers ready adapters: for images, tries imagen3 → pexels.
     For video, tries wan → sora2 → veo3.
     """
     if override:
@@ -94,11 +94,11 @@ def _visual_adapter_key(
 
     if scene.get("visualKind") == "image":
         if adapters:
-            for candidate in ("pollinations", "flux"):
+            for candidate in ("imagen", "pexels"):
                 status = adapters.get(candidate)
                 if status and status.ready:
                     return candidate
-        return "pollinations"  # default free image provider
+        return "imagen"  # default image provider (Imagen 4 via Gemini API)
     else:
         if adapters:
             for candidate in ("wan", "sora2", "veo3"):
@@ -251,7 +251,7 @@ def generate_local_visual_asset(
     adapter_status = adapter_statuses.get(adapter_key)
     if not adapter_status:
         # Fallback to first available adapter status for this category
-        fallback_key = "flux" if scene.get("visualKind") == "image" else "wan"
+        fallback_key = "imagen" if scene.get("visualKind") == "image" else "wan"
         adapter_status = adapter_statuses.get(fallback_key, next(iter(adapter_statuses.values())))
     prompt_path = scene_cache_dir / f"{scene['sceneId']}.{adapter_key}.prompt.txt"
     request_path = scene_cache_dir / f"{scene['sceneId']}.{adapter_key}.request.json"

@@ -1,5 +1,5 @@
 """
-Image routing — emotion-based auto-selection between Imagen 3 (AI), Pexels (stock), and Klipy (meme/GIF).
+Image routing — emotion-based auto-selection between Imagen 4 (AI), Pexels (stock), and Klipy (meme/GIF).
 Klipy is a Tenor v2-compatible API (same endpoint structure, different base URL).
 Gemini prompts emit "tenor" as image_source — this is a routing token that maps to Klipy.
 """
@@ -22,12 +22,11 @@ def _get_key(name: str) -> str:
 REACTION_EMOTIONS = {"funny", "shock", "anger"}
 
 
-def generate_imagen3(prompt: str, output_dir: str | None = None, aspect_ratio: str = "9:16") -> str | None:
-    """Generate image via Google Imagen API. Returns local file path or None."""
+def generate_imagen(prompt: str, output_dir: str | None = None, aspect_ratio: str = "9:16") -> str | None:
+    """Generate image via Google Imagen 4 API. Returns local file path or None."""
     api_key = _get_key("GEMINI_API_KEY") or _get_key("GOOGLE_API_KEY")
     if not api_key:
         return None
-    # Imagen 3 was shut down; use Imagen 4 (fast variant for speed)
     model = "imagen-4.0-fast-generate-001"
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:predict?key={api_key}"
@@ -44,13 +43,13 @@ def generate_imagen3(prompt: str, output_dir: str | None = None, aspect_ratio: s
         # Save to temp file and return path
         save_dir = Path(output_dir) if output_dir else Path("storage/cache")
         save_dir.mkdir(parents=True, exist_ok=True)
-        name_hash = hashlib.md5(prompt.encode()).hexdigest()[:12]
-        save_path = save_dir / f"imagen3_{name_hash}.png"
+        name_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+        save_path = save_dir / f"imagen_{name_hash}.png"
         save_path.write_bytes(image_bytes)
-        print(f"[imagen3] Generated {len(image_bytes)} bytes → {save_path}")
+        print(f"[imagen] Generated {len(image_bytes)} bytes → {save_path}")
         return str(save_path)
     except Exception as e:
-        print(f"[imagen3] Failed for '{prompt[:50]}': {e}")
+        print(f"[imagen] Failed for '{prompt[:50]}': {e}")
         return None
 
 
@@ -111,25 +110,10 @@ def search_klipy(query: str, limit: int = 3) -> str | None:
     return None
 
 
-def _generate_pollinations(prompt: str, width: int = 1080, height: int = 1920) -> str | None:
-    """Generate image via Pollinations FLUX (free). Returns image URL or None."""
-    try:
-        from urllib.parse import quote_plus
-        safe_prompt = quote_plus(prompt)
-        url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width={width}&height={height}&nologo=true"
-        # Verify the URL resolves (Pollinations redirects to generated image)
-        req = urllib_request.Request(url, method="HEAD", headers={"User-Agent": "VideoStudio/1.0"})
-        with urllib_request.urlopen(req, timeout=30) as resp:
-            if resp.status == 200:
-                return resp.url  # Final redirect URL
-    except Exception as e:
-        print(f"[pollinations] Generation failed for '{prompt[:40]}': {e}")
-    return None
-
-
 def route_image(scene: dict) -> tuple[str | None, str | None]:
     """Route image search based on emotion and image_source fields.
     Returns (resolved_image_url, source_name) tuple.
+    source_name is "imagen", "pexels", or "klipy".
     Note: Gemini emits "tenor" as image_source — this maps to Klipy."""
     image_prompt = scene.get("image_prompt")
     if not image_prompt:
@@ -146,7 +130,6 @@ def route_image(scene: dict) -> tuple[str | None, str | None]:
             url = search_klipy(fallback)
         if url:
             return url, "klipy"
-        # Fall through to Pexels if Klipy unconfigured/no results
         url = search_pexels(image_prompt)
         return (url, "pexels") if url else (None, None)
     if source == "pexels":
@@ -154,18 +137,11 @@ def route_image(scene: dict) -> tuple[str | None, str | None]:
         if not url and fallback:
             url = search_pexels(fallback)
         return (url, "pexels") if url else (None, None)
-    # FLUX / Pollinations — use the Pollinations FLUX endpoint
-    if source in ("flux", "pollinations"):
-        url = _generate_pollinations(image_prompt)
-        if url:
-            return url, "flux"
-        # Fall back to Pexels if generation fails
-        url = search_pexels(image_prompt)
-        return (url, "pexels") if url else (None, None)
-    if source == "imagen":
-        ai_path = generate_imagen3(image_prompt)
+    # FLUX / Pollinations — dead (401, paid-only since 2026-03). Route to Imagen 4.
+    if source in ("flux", "pollinations", "imagen"):
+        ai_path = generate_imagen(image_prompt)
         if ai_path:
-            return str(Path(ai_path).resolve()), "imagen3"
+            return str(Path(ai_path).resolve()), "imagen"
         url = search_pexels(image_prompt)
         return (url, "pexels") if url else (None, None)
     if source == "dalle":
@@ -182,13 +158,10 @@ def route_image(scene: dict) -> tuple[str | None, str | None]:
             if url:
                 return url, "klipy"
 
-    # Try Imagen 3 AI generation first (produces better visuals than stock)
-    # Returns local file path (not URL) — callers must handle both path and URL
-    ai_path = generate_imagen3(image_prompt)
+    # Default: Imagen 4 AI generation (better visuals than stock)
+    ai_path = generate_imagen(image_prompt)
     if ai_path:
-        from pathlib import Path
-        abs_path = str(Path(ai_path).resolve())
-        return abs_path, "imagen3"
+        return str(Path(ai_path).resolve()), "imagen"
 
     # Fallback: Pexels stock
     url = search_pexels(image_prompt)

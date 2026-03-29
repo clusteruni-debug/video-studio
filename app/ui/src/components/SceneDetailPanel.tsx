@@ -2,15 +2,14 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { X, ImagePlus, Search, Upload, Sparkles, Play, Square, RefreshCw } from "lucide-react";
 import { useStudioState, useStudioActions } from "../context/StudioContext";
 
-type ImageSource = "pexels" | "flux" | "imagen" | "upload";
+type ImageSource = "pexels" | "imagen" | "upload";
 
 const SOURCE_LABELS: Record<ImageSource, { label: string; icon: typeof Search }> = {
   pexels: { label: "Pexels", icon: Search },
-  flux: { label: "FLUX AI", icon: Sparkles },
   imagen: { label: "Imagen 4", icon: Sparkles },
   upload: { label: "업로드", icon: Upload },
 };
-const SOURCE_KEYS: ImageSource[] = ["pexels", "flux", "imagen", "upload"];
+const SOURCE_KEYS: ImageSource[] = ["pexels", "imagen", "upload"];
 
 export default function SceneDetailPanel() {
   const { draftResult, selectedSceneIndex } = useStudioState();
@@ -54,7 +53,10 @@ export default function SceneDetailPanel() {
   if (selectedSceneIndex === null || !draftResult?.scenes?.[selectedSceneIndex]) return null;
 
   const scene = draftResult.scenes[selectedSceneIndex];
-  const currentSource = (scene.image_source as ImageSource) || "pexels";
+  // Normalize legacy source names (flux=dead Pollinations, imagen3=old internal tag)
+  const rawSource = scene.image_source || "pexels";
+  const normalizeMap: Record<string, string> = { flux: "imagen", imagen3: "imagen" };
+  const currentSource = (normalizeMap[rawSource] ?? rawSource) as ImageSource;
 
   const handleSourceChange = (src: ImageSource) => {
     actions.editScene(selectedSceneIndex, "image_source", src);
@@ -213,7 +215,7 @@ export default function SceneDetailPanel() {
             ) : currentSource === "pexels" ? (
               <><Search size={12} /> {scene._image_url ? "다른 이미지 검색" : "Pexels 검색"}</>
             ) : (
-              <><ImagePlus size={12} /> {scene._image_url ? "이미지 재생성" : `${currentSource === "imagen" ? "Imagen 4" : "FLUX"} 생성`}</>
+              <><ImagePlus size={12} /> {scene._image_url ? "이미지 재생성" : "Imagen 4 생성"}</>
             )}
           </button>
         </div>

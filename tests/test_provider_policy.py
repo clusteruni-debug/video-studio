@@ -3,9 +3,9 @@
 from worker.media.provider_policy import estimate_scene_cost
 
 
-def test_estimate_scene_cost_image_free():
-    cost = estimate_scene_cost("image", "pollinations", duration_sec=5.0)
-    assert cost == 0.0
+def test_estimate_scene_cost_image_cheap():
+    cost = estimate_scene_cost("image", "imagen", duration_sec=5.0)
+    assert cost > 0
 
 
 def test_estimate_scene_cost_tts_paid():
@@ -15,8 +15,6 @@ def test_estimate_scene_cost_tts_paid():
 
 def test_estimate_scene_cost_zero_for_free_provider():
     free_providers = [
-        ("image", "pollinations"),
-        ("image", "flux"),
         ("tts", "edge-tts"),
         ("tts", "windows-tts"),
         ("video", "wan"),

@@ -258,20 +258,23 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         dispatch({ type: "IMAGE_QUEUE_UPDATE", items: queueRef.current?.getItems() ?? [], processing: false });
       },
       async bridgeGenerateImage(input) {
-        const source = ["pexels", "flux", "imagen", "tenor"].includes(input.model) ? input.model : "";
+        const source = ["pexels", "imagen", "tenor"].includes(input.model) ? input.model : "imagen";
         const res = await apiGenerateImage(input.prompt, source, input.emotion);
-        if (!res.ok || !res.image_url) return null;
-        // Fetch the image from the returned URL and convert to base64
-        try {
-          const resp = await fetch(res.image_url, { signal: AbortSignal.timeout(30_000) });
-          if (!resp.ok) return null;
-          const blob = await resp.blob();
-          const buffer = await blob.arrayBuffer();
-          const bytes = new Uint8Array(buffer);
-          let binary = "";
-          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-          return { imageBase64: btoa(binary), mimeType: blob.type || "image/png" };
-        } catch { return null; }
+        if (!res.ok || !res.image_url) {
+          throw new Error(res.error || "브리지에서 이미지 생성 실패");
+        }
+        // Fetch the image and convert to base64 (chunked to avoid OOM on large images)
+        const resp = await fetch(res.image_url, { signal: AbortSignal.timeout(30_000) });
+        if (!resp.ok) throw new Error(`이미지 다운로드 실패 (HTTP ${resp.status})`);
+        const blob = await resp.blob();
+        const buffer = await blob.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        const CHUNK = 8192;
+        const parts: string[] = [];
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+          parts.push(String.fromCharCode(...bytes.subarray(i, i + CHUNK)));
+        }
+        return { imageBase64: btoa(parts.join("")), mimeType: blob.type || "image/png" };
       },
     });
   }
@@ -363,7 +366,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
             originalPrompt: scene.image_prompt,
             width: 1080,
             height: 1920,
-            engine: scene.image_source || "flux",
+            engine: scene.image_source || "imagen",
             emotion: scene.emotion || "neutral",
             filename: `scene_${scene.scene_num}.webp`,
           });
@@ -429,12 +432,16 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       const s = stateRef.current;
       const scene = s.draftResult?.scenes?.[index];
       if (!scene) return;
-      const res = await apiRegenerateTts(scene.narration, scene.scene_num, s.lang, s.ttsProvider, s.voiceGender);
-      if (res.ok && res._tts_url) {
-        dispatch({ type: "EDIT_SCENE", index, field: "_tts_url", value: res._tts_url });
-        if (res.duration) dispatch({ type: "EDIT_SCENE", index, field: "duration", value: res.duration });
-      } else if (!res.ok) {
-        dispatch({ type: "SET_FIELD", field: "error", value: res.error || "TTS 재생성 실패" });
+      try {
+        const res = await apiRegenerateTts(scene.narration, scene.scene_num, s.lang, s.ttsProvider, s.voiceGender);
+        if (res.ok && res._tts_url) {
+          dispatch({ type: "EDIT_SCENE", index, field: "_tts_url", value: res._tts_url });
+          if (res.duration) dispatch({ type: "EDIT_SCENE", index, field: "duration", value: res.duration });
+        } else if (!res.ok) {
+          dispatch({ type: "SET_FIELD", field: "error", value: res.error || "TTS 재생성 실패" });
+        }
+      } catch (e: unknown) {
+        dispatch({ type: "SET_FIELD", field: "error", value: e instanceof Error ? e.message : "TTS 연결 실패" });
       }
     },
     clearDraft() {

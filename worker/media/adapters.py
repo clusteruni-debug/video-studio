@@ -12,24 +12,8 @@ DEFAULT_TIMEOUT_SEC = 900
 
 ADAPTER_CONFIG = {
     # ----- image providers -----
-    "pollinations": {
-        "label": "Pollinations FLUX (free)",
-        "category": "image",
-        "model": "flux",
-        "outputKind": "image",
-        "envPrefix": "VIDEO_STUDIO_POLLINATIONS",
-        "costTier": "free",
-        "costPerUnit": 0.0,
-    },
-    "flux": {
-        "label": "FLUX image adapter (local)",
-        "category": "image",
-        "model": "black-forest-labs/FLUX.1-schnell",
-        "outputKind": "image",
-        "envPrefix": "VIDEO_STUDIO_FLUX",
-        "costTier": "free",
-        "costPerUnit": 0.0,
-    },
+    # Note: "pollinations" and "flux" adapters removed — Pollinations API
+    # went paid-only (401) in 2026-03. All image gen routes through Imagen 4.
     "dalle3": {
         "label": "DALL-E 3 (OpenAI)",
         "category": "image",
@@ -39,12 +23,12 @@ ADAPTER_CONFIG = {
         "costTier": "premium",
         "costPerUnit": 0.04,
     },
-    "imagen3": {
-        "label": "Imagen 3 (Google)",
+    "imagen": {
+        "label": "Imagen 4 (Google)",
         "category": "image",
-        "model": "imagen-3.0-generate-002",
+        "model": "imagen-4.0-fast-generate-001",
         "outputKind": "image",
-        "envPrefix": "VIDEO_STUDIO_IMAGEN3",
+        "envPrefix": "VIDEO_STUDIO_IMAGEN",
         "costTier": "cheap",
         "costPerUnit": 0.02,
     },

@@ -6,7 +6,7 @@ from worker.media.adapters import ADAPTER_CONFIG
 
 # Default provider preference per category (first match wins)
 DEFAULT_PREFERENCE = {
-    "image": ["pollinations", "flux", "dalle3", "imagen3"],
+    "image": ["imagen", "pexels", "dalle3"],
     "video": ["wan", "sora2", "veo3", "runway"],
     "tts": ["edge-tts", "windows-tts", "elevenlabs", "openai-tts"],
     "bgm": ["local-bgm", "suno"],
