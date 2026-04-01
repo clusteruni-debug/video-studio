@@ -77,8 +77,17 @@ def _display_text_matches_narration(display_text: str, narration: str) -> bool:
     return any(w in narr_clean for w in words) if words else False
 
 
+def _strip_cjk_ideographs(text: str) -> str:
+    """Remove CJK unified ideographs (漢字/한자) that Gemini sometimes mixes into Korean."""
+    return re.sub(r'[\u4e00-\u9fff\u3400-\u4dbf]+', '', text)
+
+
 def normalize_scenes(scenes: list[dict], topic: str, template_type: str = "") -> list[dict]:
     """Fill missing fields, validate display_text, apply hook optimization."""
+    # Routing tokens that carry semantic meaning — everything else is cleared
+    # so auto-route (Imagen → Pexels fallback) handles selection.
+    _KEEP_SOURCES = {"tenor"}
+
     for s in scenes:
         s.setdefault("image_prompt", s.pop("visual_description", topic))
         s.setdefault("display_text", "")
@@ -88,6 +97,19 @@ def normalize_scenes(scenes: list[dict], topic: str, template_type: str = "") ->
         s.setdefault("transition", "Dissolve")
         s.setdefault("is_commentary", False)
         s.setdefault("rank", None)
+
+        # Clear LLM-generated image_source unless it's a meaningful routing token.
+        # Gemini often outputs "pexels" which bypasses Imagen auto-route.
+        if s["image_source"] not in _KEEP_SOURCES:
+            s["image_source"] = ""
+
+        # Strip stray CJK ideographs from Korean narration/display_text
+        narr = s.get("narration", "")
+        if narr:
+            s["narration"] = _strip_cjk_ideographs(narr)
+        dt_raw = s.get("display_text", "")
+        if dt_raw:
+            s["display_text"] = _strip_cjk_ideographs(dt_raw)
 
         # Validate display_text matches narration; auto-fix if not
         narr = s.get("narration", "")
@@ -266,6 +288,69 @@ def _enrich_image_prompts(scenes: list[dict], topic: str) -> None:
 
 _DURATION_SCENE_MAP = {"30s": 6, "1min": 10, "custom": 8}
 
+# Words that indicate an abstract/generic image prompt — filter these out
+_ABSTRACT_IMAGE_WORDS = re.compile(
+    r'\b(abstract concept|technology background|business meeting|digital illustration'
+    r'|generic background|simple background|plain background)\b', re.IGNORECASE
+)
+
+
+def _evaluate_script_quality(scenes: list[dict], topic: str, template_type: str) -> tuple[int, str]:
+    """Score a script 0-10 via LLM. Returns (score, feedback)."""
+    scene_summary = json.dumps(
+        [{"scene_num": s.get("scene_num"), "narration": s.get("narration", "")[:80],
+          "display_text": s.get("display_text", ""), "emotion": s.get("emotion")}
+         for s in scenes[:6]], ensure_ascii=False
+    )
+    prompt = (
+        f'You are a YouTube Shorts script quality evaluator.\n'
+        f'Topic: "{topic}" / Template: {template_type}\n\n'
+        f'Score this script 0-10 on these criteria:\n'
+        f'1. Hook strength (scene 1 grabs attention?)\n'
+        f'2. Fact density (specific numbers, names, anecdotes?)\n'
+        f'3. Flow (natural progression, no repetition?)\n'
+        f'4. display_text quality (key phrases from narration?)\n\n'
+        f'Scenes:\n{scene_summary}\n\n'
+        f'Return JSON: {{"score": N, "feedback": "one-line improvement suggestion"}}'
+    )
+    text, _ = _call_llm(prompt)
+    if not text:
+        return 7, ""  # If LLM fails, pass by default
+    try:
+        # Strip fenced code blocks (```json ... ```)
+        clean = text.strip()
+        if clean.startswith("```"):
+            parts = clean.split("\n", 1)
+            clean = parts[1] if len(parts) > 1 else clean[3:]
+            clean = clean.rsplit("```", 1)[0].strip()
+        result = json.loads(clean)
+        score = int(result.get("score", 7))
+        feedback = result.get("feedback", "")
+        return min(max(score, 0), 10), feedback
+    except (json.JSONDecodeError, ValueError, TypeError, IndexError):
+        return 7, ""
+
+
+def _filter_image_prompts(scenes: list[dict], topic: str) -> None:
+    """Post-hoc filter: reject abstract image prompts, fallback to topic-based prompt."""
+    for s in scenes:
+        prompt = s.get("image_prompt", "")
+        if _ABSTRACT_IMAGE_WORDS.search(prompt):
+            s["image_prompt"] = s.get("fallback_prompt") or f"photograph related to {topic}, natural lighting"
+            print(f"[filter] scene {s.get('scene_num')}: abstract prompt replaced")
+
+
+def _enforce_hook(scenes: list[dict]) -> None:
+    """Validate scene 1 hook: emotion must be shock/funny, display_text must be short."""
+    if not scenes:
+        return
+    hook = scenes[0]
+    if hook.get("emotion") not in ("shock", "funny"):
+        hook["emotion"] = "shock"
+    dt = hook.get("display_text", "")
+    if len(dt) > 25:
+        hook["display_text"] = dt[:25].rsplit(" ", 1)[0] if " " in dt[:25] else dt[:25]
+
 
 def generate_scenes_llm(
     topic: str,
@@ -275,7 +360,7 @@ def generate_scenes_llm(
     target_duration: str = "30s",
     custom_instruction: str = "",
 ) -> tuple[list[dict], str]:
-    """Two-step generation: script first, then image prompts separately."""
+    """Three-step generation: script → quality gate → image prompts."""
     lang_name = "Korean" if not lang.startswith("en") else "English"
     if template_type not in TEMPLATE_TYPES:
         template_type = "news_explainer"
@@ -283,22 +368,53 @@ def generate_scenes_llm(
         tone = "casual_heyo"
     tone_preset = TONE_PRESETS[tone]
     scene_count = _DURATION_SCENE_MAP.get(target_duration, 8)
-    rich_prompt = build_template_prompt(
-        topic, lang_name, template_type, tone_rule=tone_preset["rule"],
-        scene_count=scene_count, custom_instruction=custom_instruction,
-        target_duration=target_duration,
-    )
 
-    text, provider = _call_llm(rich_prompt, use_search=True)
-    if text:
+    max_attempts = 2
+    best_scenes = None
+    best_score = 0
+    best_provider = "none"
+
+    for attempt in range(max_attempts):
+        extra = ""
+        if attempt > 0 and best_scenes:
+            extra = f"\n★ 이전 생성 피드백: 점수 {best_score}/10. 더 구체적인 팩트와 숫자를 포함하세요."
+        rich_prompt = build_template_prompt(
+            topic, lang_name, template_type, tone_rule=tone_preset["rule"],
+            scene_count=scene_count,
+            custom_instruction=(custom_instruction + extra).strip(),
+            target_duration=target_duration,
+        )
+        text, provider = _call_llm(rich_prompt, use_search=True)
+        if not text:
+            continue
         scenes = parse_scenes_json(text)
-        if scenes:
-            scenes = normalize_scenes(scenes, topic, template_type)
-            try:
-                _enrich_image_prompts(scenes, topic)
-            except Exception as e:
-                print(f"[enrich] Step 2 failed, keeping original prompts: {e}")
-            return scenes, provider
+        if not scenes:
+            continue
+        scenes = normalize_scenes(scenes, topic, template_type)
+
+        # Quality gate: evaluate and keep best
+        try:
+            score, feedback = _evaluate_script_quality(scenes, topic, template_type)
+        except Exception as e:
+            print(f"[quality] evaluation error: {e}")
+            score, feedback = 7, ""
+        print(f"[quality] attempt {attempt+1}: score={score}/10 feedback={feedback[:60]}")
+
+        if score > best_score:
+            best_scenes = scenes
+            best_score = score
+            best_provider = provider
+        if score >= 7:
+            break  # Good enough
+
+    if best_scenes:
+        _enforce_hook(best_scenes)
+        try:
+            _enrich_image_prompts(best_scenes, topic)
+        except Exception as e:
+            print(f"[enrich] Step 2 failed, keeping original prompts: {e}")
+        _filter_image_prompts(best_scenes, topic)
+        return best_scenes, best_provider
 
     fallback = generate_scenes_fallback(topic, lang)
     return normalize_scenes(fallback, topic, template_type), "template"

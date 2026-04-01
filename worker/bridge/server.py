@@ -33,6 +33,24 @@ from worker.bridge.batch import BatchManager
 from worker.bridge.job_queue import JobQueue
 from worker.bridge.image_router import route_image
 from worker.bridge.cleanup import storage_status, cleanup_storage, format_size
+
+DEFAULT_TTS_RATE = "+35%"
+DEFAULT_TTS_RATE_COMMENTARY = "+15%"
+
+import random
+
+_TEMPLATE_BGM_MOOD: dict[str, str] = {
+    "news_explainer": "tense",
+    "community_read": "calm",
+    "hot_take": "upbeat",
+    "ranking_list": "upbeat",
+    "reddit_translation": "calm",
+    "origin_story": "cinematic",
+    "vs_comparison": "upbeat",
+    "myth_buster": "cinematic",
+    "tutorial_steps": "calm",
+    "before_after": "cinematic",
+}
 from worker.usage.db import (
     init_db as _init_usage_db,
     SESSION_ID as _USAGE_SESSION_ID,
@@ -107,6 +125,7 @@ _TEMPLATE_LAYOUTS: dict[str, dict] = {
             "text": {"font_size": 12.0, "transform_y": -0.15, "intro_animation": "Zoom_In",
                      "background_color": "#000000", "background_alpha": 0.65},
         },
+        "default_transition": "Dissolve",
     },
     "community_read": {
         # Image pushed to top half, text in bottom half with speech-bubble bg
@@ -119,9 +138,11 @@ _TEMPLATE_LAYOUTS: dict[str, dict] = {
         "hook": {
             "text": {"font_size": 11.0, "transform_y": -0.20, "intro_animation": "Zoom_In"},
         },
+        "default_transition": "Fade_In",
     },
     "hot_take": {
         # Full bg blur, CENTER large yellow text, red accent on hook
+        "default_transition": "Dissolve",
         "img": {"scale_x": 1.5, "scale_y": 1.5, "background_blur": 3},
         "text": {
             "font_color": "#FFD700", "font_size": 9.0, "transform_y": -0.20,
@@ -135,6 +156,7 @@ _TEMPLATE_LAYOUTS: dict[str, dict] = {
     "ranking_list": {
         # Clean image, rank badge as separate large layer
         "img": {"scale_x": 1.2, "scale_y": 1.2},
+        "default_transition": "Slide_Left",
         "text": {
             "font_color": "#FFFFFF", "font_size": 8.0, "transform_y": -0.35,
             "intro_animation": "Fade_In", "shadow_distance": 5.0,
@@ -153,6 +175,7 @@ _TEMPLATE_LAYOUTS: dict[str, dict] = {
     },
     "reddit_translation": {
         # Image at top, two-tone text: normal + gold commentary
+        "default_transition": "Fade_In",
         "img": {"scale_x": 1.0, "scale_y": 1.0, "transform_y": 0.15},
         "text": {
             "font_color": "#F0F0F0", "font_size": 8.0, "transform_y": -0.38,
@@ -177,6 +200,7 @@ _TEMPLATE_LAYOUTS: dict[str, dict] = {
         "hook": {
             "text": {"font_size": 12.0, "transform_y": -0.10, "intro_animation": "Zoom_In"},
         },
+        "default_transition": "Dissolve",
     },
     "vs_comparison": {
         # Normal image, text with side labels
@@ -188,6 +212,14 @@ _TEMPLATE_LAYOUTS: dict[str, dict] = {
         "hook": {
             "text": {"font_size": 13.0, "transform_y": -0.05, "intro_animation": "Zoom_In",
                      "background_color": "#1A1A2E", "background_alpha": 0.6},
+        },
+        "default_transition": "Slide_Left",
+        # Side labels: odd scenes = A (blue), even scenes = B (orange)
+        "side_labels": {
+            "odd": {"label": "A", "font_color": "#00E5FF",
+                    "background_color": "#0D47A1", "background_alpha": 0.75},
+            "even": {"label": "B", "font_color": "#FF9100",
+                     "background_color": "#E65100", "background_alpha": 0.75},
         },
     },
     "myth_buster": {
@@ -201,9 +233,22 @@ _TEMPLATE_LAYOUTS: dict[str, dict] = {
             "text": {"font_size": 12.0, "transform_y": -0.10, "intro_animation": "Zoom_In",
                      "background_color": "#CC0000", "background_alpha": 0.55},
         },
+        "default_transition": "Dissolve",
+        # Verdict badge: shown when narration contains verdict keywords
+        "verdict_keywords": {
+            "사실": {"label": "O 사실", "font_color": "#00E676",
+                    "background_color": "#1B5E20", "background_alpha": 0.80},
+            "거짓": {"label": "X 거짓", "font_color": "#FF5252",
+                    "background_color": "#B71C1C", "background_alpha": 0.80},
+            "fact": {"label": "O FACT", "font_color": "#00E676",
+                     "background_color": "#1B5E20", "background_alpha": 0.80},
+            "myth": {"label": "X MYTH", "font_color": "#FF5252",
+                     "background_color": "#B71C1C", "background_alpha": 0.80},
+        },
     },
     "tutorial_steps": {
         # Smaller image (screen recording feel), step counter badge
+        "default_transition": "Fade_In",
         "img": {"scale_x": 0.85, "scale_y": 0.85, "transform_y": 0.10},
         "text": {
             "font_color": "#FFFFFF", "font_size": 8.0, "transform_y": -0.38,
@@ -223,6 +268,7 @@ _TEMPLATE_LAYOUTS: dict[str, dict] = {
     },
     "before_after": {
         # Normal image, "Before"/"After" label badge per scene half
+        "default_transition": "Dissolve",
         "img": {"scale_x": 1.2, "scale_y": 1.2},
         "text": {
             "font_color": "#FFFFFF", "font_size": 8.0, "transform_y": -0.35,
@@ -443,16 +489,23 @@ def create_draft_route():
         audio_path = tts_subdir / f"scene_{n}.mp3"
 
         # Determine TTS tone based on scene metadata
-        tts_rate = "+25%"
+        tts_rate = DEFAULT_TTS_RATE
         tts_pitch = "+0Hz"
         tts_text = scene["narration"]
         if scene.get("is_commentary"):
-            tts_rate = "+15%"
+            tts_rate = DEFAULT_TTS_RATE_COMMENTARY
             tts_pitch = "+0Hz"
         if scene.get("rank") is not None and tts_text.strip():
             # Rank slides: add a brief text pause for dramatic effect
             # (SSML is NOT supported by edge-tts or ElevenLabs — use text ellipsis instead)
             tts_text = f"... {tts_text}"
+
+        if not tts_text.strip():
+            print(f"[tts] scene {n}: empty narration, skipping TTS")
+            scene["_tts_path"] = None
+            scene["_tts_duration"] = 3.0
+            scene["_tts_url"] = None
+            continue
 
         try:
             generate_tts(
@@ -495,13 +548,14 @@ def create_draft_route():
     layout = _TEMPLATE_LAYOUTS.get(template_type, _DEFAULT_LAYOUT)
     for scene in scenes:
         n = scene["scene_num"]
-        dur = scene["_tts_duration"] + 0.5
+        dur = scene.get("_tts_duration", 5.0) + 0.5
         is_hook = (n == 1)
         is_rank_scene = scene.get("rank") is not None
         is_commentary = scene.get("is_commentary", False)
 
         # ── Background image with structural layout ──
-        scene_transition = scene.get("transition", "Dissolve") if n > 1 else None
+        default_trans = layout.get("default_transition", "Dissolve")
+        scene_transition = scene.get("transition", default_trans) if n > 1 else None
         if scene_transition == "none":
             scene_transition = None
         img_ref = scene.get("_image_url")
@@ -588,6 +642,43 @@ def create_draft_route():
                     intro_animation="Fade_In",
                 )
 
+        # vs_comparison: A/B side labels on non-hook scenes
+        side_labels = layout.get("side_labels")
+        if side_labels and not is_hook:
+            side_key = "odd" if (n % 2 == 1) else "even"
+            side_cfg = side_labels.get(side_key)
+            if side_cfg:
+                vb_add_subtitle(
+                    draft_id, side_cfg["label"],
+                    cumulative_time, cumulative_time + dur,
+                    scene_num=n + 300,
+                    font_color=side_cfg.get("font_color", "#FFFFFF"),
+                    font_size=26.0,
+                    transform_y=0.38,
+                    background_color=side_cfg.get("background_color", ""),
+                    background_alpha=side_cfg.get("background_alpha", 0.0),
+                    intro_animation="Slide_Left",
+                )
+
+        # myth_buster: verdict badge when narration contains verdict keywords
+        verdict_map = layout.get("verdict_keywords")
+        if verdict_map and not is_hook:
+            narr_lower = scene.get("narration", "").lower()
+            for kw, v_cfg in verdict_map.items():
+                if kw in narr_lower:
+                    vb_add_subtitle(
+                        draft_id, v_cfg["label"],
+                        cumulative_time, cumulative_time + dur,
+                        scene_num=n + 400,
+                        font_color=v_cfg.get("font_color", "#FFFFFF"),
+                        font_size=36.0,
+                        transform_y=0.0,
+                        background_color=v_cfg.get("background_color", ""),
+                        background_alpha=v_cfg.get("background_alpha", 0.0),
+                        intro_animation="Zoom_In",
+                    )
+                    break
+
         # Subtitle style map overrides (user-selected in UI)
         style_overrides = _SUBTITLE_STYLE_MAP.get(subtitle_style, {}).copy()
         text_params.update(style_overrides)
@@ -617,13 +708,22 @@ def create_draft_route():
 
         cumulative_time += dur
 
-    # ── Step 4b: Add BGM track ───────────────────────────────────────────
+    # ── Step 4b: Add BGM track (mood-matched to template) ─────────────────
     bgm_dir = PROJECT_ROOT / "assets" / "bgm"
     bgm_file = None
     if bgm_dir.exists():
-        bgm_candidates = [f for f in bgm_dir.iterdir() if f.suffix in (".mp3", ".wav", ".m4a", ".ogg")]
-        if bgm_candidates:
-            bgm_file = bgm_candidates[0]
+        # Try mood-matched subdirectory first
+        mood = _TEMPLATE_BGM_MOOD.get(template_type, "calm")
+        mood_dir = bgm_dir / mood
+        if mood_dir.is_dir():
+            mood_candidates = [f for f in mood_dir.iterdir() if f.suffix in (".mp3", ".wav", ".m4a", ".ogg")]
+            if mood_candidates:
+                bgm_file = random.choice(mood_candidates)
+        # Fallback to root bgm directory
+        if not bgm_file:
+            bgm_candidates = [f for f in bgm_dir.iterdir() if f.is_file() and f.suffix in (".mp3", ".wav", ".m4a", ".ogg")]
+            if bgm_candidates:
+                bgm_file = random.choice(bgm_candidates)
     if bgm_file:
         bgm_duration = _get_audio_duration(str(bgm_file))
         bgm_end = min(bgm_duration, cumulative_time)
@@ -706,7 +806,7 @@ def regenerate_scene_tts_route():
         generate_tts(
             text=narration, lang=lang, gender=voice_gender,
             provider=tts_provider, output_path=audio_path,
-            rate="+25%", pitch="+0Hz",
+            rate=DEFAULT_TTS_RATE, pitch="+0Hz",
         )
         duration = _get_audio_duration(str(audio_path))
         tts_url = f"http://{BRIDGE_HOST}:{BRIDGE_PORT}/api/tts/{regen_ts}/scene_{scene_num}.mp3"

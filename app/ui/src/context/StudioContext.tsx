@@ -413,10 +413,10 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
             if (stats.ok) dispatch({ type: "USAGE_STATS_LOADED", stats });
           });
         } else {
-          dispatch({ type: "DRAFT_FAIL", error: result.error || "Failed to create draft" });
+          dispatch({ type: "DRAFT_FAIL", error: result.error || "초안 생성 실패" });
         }
       } catch (e: unknown) {
-        dispatch({ type: "DRAFT_FAIL", error: e instanceof Error ? e.message : "Bridge connection failed" });
+        dispatch({ type: "DRAFT_FAIL", error: e instanceof Error ? e.message : "브릿지 연결 실패 — 서버가 실행 중인지 확인하세요" });
       }
     },
 

@@ -4,7 +4,7 @@
 - Content automation tool with multi-provider media pipeline
 - React + Vite + TypeScript UI using a shell + sidebar/canvas/bottom-bar flow with debug drawer and per-scene detail panel
 - 18 provider adapters across 5 categories (image, video, tts, bgm, sfx)
-- Free-first provider policy — zero-cost path works with Pollinations + Edge TTS + local BGM
+- Free-first provider policy — zero-cost path works with Pexels (stock) + Edge TTS + local BGM; Imagen 4 ($0.02/img) for AI generation
 - FFmpeg composition with Ken Burns motion, xfade transitions, gradient backgrounds, BGM mixing
 - Local Python bridge with runtime tool probing, Ollama planning, scene-asset upload handling
 - No DB or remote storage yet
@@ -14,7 +14,7 @@
 - UI: React + Vite (App shell + Sidebar/ImageCanvas/StoryboardPanel/BottomBar/DebugDrawer/SceneDetailPanel + shared utils)
 - Desktop shell: Tauri 2 after the web UI stabilizes
 - Planner: Ollama `qwen2.5:7b` local, browser-sample fallback
-- Image: Pollinations FLUX (free default), DALL-E 3, Imagen 3
+- Image: Pexels (free stock), Imagen 4 (paid AI, $0.02/img), Klipy (free GIF/reaction)
 - Video: local Wan (free), Sora 2, Veo 3
 - TTS: Edge TTS (free default), ElevenLabs, OpenAI TTS
 - BGM: Local library (free), Suno
@@ -51,7 +51,7 @@
 - `storage/` — local generated inputs, cache, and renders
 
 ## Provider Adapter Scripts
-- `scripts/pollinations_flux.py` — free image generation (existing)
+- `scripts/pollinations_flux.py` — DEPRECATED (Pollinations dead since 2026-03, routes to Imagen 4)
 - `scripts/edge_tts.py` — free cross-platform TTS
 - `scripts/dalle3_image.py` — DALL-E 3 images
 - `scripts/imagen3_image.py` — Imagen 3 images
@@ -70,7 +70,7 @@
 ## Current Constraints
 - Package manager files are present; keep dependency changes explicit
 - No DB or remote storage yet
-- Free provider path (Pollinations + Edge TTS + local BGM) works with zero API keys
+- Free provider path (Pexels + Edge TTS + local BGM) works with PEXELS_API_KEY only (free tier, 200 req/hr)
 - Paid providers require env var API keys — see `.env.example`
 - FLUX/Wan default to `stub` mode until the operator sets command-backed adapter env vars
 - Suno API adapter is marked [UNCERTAIN] — API surface may not be stable

@@ -1,5 +1,5 @@
 """
-Image routing — emotion-based auto-selection between Imagen 4 (AI), Pexels (stock), and Klipy (meme/GIF).
+Image routing — Serper (Google Images) primary, with Imagen 4 (AI), Pexels (stock), and Klipy (GIF) fallbacks.
 Klipy is a Tenor v2-compatible API (same endpoint structure, different base URL).
 Gemini prompts emit "tenor" as image_source — this is a routing token that maps to Klipy.
 """
@@ -18,8 +18,41 @@ def _get_key(name: str) -> str:
     return os.environ.get(name, "")
 
 
-# Emotions that route to Klipy (reaction GIFs) vs Pexels (stock photos)
+# Emotions that route to Klipy (reaction GIFs) vs web search (product photos)
 REACTION_EMOTIONS = {"funny", "shock", "anger"}
+
+
+def search_serper(query: str) -> str | None:
+    """Search Google Images via Serper API. Returns image URL or None."""
+    api_key = _get_key("SERPER_API_KEY")
+    if not api_key:
+        return None
+    try:
+        payload = json.dumps({"q": query, "num": 5}).encode("utf-8")
+        req = urllib_request.Request(
+            "https://google.serper.dev/images",
+            data=payload,
+            headers={
+                "X-API-KEY": api_key,
+                "Content-Type": "application/json",
+            },
+        )
+        with urllib_request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read(524288))  # 512KB cap
+            images = data.get("images", [])
+            if images:
+                # Prefer larger images (portrait-friendly for 9:16)
+                for img in images:
+                    url = img.get("imageUrl", "")
+                    h = img.get("imageHeight", 0)
+                    w = img.get("imageWidth", 0)
+                    if url and h > w:  # Portrait
+                        return url
+                # Fallback: first image regardless of aspect
+                return images[0].get("imageUrl")
+    except Exception as e:
+        print(f"[serper] Image search failed for '{query[:50]}': {e}")
+    return None
 
 
 def generate_imagen(prompt: str, output_dir: str | None = None, aspect_ratio: str = "9:16") -> str | None:
@@ -114,8 +147,9 @@ def _log_image_usage(provider: str, prompt: str) -> None:
     """Log image usage to the usage DB. Never raises."""
     try:
         from worker.usage.db import log_usage
-        is_free = 0 if provider == "imagen" else 1
-        cost = 0.02 if provider == "imagen" else 0.0
+        _COST = {"imagen": 0.02, "serper": 0.001}
+        is_free = 1 if provider in ("pexels", "klipy") else 0
+        cost = _COST.get(provider, 0.0)
         log_usage(
             provider=provider,
             category="image",
@@ -134,7 +168,8 @@ def _log_image_usage(provider: str, prompt: str) -> None:
 def route_image(scene: dict) -> tuple[str | None, str | None]:
     """Route image search based on emotion and image_source fields.
     Returns (resolved_image_url, source_name) tuple.
-    source_name is "imagen", "pexels", or "klipy".
+    source_name is "serper", "imagen", "pexels", or "klipy".
+    Auto-route: Serper (Google Images) → Imagen 4 → Pexels fallback.
     Note: Gemini emits "tenor" as image_source — this maps to Klipy."""
     image_prompt = scene.get("image_prompt")
     if not image_prompt:
@@ -195,13 +230,19 @@ def route_image(scene: dict) -> tuple[str | None, str | None]:
                 _log_image_usage("klipy", fallback)
                 return url, "klipy"
 
-    # Default: Imagen 4 AI generation (better visuals than stock)
+    # Default: Serper (Google Images) — finds specific products/topics
+    url = search_serper(image_prompt)
+    if url:
+        _log_image_usage("serper", image_prompt)
+        return url, "serper"
+
+    # Fallback 1: Imagen 4 AI generation
     ai_path = generate_imagen(image_prompt)
     if ai_path:
         _log_image_usage("imagen", image_prompt)
         return str(Path(ai_path).resolve()), "imagen"
 
-    # Fallback: Pexels stock
+    # Fallback 2: Pexels stock
     url = search_pexels(image_prompt)
     if not url and fallback:
         url = search_pexels(fallback)
