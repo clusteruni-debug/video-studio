@@ -13,8 +13,6 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from urllib import request as urllib_request
-
 from dotenv import load_dotenv
 
 load_dotenv(Path.cwd() / ".env", override=False)
@@ -33,7 +31,7 @@ from worker.bridge.batch import BatchManager
 from worker.bridge.job_queue import JobQueue
 from worker.bridge.image_router import route_image
 from worker.bridge.cleanup import cleanup_storage, format_size
-from worker.bridge.routes_media import media_bp, init_media_routes
+from worker.bridge.routes_media import media_bp, init_media_routes, _SOURCE_NORMALIZE
 from worker.bridge.routes_sources import sources_bp, init_source_routes
 from worker.bridge.routes_admin import admin_bp, init_admin_routes
 
@@ -46,16 +44,7 @@ from worker.bridge.layouts import (
     TEMPLATE_LAYOUTS,
     DEFAULT_LAYOUT,
 )
-from worker.usage.db import (
-    init_db as _init_usage_db,
-    SESSION_ID as _USAGE_SESSION_ID,
-    get_session_stats,
-    get_daily_stats,
-    get_monthly_stats,
-    get_hourly_stats,
-    get_monthly_total_cost,
-)
-from worker.usage.limits import FREE_TIER_LIMITS
+from worker.usage.db import init_db as _init_usage_db
 
 # VectCutAPI access is fully encapsulated in worker.bridge.vectcut_bridge
 from worker.bridge.vectcut_bridge import (
