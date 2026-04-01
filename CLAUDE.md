@@ -14,10 +14,10 @@
 - UI: React + Vite (App shell + Sidebar/ImageCanvas/StoryboardPanel/BottomBar/DebugDrawer/SceneDetailPanel + shared utils)
 - Desktop shell: Tauri 2 after the web UI stabilizes
 - Planner: Ollama `qwen2.5:7b` local, browser-sample fallback
-- Image: Pexels (free stock), Imagen 4 (paid AI, $0.02/img), Klipy (free GIF/reaction)
+- Image: Serper/Google Images (primary, $0.001/query), Imagen 4 (AI fallback, $0.02/img), Pexels (free stock fallback), Klipy (free GIF/reaction)
 - Video: local Wan (free), Sora 2, Veo 3
-- TTS: Edge TTS (free default), ElevenLabs, OpenAI TTS
-- BGM: Local library (free), Suno
+- TTS: Edge TTS (free default, +35% rate), ElevenLabs, OpenAI TTS
+- BGM: Local mood-matched library (upbeat/tense/calm/cinematic, 16 tracks, MIT license)
 - Composition: FFmpeg with motion presets + xfade transitions
 
 ## Runtime Model
@@ -63,15 +63,14 @@
 
 ## Usage Tracking
 - Local SQLite DB at `worker/usage/usage.db` (gitignored) — tracks API calls, costs, tokens per session
-- Free-first image policy: Pexels (free, 200 req/hr) is default before Imagen (paid, $0.02/image)
+- Image routing: Serper (Google Images) → Imagen 4 → Pexels fallback
 - Usage stats endpoint: `GET /api/usage-stats` — session counts, limits, monthly cost totals
-- Providers with no free tier (Imagen, Veo3, DALL-E, Sora) require confirmation dialog before use
+- Providers with no free tier (Imagen, Serper, Veo3, DALL-E, Sora) require confirmation dialog before use
 
 ## Current Constraints
 - Package manager files are present; keep dependency changes explicit
 - No DB or remote storage yet
-- Free provider path (Pexels + Edge TTS + local BGM) works with PEXELS_API_KEY only (free tier, 200 req/hr)
-- Paid providers require env var API keys — see `.env.example`
+- Required API keys: `GEMINI_API_KEY`, `PEXELS_API_KEY`, `SERPER_API_KEY`, `GROQ_API_KEY`
 - FLUX/Wan default to `stub` mode until the operator sets command-backed adapter env vars
 - Suno API adapter is marked [UNCERTAIN] — API surface may not be stable
 

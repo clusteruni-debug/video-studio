@@ -77,17 +77,25 @@ def _display_text_matches_narration(display_text: str, narration: str) -> bool:
     return any(w in narr_clean for w in words) if words else False
 
 
-def _strip_cjk_ideographs(text: str) -> str:
-    """Remove CJK unified ideographs (漢字/한자) that Gemini sometimes mixes into Korean."""
-    return re.sub(r'[\u4e00-\u9fff\u3400-\u4dbf]+', '', text)
+def _strip_foreign_scripts(text: str) -> str:
+    """Remove non-Korean foreign scripts that LLMs sometimes mix into Korean output.
+    Strips: CJK ideographs (漢字), Japanese katakana/hiragana, fullwidth Latin."""
+    # CJK Unified Ideographs + Extension A
+    text = re.sub(r'[\u4e00-\u9fff\u3400-\u4dbf]+', '', text)
+    # Japanese Hiragana + Katakana
+    text = re.sub(r'[\u3040-\u309f\u30a0-\u30ff]+', '', text)
+    # Fullwidth Latin letters only (Ａ-Ｚ, ａ-ｚ) — preserve fullwidth punctuation ！？
+    text = re.sub(r'[\uff21-\uff3a\uff41-\uff5a]+', '', text)
+    return text
 
 
 def normalize_scenes(scenes: list[dict], topic: str, template_type: str = "") -> list[dict]:
-    """Fill missing fields, validate display_text, apply hook optimization."""
-    # Routing tokens that carry semantic meaning — everything else is cleared
-    # so auto-route (Imagen → Pexels fallback) handles selection.
-    _KEEP_SOURCES = {"tenor"}
+    """Fill missing fields, validate display_text, apply hook optimization.
 
+    NOTE: This function is a general normalizer called from multiple paths
+    (LLM generation, fallback, and potentially user-edited scenes).
+    Do NOT clear image_source here — that belongs in _clear_llm_image_sources().
+    """
     for s in scenes:
         s.setdefault("image_prompt", s.pop("visual_description", topic))
         s.setdefault("display_text", "")
@@ -98,18 +106,13 @@ def normalize_scenes(scenes: list[dict], topic: str, template_type: str = "") ->
         s.setdefault("is_commentary", False)
         s.setdefault("rank", None)
 
-        # Clear LLM-generated image_source unless it's a meaningful routing token.
-        # Gemini often outputs "pexels" which bypasses Imagen auto-route.
-        if s["image_source"] not in _KEEP_SOURCES:
-            s["image_source"] = ""
-
         # Strip stray CJK ideographs from Korean narration/display_text
         narr = s.get("narration", "")
         if narr:
-            s["narration"] = _strip_cjk_ideographs(narr)
+            s["narration"] = _strip_foreign_scripts(narr)
         dt_raw = s.get("display_text", "")
         if dt_raw:
-            s["display_text"] = _strip_cjk_ideographs(dt_raw)
+            s["display_text"] = _strip_foreign_scripts(dt_raw)
 
         # Validate display_text matches narration; auto-fix if not
         narr = s.get("narration", "")
@@ -117,12 +120,7 @@ def normalize_scenes(scenes: list[dict], topic: str, template_type: str = "") ->
         if narr and (not dt or not _display_text_matches_narration(dt, narr)):
             s["display_text"] = _extract_key_phrase(narr)
 
-    if scenes and template_type not in _HOOK_EXEMPT:
-        hook = scenes[0]
-        hook["transition"] = "Fade_In"
-        if hook.get("emotion") == "neutral":
-            hook["emotion"] = "shock"
-
+    # Hook optimization is handled by _enforce_hook() in generate_scenes_llm
     return scenes
 
 
@@ -286,6 +284,15 @@ def _enrich_image_prompts(scenes: list[dict], topic: str) -> None:
     print(f"[enrich] Step 2: {updated}/{len(scenes)} image prompts enriched ({enrich_provider})")
 
 
+def _clear_llm_image_sources(scenes: list[dict]) -> None:
+    """Clear LLM-generated image_source values so auto-route handles provider selection.
+    Only "tenor" (Gemini routing token for Klipy GIFs) is preserved.
+    Called ONLY on raw LLM output, never on user-edited scenes."""
+    for s in scenes:
+        if s.get("image_source", "") not in ("tenor", ""):
+            s["image_source"] = ""
+
+
 _DURATION_SCENE_MAP = {"30s": 6, "1min": 10, "custom": 8}
 
 # Words that indicate an abstract/generic image prompt — filter these out
@@ -340,11 +347,12 @@ def _filter_image_prompts(scenes: list[dict], topic: str) -> None:
             print(f"[filter] scene {s.get('scene_num')}: abstract prompt replaced")
 
 
-def _enforce_hook(scenes: list[dict]) -> None:
-    """Validate scene 1 hook: emotion must be shock/funny, display_text must be short."""
-    if not scenes:
+def _enforce_hook(scenes: list[dict], template_type: str = "") -> None:
+    """Validate scene 1 hook: emotion, transition, display_text length."""
+    if not scenes or template_type in _HOOK_EXEMPT:
         return
     hook = scenes[0]
+    hook["transition"] = "Fade_In"
     if hook.get("emotion") not in ("shock", "funny"):
         hook["emotion"] = "shock"
     dt = hook.get("display_text", "")
@@ -391,6 +399,7 @@ def generate_scenes_llm(
         if not scenes:
             continue
         scenes = normalize_scenes(scenes, topic, template_type)
+        _clear_llm_image_sources(scenes)
 
         # Quality gate: evaluate and keep best
         try:
@@ -408,7 +417,7 @@ def generate_scenes_llm(
             break  # Good enough
 
     if best_scenes:
-        _enforce_hook(best_scenes)
+        _enforce_hook(best_scenes, template_type)
         try:
             _enrich_image_prompts(best_scenes, topic)
         except Exception as e:
@@ -417,7 +426,9 @@ def generate_scenes_llm(
         return best_scenes, best_provider
 
     fallback = generate_scenes_fallback(topic, lang)
-    return normalize_scenes(fallback, topic, template_type), "template"
+    fallback = normalize_scenes(fallback, topic, template_type)
+    _enforce_hook(fallback, template_type)
+    return fallback, "template"
 
 
 def generate_scenes_fallback(topic: str, lang: str) -> list[dict]:
