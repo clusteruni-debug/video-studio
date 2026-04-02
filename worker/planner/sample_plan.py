@@ -31,6 +31,7 @@ class ProjectPlan:
     budgetMode: BudgetMode
     monthlyCapUsd: float
     scenes: list[SceneSpec]
+    bgmMood: str = "upbeat"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -148,6 +149,7 @@ def build_sample_project_plan(prompt: str, budget_mode: BudgetMode = "free") -> 
             ),
         ]
         title = "따뜻한 카페 릴스"
+        bgm_mood = "calm"
     elif is_productivity_prompt:
         scenes = [
             _make_scene(
@@ -196,6 +198,7 @@ def build_sample_project_plan(prompt: str, budget_mode: BudgetMode = "free") -> 
             ),
         ]
         title = "생산성 앱 릴스"
+        bgm_mood = "energetic"
     elif is_beauty_prompt:
         scenes = [
             _make_scene(
@@ -245,55 +248,58 @@ def build_sample_project_plan(prompt: str, budget_mode: BudgetMode = "free") -> 
             ),
         ]
         title = "뷰티 제품 티저"
+        bgm_mood = "cinematic"
     else:
+        # Use the user's prompt to generate contextual scenes (all still-image for free mode)
+        short_prompt = normalized_prompt[:60]
         scenes = [
             _make_scene(
                 "scene-01",
-                "오프닝 선언",
-                "브랜드 분위기를 강하게 여는 메인 오프닝 장면",
+                "시작",
+                f"{short_prompt}의 시작을 알리는 장면",
                 4.0,
                 5,
-                4,
-                2,
-                False,
-                "이 영상의 첫인상은 여기서 결정됩니다.",
-                "sora2" if budget_mode == "premium" else "local",
+                3,
+                1,
+                True,
+                f"{short_prompt}, 이야기가 시작됩니다.",
             ),
             _make_scene(
                 "scene-02",
-                "핵심 가치 요약",
-                "메인 가치 제안을 또렷한 타이포와 전환으로 정리하는 장면",
+                "핵심",
+                f"{short_prompt}의 가장 인상적인 순간",
                 5.0,
                 3,
                 2,
                 1,
                 True,
-                "더 보기 좋고 더 빠르게 이해되도록 구성합니다.",
+                "이 순간이 바로 핵심입니다.",
             ),
             _make_scene(
                 "scene-03",
-                "분위기 혹은 근거",
-                "짧은 광고 톤의 문장과 배경 비주얼로 설득력을 더하는 장면",
+                "분위기",
+                f"{short_prompt}의 감성을 담은 장면",
                 5.0,
                 3,
                 2,
                 1,
-                False,
-                "의도 있는 짧은 영상처럼 보이게 만듭니다.",
+                True,
+                "이 분위기를 느껴보세요.",
             ),
             _make_scene(
                 "scene-04",
-                "마지막 행동 유도",
-                "로고, 주소, 행동 유도를 담은 엔딩 카드",
+                "마무리",
+                f"{short_prompt}의 여운이 남는 장면",
                 4.0,
                 4,
                 1,
                 1,
                 True,
-                "지금 바로 시도하고 다음 릴스를 더 빨리 만드세요.",
+                "다시 찾고 싶은 순간입니다.",
             ),
         ]
-        title = "브랜드 프로모 릴스"
+        title = short_prompt
+        bgm_mood = "upbeat"
 
     return ProjectPlan(
         version=1,
@@ -303,4 +309,5 @@ def build_sample_project_plan(prompt: str, budget_mode: BudgetMode = "free") -> 
         budgetMode=budget_mode,
         monthlyCapUsd=_default_monthly_cap(budget_mode),
         scenes=scenes,
+        bgmMood=bgm_mood,
     )

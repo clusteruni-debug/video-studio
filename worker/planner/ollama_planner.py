@@ -9,7 +9,7 @@ from urllib import error, request
 
 from worker.planner.sample_plan import ProjectPlan, SceneSpec, build_sample_project_plan
 
-PlannerMode = Literal["auto", "ollama", "sample"]
+PlannerMode = Literal["auto", "gemini", "sample"]
 
 DEFAULT_OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
 DEFAULT_OLLAMA_MODEL = (
@@ -17,6 +17,8 @@ DEFAULT_OLLAMA_MODEL = (
     or os.environ.get("OLLAMA_PLANNER_MODEL")
     or "qwen2.5:7b"
 )
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 
 @dataclass(slots=True)
@@ -215,34 +217,35 @@ def _scene_from_payload(index: int, payload: dict[str, Any], budget_mode: str) -
 def _build_prompt(prompt: str, budget_mode: str) -> str:
     language = "한국어" if re.search(r"[가-힣]", prompt) else "the same language as the user prompt"
     return (
-        "You are a short-form video planning engine.\n"
+        "You are a Korean short-form video (릴스/숏츠) planning engine.\n"
         "Return JSON only. Do not use markdown.\n"
         "The JSON schema is:\n"
         "{\n"
         '  "title": "string",\n'
+        '  "bgmMood": "upbeat" | "calm" | "cinematic" | "tense" | "energetic",\n'
         '  "scenes": [\n'
         "    {\n"
         '      "title": "string",\n'
-        '      "prompt": "string",\n'
+        '      "prompt": "string (image generation prompt - describe the visual scene vividly)",\n'
         '      "durationSec": 4.0,\n'
         '      "priority": 1-5,\n'
         '      "humanRealism": 1-5,\n'
         '      "nativeAudioNeed": 1-5,\n'
-        '      "canUseStillImage": true|false,\n'
-        '      "subtitleText": "string",\n'
-        '      "routeHint": "local" | "sora2" | "veo3"\n'
+        '      "canUseStillImage": true,\n'
+        '      "subtitleText": "string (short, punchy caption for this scene)",\n'
+        '      "routeHint": "local"\n'
         "    }\n"
         "  ]\n"
         "}\n"
         "Rules:\n"
         "- Create exactly 4 scenes.\n"
         "- Total duration should feel like a 15 to 25 second short video.\n"
-        "- Keep scene titles short and concrete.\n"
-        "- `prompt` must describe the visual shot, not implementation details.\n"
-        "- `subtitleText` must be one concise caption line.\n"
-        "- Use `sora2` only for hero or realism-critical scenes.\n"
-        "- Use `veo3` only if native audio really matters.\n"
-        f"- Write the output in {language}.\n"
+        "- Keep scene titles short (2-4 words).\n"
+        "- `prompt` must describe the VISUAL SCENE for AI image generation: people, setting, mood, lighting, camera angle. Be specific and cinematic.\n"
+        "- `subtitleText` is the narration text that will be spoken aloud (TTS). Write 1-2 natural Korean sentences per scene (15-30 words). Conversational, emotionally engaging, like talking to a friend. Tell a story across 4 scenes with buildup and payoff. No generic marketing copy.\n"
+        "- Always set `canUseStillImage` to true and `routeHint` to `local`.\n"
+        "- Each scene's subtitleText must be DIFFERENT and advance the narrative.\n"
+        f"- Write ALL text in {language}.\n"
         f"- Budget mode is {budget_mode}.\n"
         f"User request: {prompt}"
     )
@@ -265,6 +268,10 @@ def _build_project_plan_from_ollama_payload(
     if len(scenes) < 4:
         raise ValueError("ollama planner produced fewer than 4 usable scenes")
 
+    valid_moods = {"upbeat", "calm", "cinematic", "tense", "energetic"}
+    raw_mood = str(payload.get("bgmMood") or "upbeat").strip().lower()
+    bgm_mood = raw_mood if raw_mood in valid_moods else "upbeat"
+
     return ProjectPlan(
         version=1,
         title=str(payload.get("title") or "브랜드 프로모 릴스").strip() or "브랜드 프로모 릴스",
@@ -273,6 +280,7 @@ def _build_project_plan_from_ollama_payload(
         budgetMode=budget_mode,
         monthlyCapUsd=_default_monthly_cap(budget_mode),
         scenes=scenes,
+        bgmMood=bgm_mood,
     )
 
 
@@ -305,6 +313,61 @@ def build_ollama_project_plan(
     return _build_project_plan_from_ollama_payload(payload, prompt=prompt, budget_mode=budget_mode)
 
 
+def _get_gemini_api_key() -> str:
+    """Read Gemini API key from environment."""
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+    return (
+        os.environ.get("GEMINI_API_KEY", "").strip()
+        or os.environ.get("GOOGLE_API_KEY", "").strip()
+    )
+
+
+def build_gemini_project_plan(
+    prompt: str,
+    budget_mode: str,
+    model: str = DEFAULT_GEMINI_MODEL,
+    timeout: int = 30,
+) -> ProjectPlan:
+    """Generate a project plan using Google Gemini API."""
+    api_key = _get_gemini_api_key()
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY is not set")
+
+    url = GEMINI_API_URL.format(model=model) + f"?key={api_key}"
+    system_prompt = _build_prompt(prompt, budget_mode)
+    payload = json.dumps({
+        "contents": [{"parts": [{"text": system_prompt}]}],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "temperature": 0.7,
+        },
+    }, ensure_ascii=False).encode("utf-8")
+
+    req = request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+    with request.urlopen(req, timeout=timeout) as response:
+        body = json.loads(response.read(1_048_576).decode("utf-8"))
+
+    candidates = body.get("candidates", [])
+    if not candidates:
+        raise ValueError("No candidates in Gemini response")
+
+    parts = candidates[0].get("content", {}).get("parts", [])
+    response_text = ""
+    for part in parts:
+        if part.get("text"):
+            response_text += part["text"]
+
+    if not response_text.strip():
+        raise ValueError("Empty text in Gemini response")
+
+    parsed = _extract_json_object(response_text)
+    return _build_project_plan_from_ollama_payload(parsed, prompt=prompt, budget_mode=budget_mode)
+
+
 def build_project_plan(
     prompt: str,
     budget_mode: str = "free",
@@ -324,32 +387,35 @@ def build_project_plan(
             ),
         )
 
-    try:
-        plan = build_ollama_project_plan(
-            normalized_prompt,
-            budget_mode=budget_mode,
-            model=model,
-            host=host,
-        )
-        return (
-            plan,
-            PlannerMetadata(
-                backend="ollama",
-                model=model,
-                fallbackUsed=False,
-                detail=f"Ollama planner generated a {len(plan.scenes)}-scene plan",
-            ),
-        )
-    except Exception as exc:
-        if planner_mode == "ollama":
-            raise
+    # Primary: try Gemini API
+    gemini_error: str | None = None
+    if planner_mode in ("auto", "gemini"):
+        try:
+            plan = build_gemini_project_plan(
+                normalized_prompt,
+                budget_mode=budget_mode,
+            )
+            return (
+                plan,
+                PlannerMetadata(
+                    backend="gemini",
+                    model=DEFAULT_GEMINI_MODEL,
+                    fallbackUsed=False,
+                    detail=f"Gemini planner generated a {len(plan.scenes)}-scene plan",
+                ),
+            )
+        except Exception as exc:
+            if planner_mode == "gemini":
+                raise
+            gemini_error = f"{type(exc).__name__}: {exc}"
 
-        return (
-            build_sample_project_plan(normalized_prompt, budget_mode=budget_mode),
-            PlannerMetadata(
-                backend="sample",
-                model=model,
-                fallbackUsed=True,
-                detail=f"Ollama planner unavailable; fell back to sample planner: {exc}",
-            ),
-        )
+    # Fallback: sample planner
+    return (
+        build_sample_project_plan(normalized_prompt, budget_mode=budget_mode),
+        PlannerMetadata(
+            backend="sample",
+            model=None,
+            fallbackUsed=True,
+            detail=f"Fell back to sample planner: {gemini_error or 'gemini not attempted'}",
+        ),
+    )

@@ -17,20 +17,20 @@ class SubtitleStyle:
     """Configurable subtitle appearance for ASS output."""
 
     font_name: str = "Malgun Gothic"
-    font_size: int = 44
+    font_size: int = 76
     # ASS colours are in &HAABBGGRR format (alpha, blue, green, red)
     primary_color: str = "&H00FFFFFF"
     outline_color: str = "&H00000000"
     back_color: str = "&H80000000"
-    outline_width: float = 3.0
-    shadow_distance: float = 1.5
+    outline_width: float = 4.0
+    shadow_distance: float = 2.0
     # ASS alignment numpad: 1=bottom-left 2=bottom-center 5=middle-center 8=top-center
     alignment: int = 2
-    margin_l: int = 80
-    margin_r: int = 80
-    margin_v: int = 120
+    margin_l: int = 50
+    margin_r: int = 50
+    margin_v: int = 160
     bold: bool = True
-    animation: str = "none"  # "none" | "fade_in" | "pop"
+    animation: str = "fade_in"  # "none" | "fade_in" | "pop"
 
 
 # -- Presets for common Korean short-form genres --

@@ -24,7 +24,7 @@ from worker.runtime.tools import probe_tool
 from worker.runtime.windows_tts import synthesize_windows_voiceover
 
 BGM_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
-BGM_VOLUME = 0.12  # BGM volume relative to narration
+BGM_VOLUME = float(os.environ.get("VIDEO_STUDIO_BGM_VOLUME", "0.35"))
 SFX_VOLUME = 0.8  # SFX volume relative to narration
 
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
@@ -32,7 +32,7 @@ FRAME_SIZE = "1080x1920"
 FRAME_RATE = "30"
 VIDEO_FILTER = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,format=yuv420p"
 SCENE_COLORS = ["#183153", "#3f5c7a", "#7c4d3a", "#556b2f", "#5f4b8b", "#7b3f61"]
-DEFAULT_MOTION_PRESET = "random"
+DEFAULT_MOTION_PRESET = "none"
 DEFAULT_TRANSITION_TYPE = "fade"
 DEFAULT_TRANSITION_DURATION = 0.5
 
@@ -479,17 +479,25 @@ def _resolve_ffmpeg_executable(project_root: Path) -> tuple[str, dict]:
 
 
 def _get_scene_motion_preset(scene: dict) -> str:
-    """Read motionPreset from the scene dict, defaulting to random."""
+    """Read motionPreset from the scene dict, defaulting to none."""
     return scene.get("motionPreset") or DEFAULT_MOTION_PRESET
 
 
-def _find_bgm_track(project_root: Path) -> Path | None:
-    """Find a BGM track from the local assets/bgm/ library."""
+def _find_bgm_track(project_root: Path, mood: str | None = None) -> Path | None:
+    """Find a BGM track from the local assets/bgm/ library (searches subdirectories)."""
     import random as _random
     bgm_dir = project_root / "assets" / "bgm"
     if not bgm_dir.is_dir():
         return None
-    tracks = [f for f in bgm_dir.iterdir() if f.is_file() and f.suffix.lower() in BGM_EXTENSIONS]
+    # If a mood is specified, look in that subfolder first
+    if mood:
+        mood_dir = bgm_dir / mood
+        if mood_dir.is_dir():
+            tracks = [f for f in mood_dir.iterdir() if f.is_file() and f.suffix.lower() in BGM_EXTENSIONS]
+            if tracks:
+                return _random.choice(tracks)
+    # Collect all tracks from all subdirectories
+    tracks = [f for f in bgm_dir.rglob("*") if f.is_file() and f.suffix.lower() in BGM_EXTENSIONS]
     if not tracks:
         return None
     return _random.choice(tracks)
@@ -885,7 +893,16 @@ def compose_smoke_render(
         )
 
     # BGM mixing: find a local track and mix it under the narration
-    bgm_track = _find_bgm_track(resolved_project_root)
+    # Try to read bgmMood from plan file if available
+    bgm_mood = None
+    plan_path = resolved_project_root / "storage" / "inputs" / manifest.get("projectId", "") / "project-plan.json"
+    if plan_path.exists():
+        try:
+            plan_data = json.loads(plan_path.read_text(encoding="utf-8"))
+            bgm_mood = plan_data.get("bgmMood")
+        except Exception:
+            pass
+    bgm_track = _find_bgm_track(resolved_project_root, mood=bgm_mood)
     if bgm_track:
         bgm_prepared = render_dir / "bgm-prepared.wav"
         total_duration = manifest.get("totalDurationSec", sum(scene_durations))

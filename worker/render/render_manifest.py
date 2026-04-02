@@ -48,7 +48,7 @@ class RenderSceneSpec:
     subtitleText: str
     cacheDir: str
     assetIds: list[str]
-    motionPreset: str = "random"
+    motionPreset: str = "none"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -211,7 +211,7 @@ def build_render_manifest(
                 subtitleText=scene.subtitleText,
                 cacheDir=scene_cache_dir,
                 assetIds=asset_ids,
-                motionPreset="random" if visual_kind == "image" else "none",
+                motionPreset="none",
             )
         )
 
@@ -252,7 +252,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--planner-mode",
         default="auto",
-        choices=["auto", "ollama", "sample"],
+        choices=["auto", "gemini", "sample"],
         help="Planner backend preference. auto uses Ollama first and falls back safely.",
     )
     parser.add_argument("--project-id", default="project-sample", help="Project id for storage and output paths")

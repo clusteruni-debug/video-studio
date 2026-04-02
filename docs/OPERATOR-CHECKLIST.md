@@ -31,15 +31,17 @@ For this project, "installed" is not enough. The tools must also be callable fro
 If `ffmpeg` is installed via WinGet, the bridge may resolve it from the WinGet link location even when a plain shell `where ffmpeg` result is inconsistent. Trust the bridge health output over PATH-only checks.
 
 ### 2. Zero-Cost Quick Start
-With no API keys at all, the tool produces real content using:
-- **Pollinations FLUX** for images (free, no key needed)
+With `GEMINI_API_KEY` set, the tool produces real content using:
+- **Gemini 2.5 Flash Image** for AI images (free, 500/day)
 - **Edge TTS** for narration (`pip install edge-tts` in project venv)
-- **Local BGM** library from `assets/bgm/`
-- **FFmpeg** for composition with Ken Burns motion + xfade transitions
+- **Local BGM** library from `assets/bgm/` (mood-matched)
+- **FFmpeg** for composition with xfade transitions
 
 Set these in your environment or `.env`:
 ```
-VIDEO_STUDIO_POLLINATIONS_MODE=command
+GEMINI_API_KEY=your_key_here
+VIDEO_STUDIO_GEMINI_FLASH_MODE=command
+VIDEO_STUDIO_GEMINI_FLASH_COMMAND=["python", "scripts/gemini_flash_image.py", "--prompt-path", "{prompt_path}", "--output-path", "{output_path}"]
 VIDEO_STUDIO_EDGE_TTS_MODE=command
 VIDEO_STUDIO_LOCAL_BGM_MODE=command
 ```
@@ -51,10 +53,9 @@ See `.env.example` for full command templates.
 #### Image Providers
 | Provider | Env Var | Setup |
 |----------|---------|-------|
-| Pollinations FLUX | (none needed) | Default free path, auto-detects |
-| Local FLUX.1-schnell | `VIDEO_STUDIO_FLUX_MODE=command` | Requires HF model download |
+| Gemini 2.5 Flash Image | `GEMINI_API_KEY` | Free tier, 500 images/day |
+| Imagen 4 | `GEMINI_API_KEY` | Paid ($0.02/img), same key |
 | DALL-E 3 | `OPENAI_API_KEY` | OpenAI billing required |
-| Imagen 3 | `GOOGLE_API_KEY` | Google AI billing required |
 
 #### Video Providers
 | Provider | Env Var | Setup |
@@ -112,6 +113,6 @@ Reply with status values only:
 - `Priority`: speed / cost / quality
 
 ## Recommended First Budget Rule
-- default mode: free only (Pollinations + Edge TTS + local BGM)
+- default mode: free only (Gemini Flash Image + Edge TTS + local BGM)
 - premium allowance: one paid image or video scene per project
 - Sora 2 / Veo 3: disabled unless a specific scene needs it

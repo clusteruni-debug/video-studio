@@ -19,10 +19,7 @@ def _make_manifest():
 def test_build_render_manifest_sets_motion_preset():
     manifest = _make_manifest()
     for scene in manifest.scenes:
-        if scene.visualKind == "image":
-            assert scene.motionPreset == "random"
-        else:
-            assert scene.motionPreset == "none"
+        assert scene.motionPreset == "none"
 
 
 def test_build_render_manifest_sets_transition_type():

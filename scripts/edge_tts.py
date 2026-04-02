@@ -23,7 +23,7 @@ from pathlib import Path
 
 DEFAULT_VOICE_KO = "ko-KR-SunHiNeural"
 DEFAULT_VOICE_EN = "en-US-AriaNeural"
-DEFAULT_RATE = "+0%"
+DEFAULT_RATE = "+35%"
 DEFAULT_VOLUME = "+0%"
 
 

@@ -19,8 +19,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--planner-mode",
         default="auto",
-        choices=["auto", "ollama", "sample"],
-        help="Planner backend preference. auto uses Ollama first and falls back safely.",
+        choices=["auto", "gemini", "sample"],
+        help="Planner backend preference. auto uses Gemini first and falls back safely.",
     )
     parser.add_argument("--sora2", action="store_true", help="Enable Sora 2 premium routing")
     parser.add_argument("--veo3", action="store_true", help="Enable Veo 3 premium routing")

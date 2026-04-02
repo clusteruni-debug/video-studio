@@ -1,5 +1,6 @@
 """
-Image routing — Serper (Google Images) primary, with Imagen 4 (AI), Pexels (stock), and Klipy (GIF) fallbacks.
+Image routing — Serper (Google Images) primary, with Gemini Flash (free AI), Imagen 4 (paid AI),
+Pexels (stock), and Klipy (GIF) fallbacks.
 Klipy is a Tenor v2-compatible API (same endpoint structure, different base URL).
 Gemini prompts emit "tenor" as image_source — this is a routing token that maps to Klipy.
 """
@@ -69,7 +70,7 @@ def generate_imagen(prompt: str, output_dir: str | None = None, aspect_ratio: st
         }).encode("utf-8")
         req = urllib_request.Request(url, data=payload, headers={"Content-Type": "application/json"})
         with urllib_request.urlopen(req, timeout=60) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
+            body = json.loads(resp.read(16_777_216).decode("utf-8"))
         b64_data = body["predictions"][0]["bytesBase64Encoded"]
         image_bytes = base64.b64decode(b64_data)
 
@@ -82,7 +83,49 @@ def generate_imagen(prompt: str, output_dir: str | None = None, aspect_ratio: st
         print(f"[imagen] Generated {len(image_bytes)} bytes → {save_path}")
         return str(save_path)
     except Exception as e:
-        print(f"[imagen] Failed for '{prompt[:50]}': {e}")
+        print(f"[imagen] Failed: {type(e).__name__}")
+        return None
+
+
+def generate_gemini_flash(prompt: str, output_dir: str | None = None) -> str | None:
+    """Generate image via Gemini 2.5 Flash (free, 500/day). Returns local file path or None."""
+    api_key = _get_key("GEMINI_API_KEY") or _get_key("GOOGLE_API_KEY")
+    if not api_key:
+        return None
+    model = "gemini-2.5-flash-image"
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        payload = json.dumps({
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"responseModalities": ["image", "text"]},
+        }).encode("utf-8")
+        req = urllib_request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        with urllib_request.urlopen(req, timeout=60) as resp:
+            body = json.loads(resp.read(16_777_216).decode("utf-8"))
+        # Extract inline image data from response parts
+        candidates = body.get("candidates", [])
+        if not candidates:
+            return None
+        parts = candidates[0].get("content", {}).get("parts", [])
+        b64_data = None
+        for part in parts:
+            inline = part.get("inlineData") or part.get("inline_data")
+            if inline and inline.get("data"):
+                b64_data = inline["data"]
+                break
+        if not b64_data:
+            return None
+        image_bytes = base64.b64decode(b64_data)
+
+        save_dir = Path(output_dir) if output_dir else Path("storage/cache")
+        save_dir.mkdir(parents=True, exist_ok=True)
+        name_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+        save_path = save_dir / f"gemini_flash_{name_hash}.png"
+        save_path.write_bytes(image_bytes)
+        print(f"[gemini-flash] Generated {len(image_bytes)} bytes → {save_path}")
+        return str(save_path)
+    except Exception as e:
+        print(f"[gemini-flash] Failed: {type(e).__name__}")
         return None
 
 
@@ -148,12 +191,16 @@ def _log_image_usage(provider: str, prompt: str) -> None:
     try:
         from worker.usage.db import log_usage
         _COST = {"imagen": 0.02, "serper": 0.001}
-        is_free = 1 if provider in ("pexels", "klipy") else 0
+        _MODEL = {
+            "imagen": "imagen-4.0-fast-generate-001",
+            "gemini-flash": "gemini-2.5-flash-image",
+        }
+        is_free = 1 if provider in ("pexels", "klipy", "gemini-flash") else 0
         cost = _COST.get(provider, 0.0)
         log_usage(
             provider=provider,
             category="image",
-            model="imagen-4.0-fast-generate-001" if provider == "imagen" else None,
+            model=_MODEL.get(provider),
             cost_usd=cost,
             tokens_in=0,
             tokens_out=0,
@@ -168,8 +215,8 @@ def _log_image_usage(provider: str, prompt: str) -> None:
 def route_image(scene: dict) -> tuple[str | None, str | None]:
     """Route image search based on emotion and image_source fields.
     Returns (resolved_image_url, source_name) tuple.
-    source_name is "serper", "imagen", "pexels", or "klipy".
-    Auto-route: Serper (Google Images) → Imagen 4 → Pexels fallback.
+    source_name is "serper", "gemini-flash", "imagen", "pexels", or "klipy".
+    Auto-route: Serper → Gemini Flash (free) → Imagen 4 (paid) → Pexels fallback.
     Note: Gemini emits "tenor" as image_source — this maps to Klipy."""
     image_prompt = scene.get("image_prompt")
     if not image_prompt:
@@ -200,8 +247,12 @@ def route_image(scene: dict) -> tuple[str | None, str | None]:
             _log_image_usage("pexels", image_prompt)
             return url, "pexels"
         return None, None
-    # FLUX / Pollinations — dead (401, paid-only since 2026-03). Route to Imagen 4.
+    # FLUX / Pollinations — dead (401, paid-only since 2026-03). Route to Gemini Flash (free) → Imagen 4 (paid).
     if source in ("flux", "pollinations", "imagen"):
+        ai_path = generate_gemini_flash(image_prompt)
+        if ai_path:
+            _log_image_usage("gemini-flash", image_prompt)
+            return str(Path(ai_path).resolve()), "gemini-flash"
         ai_path = generate_imagen(image_prompt)
         if ai_path:
             _log_image_usage("imagen", image_prompt)
@@ -236,13 +287,19 @@ def route_image(scene: dict) -> tuple[str | None, str | None]:
         _log_image_usage("serper", image_prompt)
         return url, "serper"
 
-    # Fallback 1: Imagen 4 AI generation
+    # Fallback 1: Gemini Flash (free AI generation, 500/day)
+    ai_path = generate_gemini_flash(image_prompt)
+    if ai_path:
+        _log_image_usage("gemini-flash", image_prompt)
+        return str(Path(ai_path).resolve()), "gemini-flash"
+
+    # Fallback 2: Imagen 4 (paid AI generation, $0.02/img)
     ai_path = generate_imagen(image_prompt)
     if ai_path:
         _log_image_usage("imagen", image_prompt)
         return str(Path(ai_path).resolve()), "imagen"
 
-    # Fallback 2: Pexels stock
+    # Fallback 3: Pexels stock
     url = search_pexels(image_prompt)
     if not url and fallback:
         url = search_pexels(fallback)

@@ -6,7 +6,7 @@ from worker.media.adapters import ADAPTER_CONFIG
 
 # Default provider preference per category (first match wins)
 DEFAULT_PREFERENCE = {
-    "image": ["pexels", "imagen", "dalle3"],  # free-first: Pexels (free) before Imagen (paid)
+    "image": ["gemini-flash"],  # free-only: Gemini Flash (free AI gen). Pexels/Serper handled separately in bridge image_router
     "video": ["wan", "sora2", "veo3", "runway"],
     "tts": ["edge-tts", "windows-tts", "elevenlabs", "openai-tts"],
     "bgm": ["local-bgm", "suno"],

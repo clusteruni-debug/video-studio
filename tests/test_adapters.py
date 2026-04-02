@@ -12,9 +12,9 @@ def test_adapter_config_has_required_fields():
 
 
 def test_free_adapters_by_category_returns_correct_keys():
-    # No free image providers after Pollinations shutdown — Imagen is "cheap" not "free"
+    # Gemini Flash is the free AI image provider (500/day)
     image_free = free_adapters_by_category("image")
-    assert len(image_free) == 0
+    assert "gemini-flash" in image_free
 
     tts_free = free_adapters_by_category("tts")
     assert "edge-tts" in tts_free

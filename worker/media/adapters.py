@@ -23,6 +23,15 @@ ADAPTER_CONFIG = {
         "costTier": "premium",
         "costPerUnit": 0.04,
     },
+    "gemini-flash": {
+        "label": "Gemini 2.5 Flash Image (Google, free)",
+        "category": "image",
+        "model": "gemini-2.5-flash-image",
+        "outputKind": "image",
+        "envPrefix": "VIDEO_STUDIO_GEMINI_FLASH",
+        "costTier": "free",
+        "costPerUnit": 0.0,
+    },
     "imagen": {
         "label": "Imagen 4 (Google)",
         "category": "image",

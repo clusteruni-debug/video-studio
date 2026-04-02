@@ -49,54 +49,54 @@ def zoompan_filter(
 # ---------------------------------------------------------------------------
 
 def _zoom_in(*, frames: int, size: str, fps: int) -> str:
-    """Slow zoom into centre (Ken Burns classic)."""
+    """Gentle zoom into centre."""
     return (
-        f"zoompan=z='min(zoom+0.0015,1.3)'"
+        f"zoompan=z='min(zoom+0.0008,1.12)'"
         f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
         f":d={frames}:s={size}:fps={fps}"
     )
 
 
 def _zoom_out(*, frames: int, size: str, fps: int) -> str:
-    """Slow zoom out from centre."""
+    """Gentle zoom out from centre."""
     return (
-        f"zoompan=z='if(lte(zoom,1.0),1.3,max(1.001,zoom-0.0015))'"
+        f"zoompan=z='if(lte(zoom,1.0),1.12,max(1.001,zoom-0.0008))'"
         f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
         f":d={frames}:s={size}:fps={fps}"
     )
 
 
 def _pan_left(*, frames: int, size: str, fps: int) -> str:
-    """Horizontal drift from right to left."""
+    """Gentle horizontal drift from right to left."""
     return (
-        f"zoompan=z=1.15"
+        f"zoompan=z=1.06"
         f":x='(iw-iw/zoom)*(1-on/{frames})':y='(ih-ih/zoom)/2'"
         f":d={frames}:s={size}:fps={fps}"
     )
 
 
 def _pan_right(*, frames: int, size: str, fps: int) -> str:
-    """Horizontal drift from left to right."""
+    """Gentle horizontal drift from left to right."""
     return (
-        f"zoompan=z=1.15"
+        f"zoompan=z=1.06"
         f":x='(iw-iw/zoom)*(on/{frames})':y='(ih-ih/zoom)/2'"
         f":d={frames}:s={size}:fps={fps}"
     )
 
 
 def _drift_up(*, frames: int, size: str, fps: int) -> str:
-    """Vertical drift from bottom to top."""
+    """Gentle vertical drift from bottom to top."""
     return (
-        f"zoompan=z=1.15"
+        f"zoompan=z=1.06"
         f":x='(iw-iw/zoom)/2':y='(ih-ih/zoom)*(1-on/{frames})'"
         f":d={frames}:s={size}:fps={fps}"
     )
 
 
 def _drift_down(*, frames: int, size: str, fps: int) -> str:
-    """Vertical drift from top to bottom."""
+    """Gentle vertical drift from top to bottom."""
     return (
-        f"zoompan=z=1.15"
+        f"zoompan=z=1.06"
         f":x='(iw-iw/zoom)/2':y='(ih-ih/zoom)*(on/{frames})'"
         f":d={frames}:s={size}:fps={fps}"
     )
