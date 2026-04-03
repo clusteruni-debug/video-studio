@@ -29,7 +29,7 @@ from worker.bridge.scene_generator import (
 )
 from worker.bridge.batch import BatchManager
 from worker.bridge.job_queue import JobQueue
-from worker.bridge.image_router import route_image
+from worker.bridge.image_router import route_image, search_sub_image
 from worker.bridge.cleanup import cleanup_storage, format_size
 from worker.bridge.routes_media import media_bp, init_media_routes, _SOURCE_NORMALIZE
 from worker.bridge.routes_sources import sources_bp, init_source_routes
@@ -51,6 +51,7 @@ from worker.bridge.vectcut_bridge import (
     VECTCUT_DIR,
     create_capcut_draft,
     add_image as vb_add_image,
+    add_video as vb_add_video,
     add_subtitle as vb_add_subtitle,
     add_narration as vb_add_narration,
     add_bgm as vb_add_bgm,
@@ -100,7 +101,50 @@ def _split_sentences(text: str) -> list[str]:
             s = s.strip()
             if s:
                 parts.append(s)
-    return parts if parts else [text]
+    result = parts if parts else [text]
+    return _enforce_max_chars(result)
+
+
+# Korean conjunction particles — natural break points for long sentences
+_KO_CONJUNCTIONS = _re.compile(r'(지만|는데|거든|해서|니까|때문에|그래서|그런데|그리고)\s*')
+
+def _enforce_max_chars(sentences: list[str], max_chars: int = 32) -> list[str]:
+    """Split any sentence exceeding *max_chars* at natural Korean break points.
+    RENDERING-SPEC: max 16 chars/line × 2 lines = 32 chars."""
+    out: list[str] = []
+    for s in sentences:
+        if len(s) <= max_chars:
+            out.append(s)
+            continue
+        # Try comma split first
+        if "," in s:
+            idx = s.index(",")
+            if 4 < idx < len(s) - 4:
+                out.extend(_enforce_max_chars([s[:idx + 1].strip(), s[idx + 1:].strip()], max_chars))
+                continue
+        # Try Korean conjunction split
+        m = _KO_CONJUNCTIONS.search(s, 4)
+        if m and m.end() < len(s) - 2:
+            out.extend(_enforce_max_chars([s[:m.end()].strip(), s[m.end():].strip()], max_chars))
+            continue
+        # Last resort: split at space nearest midpoint
+        mid = len(s) // 2
+        best = -1
+        for i in range(mid, -1, -1):
+            if s[i] == " ":
+                best = i
+                break
+        if best == -1:
+            for i in range(mid, len(s)):
+                if s[i] == " ":
+                    best = i
+                    break
+        if best >= 1:
+            parts = [p for p in [s[:best].strip(), s[best:].strip()] if p]
+            out.extend(_enforce_max_chars(parts, max_chars))
+        else:
+            out.append(s)
+    return [s for s in out if s]
 
 
 # ---------------------------------------------------------------------------
@@ -363,11 +407,55 @@ def create_draft_route():
     for scene in scenes:
         img_url, used_source = route_image(scene)
         scene["_image_url"] = img_url
+        # Mark animated video sources (Klipy .mp4) so CapCut uses video material
+        scene["_is_video"] = bool(
+            img_url and img_url.endswith(".mp4")
+        )
         if img_url and used_source:
             scene["image_source"] = _SOURCE_NORMALIZE.get(used_source, used_source)
             image_sources_used.add(used_source)
     has_images = any(s.get("_image_url") for s in scenes)
     steps_log.append(f"images: {'+'.join(sorted(image_sources_used)) if image_sources_used else 'none'}")
+
+    # ── Step 3b: Pre-search sub-scene images for long scenes ──────────────
+    # Scenes with ≥2 sentences get per-sentence images for visual variety.
+    # Cap at 3 extra searches per scene to keep latency reasonable (~30s max).
+    _MAX_SUB_SEARCHES = 3
+    for scene in scenes:
+        sentences = _split_sentences(scene.get("narration", ""))
+        scene["_sentences"] = sentences  # cache for Step 4 timing reuse
+        if len(sentences) < 2 or not scene.get("_image_url"):
+            continue
+        sub_images: list[dict] = []
+        base_prompt = scene.get("image_prompt", "")
+        searches_done = 0
+        for si, sent in enumerate(sentences):
+            if si == 0:
+                # First sentence reuses the scene's main image
+                sub_images.append({
+                    "url": scene.get("_image_url"),
+                    "is_video": scene.get("_is_video", False),
+                })
+                continue
+            if searches_done < _MAX_SUB_SEARCHES:
+                query = f"{base_prompt}, {sent}" if base_prompt else sent
+                try:
+                    sub_url, sub_src = search_sub_image(query)
+                except Exception:
+                    sub_url, sub_src = None, None
+                searches_done += 1
+                if sub_url:
+                    image_sources_used.add(sub_src or "serper")
+            else:
+                sub_url = None
+            sub_images.append({
+                "url": sub_url or scene.get("_image_url"),
+                "is_video": bool(sub_url and sub_url.endswith(".mp4")),
+            })
+        # Only use multi-image if at least one sub differs from main
+        main_url = scene.get("_image_url")
+        if any(s.get("url") and s["url"] != main_url for s in sub_images[1:]):
+            scene["_sub_images"] = sub_images
 
     # ── Step 4: Build CapCut draft via VectCutAPI (bridge module) ─────────
     try:
@@ -384,30 +472,81 @@ def create_draft_route():
         is_rank_scene = scene.get("rank") is not None
         is_commentary = scene.get("is_commentary", False)
 
-        # ── Background image with structural layout ──
+        # ── Background image(s) with structural layout ──
         default_trans = layout.get("default_transition", "Dissolve")
         scene_transition = scene.get("transition", default_trans) if n > 1 else None
         if scene_transition == "none":
             scene_transition = None
-        img_ref = scene.get("_image_url")
-        if img_ref:
-            if not img_ref.startswith(("http://", "https://")):
-                img_ref = Path(img_ref).resolve().as_uri()
-            img_cfg = layout.get("img", {})
-            img_params = {
-                "scale_x": img_cfg.get("scale_x", 1.3),
-                "scale_y": img_cfg.get("scale_y", 1.3),
-            }
-            if img_cfg.get("background_blur"):
-                img_params["background_blur"] = img_cfg["background_blur"]
-            if img_cfg.get("transform_y") is not None:
-                img_params["transform_y"] = img_cfg["transform_y"]
-            if img_cfg.get("mask_type"):
-                img_params["mask_type"] = img_cfg["mask_type"]
-            vb_add_image(
-                draft_id, img_ref, cumulative_time, cumulative_time + dur,
-                transition=scene_transition, **img_params,
-            )
+        img_cfg = layout.get("img", {})
+        img_base_params = {
+            "scale_x": img_cfg.get("scale_x", 1.3),
+            "scale_y": img_cfg.get("scale_y", 1.3),
+        }
+        if img_cfg.get("background_blur"):
+            img_base_params["background_blur"] = img_cfg["background_blur"]
+        if img_cfg.get("transform_y") is not None:
+            img_base_params["transform_y"] = img_cfg["transform_y"]
+
+        sub_images = scene.get("_sub_images")
+        if sub_images and len(sub_images) >= 2:
+            # Multi-image: one image per sentence segment
+            sentences_for_timing = scene.get("_sentences") or _split_sentences(scene.get("narration", ""))
+            total_chars = sum(len(s) for s in sentences_for_timing) or 1
+            seg_offset = 0.0
+            for si, sub in enumerate(sub_images):
+                if si < len(sentences_for_timing):
+                    seg_dur = dur * (len(sentences_for_timing[si]) / total_chars)
+                else:
+                    seg_dur = dur / len(sub_images)
+                sub_url = sub.get("url")
+                if not sub_url:
+                    seg_offset += seg_dur
+                    continue
+                if not sub_url.startswith(("http://", "https://")):
+                    sub_url = Path(sub_url).resolve().as_uri()
+                trans = scene_transition if si == 0 else "Dissolve"
+                if sub.get("is_video"):
+                    vb_add_video(
+                        draft_id, sub_url,
+                        cumulative_time + seg_offset, cumulative_time + seg_offset + seg_dur,
+                        transition=trans,
+                        scale_x=img_base_params["scale_x"],
+                        scale_y=img_base_params["scale_y"],
+                        background_blur=img_base_params.get("background_blur"),
+                    )
+                else:
+                    img_p = dict(img_base_params)
+                    if img_cfg.get("mask_type"):
+                        img_p["mask_type"] = img_cfg["mask_type"]
+                    vb_add_image(
+                        draft_id, sub_url,
+                        cumulative_time + seg_offset, cumulative_time + seg_offset + seg_dur,
+                        transition=trans, **img_p,
+                    )
+                seg_offset += seg_dur
+        else:
+            # Single image for the entire scene
+            img_ref = scene.get("_image_url")
+            if img_ref:
+                is_video_asset = scene.get("_is_video", False)
+                if not img_ref.startswith(("http://", "https://")):
+                    img_ref = Path(img_ref).resolve().as_uri()
+                if is_video_asset:
+                    vb_add_video(
+                        draft_id, img_ref, cumulative_time, cumulative_time + dur,
+                        transition=scene_transition,
+                        scale_x=img_base_params["scale_x"],
+                        scale_y=img_base_params["scale_y"],
+                        background_blur=img_base_params.get("background_blur"),
+                    )
+                else:
+                    img_p = dict(img_base_params)
+                    if img_cfg.get("mask_type"):
+                        img_p["mask_type"] = img_cfg["mask_type"]
+                    vb_add_image(
+                        draft_id, img_ref, cumulative_time, cumulative_time + dur,
+                        transition=scene_transition, **img_p,
+                    )
 
         # ── Text narration with structural layout ──
         subtitle_text = scene["narration"]
@@ -515,9 +654,11 @@ def create_draft_route():
         text_params.update(style_overrides)
 
         # Split narration into sentences — show one at a time (sequential subtitles)
-        sentences = _split_sentences(subtitle_text)
+        sentences = scene.get("_sentences") or _split_sentences(subtitle_text)
         if len(sentences) <= 1:
-            vb_add_subtitle(draft_id, subtitle_text, cumulative_time, cumulative_time + dur, n, **text_params)
+            # Use the split result (may be shorter than subtitle_text after _enforce_max_chars)
+            display = sentences[0] if sentences else subtitle_text
+            vb_add_subtitle(draft_id, display, cumulative_time, cumulative_time + dur, n, **text_params)
         else:
             total_chars = sum(len(s) for s in sentences)
             sent_offset = 0.0
@@ -528,7 +669,7 @@ def create_draft_route():
                     draft_id, sent,
                     cumulative_time + sent_offset,
                     cumulative_time + sent_offset + sent_dur,
-                    n * 10 + si,  # unique scene_num per sentence
+                    n * 1000 + si,  # unique track: no collision with badge offsets (n+100..400)
                     **text_params,
                 )
                 sent_offset += sent_dur

@@ -423,3 +423,15 @@ def route_image(scene: dict) -> tuple[str | None, str | None]:
         _log_image_usage("pexels", image_prompt)
         return url, "pexels"
     return None, None
+
+
+def search_sub_image(query: str) -> tuple[str | None, str | None]:
+    """Fast sub-scene image search (Serper → Pexels only, no AI gen).
+    Used to add visual variety within long scenes."""
+    url = search_serper(query)
+    if url:
+        return url, "serper"
+    url = search_pexels(query)
+    if url:
+        return url, "pexels"
+    return None, None

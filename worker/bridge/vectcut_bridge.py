@@ -42,7 +42,8 @@ if _PINNED and VECTCUT_DIR.is_dir():
     except Exception:
         pass
 
-_MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
+_MAX_IMAGE_BYTES = 5 * 1024 * 1024   # 5 MB
+_MAX_VIDEO_BYTES = 25 * 1024 * 1024  # 25 MB — Klipy GIFs regularly exceed 5 MB
 
 
 # ---------------------------------------------------------------------------
@@ -50,7 +51,7 @@ _MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
 # ---------------------------------------------------------------------------
 from collections import namedtuple
 
-VectCutModules = namedtuple("VectCutModules", ["create", "text", "audio", "image", "hash_url", "cache"])
+VectCutModules = namedtuple("VectCutModules", ["create", "text", "audio", "image", "video", "hash_url", "cache"])
 
 
 def _import_vectcut() -> VectCutModules:
@@ -61,9 +62,10 @@ def _import_vectcut() -> VectCutModules:
         from add_text_impl import add_text_impl as _text
         from add_audio_track import add_audio_track as _audio
         from add_image_impl import add_image_impl as _image
+        from add_video_track import add_video_track as _video
         from util import url_to_hash as _hash
         from draft_cache import DRAFT_CACHE as _cache
-        return VectCutModules(_create, _text, _audio, _image, _hash, _cache)
+        return VectCutModules(_create, _text, _audio, _image, _video, _hash, _cache)
     except ImportError as e:
         raise RuntimeError(
             f"VectCutAPI import failed (dir={VECTCUT_DIR}): {e}"
@@ -138,6 +140,52 @@ def add_image(
         return True
     except Exception as e:
         print(f"[vectcut] add_image: {e}")
+        return False
+
+
+def add_video(
+    draft_id: str,
+    video_url: str,
+    start: float,
+    end: float,
+    *,
+    track_name: str = "background",
+    scale_x: float = 1.3,
+    scale_y: float = 1.3,
+    transform_y: float = 0,
+    relative_index: int = 0,
+    transition: str | None = None,
+    transition_duration: float = 0.7,
+    background_blur: int | None = None,
+) -> bool:
+    """Add an animated video (e.g. Klipy GIF .mp4) to the draft.  Returns True on success."""
+    _video = _get_vectcut().video
+    try:
+        duration = end - start
+        kwargs = dict(
+            video_url=video_url,
+            width=1080, height=1920,
+            start=0,
+            end=None,
+            target_start=start,
+            draft_id=draft_id,
+            track_name=track_name,
+            scale_x=scale_x, scale_y=scale_y,
+            relative_index=relative_index,
+            duration=duration,
+            volume=0.0,
+        )
+        if transform_y != 0:
+            kwargs["transform_y"] = transform_y
+        if background_blur is not None:
+            kwargs["background_blur"] = background_blur
+        if transition is not None:
+            kwargs["transition"] = transition
+            kwargs["transition_duration"] = transition_duration
+        _video(**kwargs)
+        return True
+    except Exception as e:
+        print(f"[vectcut] add_video: {e}")
         return False
 
 
@@ -295,11 +343,22 @@ def save_draft_to_capcut(
     # -- Download/copy images into draft assets --
     image_dest = dest / "assets" / "image"
     image_dest.mkdir(parents=True, exist_ok=True)
+    # Collect all unique image URLs (main + sub-images)
+    _all_image_urls: list[str] = []
     if has_images:
         for scene in scenes:
-            img_url = scene.get("_image_url")
-            if not img_url:
+            main_url = scene.get("_image_url")
+            if main_url and not scene.get("_is_video"):
+                _all_image_urls.append(main_url)
+            for sub in scene.get("_sub_images", []):
+                sub_url = sub.get("url")
+                if sub_url and not sub.get("is_video"):
+                    _all_image_urls.append(sub_url)
+        _seen_urls: set[str] = set()
+        for img_url in _all_image_urls:
+            if img_url in _seen_urls:
                 continue
+            _seen_urls.add(img_url)
             try:
                 # Local file path (from Imagen AI) — copy directly
                 # Hash must match the file:// URI that server.py passes to VectCutAPI
@@ -357,11 +416,57 @@ def save_draft_to_capcut(
             except Exception as e:
                 print(f"[download] Image failed: {e}")
 
+    # -- Download/copy video assets (Klipy GIFs etc.) --
+    video_dest = dest / "assets" / "video"
+    video_dest.mkdir(parents=True, exist_ok=True)
+    _all_video_urls: list[str] = []
+    if has_images:
+        for scene in scenes:
+            main_url = scene.get("_image_url")
+            if main_url and scene.get("_is_video"):
+                _all_video_urls.append(main_url)
+            for sub in scene.get("_sub_images", []):
+                sub_url = sub.get("url")
+                if sub_url and sub.get("is_video"):
+                    _all_video_urls.append(sub_url)
+        _seen_vid: set[str] = set()
+        for vid_url in _all_video_urls:
+            if vid_url in _seen_vid:
+                continue
+            _seen_vid.add(vid_url)
+            try:
+                vid_hash = _hash(vid_url)
+                req = urllib_request.Request(vid_url, headers={"User-Agent": "VideoStudio/1.0"})
+                with urllib_request.urlopen(req, timeout=30) as resp:
+                    vid_path = video_dest / f"video_{vid_hash}.mp4"
+                    oversized = False
+                    with open(str(vid_path), "wb") as fp:
+                        total = 0
+                        while True:
+                            chunk = resp.read(65536)
+                            if not chunk:
+                                break
+                            total += len(chunk)
+                            if total > _MAX_VIDEO_BYTES:
+                                oversized = True
+                                break
+                            fp.write(chunk)
+                    if oversized:
+                        vid_path.unlink(missing_ok=True)
+                        print(f"[download] Video oversized (>{_MAX_VIDEO_BYTES // 1024 // 1024}MB): {vid_url[:80]}")
+            except Exception as e:
+                print(f"[download] Video failed: {e}")
+
     # -- Fix material paths on VectCutAPI script object --
     actual_by_stem: dict[str, Path] = {}
     for fp in image_dest.iterdir():
         if fp.is_file():
             actual_by_stem[fp.stem] = fp
+
+    video_by_stem: dict[str, Path] = {}
+    for fp in video_dest.iterdir():
+        if fp.is_file():
+            video_by_stem[fp.stem] = fp
 
     if hasattr(cached_script, "materials"):
         if hasattr(cached_script.materials, "audios"):
@@ -377,6 +482,13 @@ def save_draft_to_capcut(
                         if not png_path.exists() and actual_fp.suffix != ".png":
                             shutil.copy2(str(actual_fp), str(png_path))
                     video.replace_path = str(image_dest / video.material_name)
+                elif getattr(video, "material_type", "") == "video":
+                    stem = Path(video.material_name).stem
+                    actual_fp = video_by_stem.get(stem)
+                    if actual_fp:
+                        video.replace_path = str(actual_fp)
+                    else:
+                        video.replace_path = str(video_dest / video.material_name)
 
     # -- Save project file --
     cached_script.dump(str(dest / "draft_content.json"))
