@@ -253,6 +253,25 @@ def _select_best_video_file(video_files: list[dict]) -> dict | None:
     return None
 
 
+def download_pexels_video(video_url: str, output_path: str, timeout: int = 60) -> bool:
+    """Download a Pexels video file to a local path. Returns True on success."""
+    try:
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        req = urllib_request.Request(video_url, headers={"User-Agent": "VideoStudio/1.0"})
+        with urllib_request.urlopen(req, timeout=timeout) as resp:
+            with open(out, "wb") as f:
+                while True:
+                    chunk = resp.read(65536)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+        return out.exists() and out.stat().st_size > 0
+    except Exception as e:
+        print(f"[pexels-video] Download failed: {e}")
+        return False
+
+
 def search_klipy(query: str, limit: int = 3) -> str | None:
     """Search Klipy (Tenor v2-compatible) for a GIF/MP4. Returns media URL or None."""
     api_key = _get_key("KLIPY_API_KEY")

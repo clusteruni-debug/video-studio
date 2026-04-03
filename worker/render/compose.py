@@ -706,36 +706,59 @@ def compose_smoke_render(
             if local_media_result.logPath:
                 log_lines.append(f"visual_log={local_media_result.logPath}")
             log_lines.append("")
-            _write_scene_card_ass(
-                path=ass_path,
-                scene_index=index + 1,
-                scene_title=scene["title"],
-                prompt_text=visual_asset["prompt"],
-                subtitle_text=scene["subtitleText"],
-                route_label=scene["route"].upper(),
-            )
-            # Use gradient background instead of flat color
-            _create_scene_poster_gradient(
-                ffmpeg_path=ffmpeg_path,
-                output_path=poster_path,
-                ass_path=ass_path,
-                color_index=index,
-                log_lines=log_lines,
-            )
 
-            if scene["visualKind"] == "video":
-                _create_visual_clip_from_poster(
+            # RENDERING-SPEC §5.1 step 2: Try Pexels video before gradient fallback
+            pexels_video_used = False
+            try:
+                from worker.bridge.image_router import search_pexels_video, download_pexels_video
+                pexels_result = search_pexels_video(
+                    query=visual_asset.get("prompt", scene["title"]),
+                    min_duration=scene["durationSec"],
+                )
+                if pexels_result:
+                    pexels_dl_path = scene_cache_dir / f"{scene_id}.pexels.mp4"
+                    if download_pexels_video(pexels_result["url"], str(pexels_dl_path)):
+                        visual_input_path = pexels_dl_path
+                        pexels_video_used = True
+                        log_lines.append(
+                            f"visual_source=pexels-video id={pexels_result.get('pexels_id')} "
+                            f"dur={pexels_result['duration']}s {pexels_result['width']}x{pexels_result['height']}"
+                        )
+                        log_lines.append("")
+            except Exception as e:
+                log_lines.append(f"pexels_video_fallback_error={e}")
+
+            if not pexels_video_used:
+                _write_scene_card_ass(
+                    path=ass_path,
+                    scene_index=index + 1,
+                    scene_title=scene["title"],
+                    prompt_text=visual_asset["prompt"],
+                    subtitle_text=scene["subtitleText"],
+                    route_label=scene["route"].upper(),
+                )
+                # Use gradient background instead of flat color
+                _create_scene_poster_gradient(
                     ffmpeg_path=ffmpeg_path,
-                    poster_path=poster_path,
-                    output_path=visual_path,
-                    duration_sec=scene["durationSec"],
-                    motion_preset=motion_preset,
+                    output_path=poster_path,
+                    ass_path=ass_path,
+                    color_index=index,
                     log_lines=log_lines,
                 )
 
-                visual_input_path = visual_path
-            else:
-                visual_input_path = poster_path
+                if scene["visualKind"] == "video":
+                    _create_visual_clip_from_poster(
+                        ffmpeg_path=ffmpeg_path,
+                        poster_path=poster_path,
+                        output_path=visual_path,
+                        duration_sec=scene["durationSec"],
+                        motion_preset=motion_preset,
+                        log_lines=log_lines,
+                    )
+
+                    visual_input_path = visual_path
+                else:
+                    visual_input_path = poster_path
 
         if source_audio_path and source_audio_path.exists():
             log_lines.append(f"audio_source=uploaded path={source_audio_path}")
