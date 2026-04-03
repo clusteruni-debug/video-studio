@@ -156,6 +156,9 @@ def search_pexels(query: str, orientation: str = "portrait") -> str | None:
     return None
 
 
+_VALID_ORIENTATIONS = {"portrait", "landscape", "square"}
+
+
 def search_pexels_video(
     query: str,
     orientation: str = "portrait",
@@ -174,6 +177,8 @@ def search_pexels_video(
     api_key = _get_key("PEXELS_API_KEY")
     if not api_key:
         return None
+    if orientation not in _VALID_ORIENTATIONS:
+        orientation = "portrait"
     try:
         from urllib.parse import quote_plus
         safe_query = quote_plus(query)
@@ -187,22 +192,31 @@ def search_pexels_video(
             "User-Agent": "VideoStudio/1.0",
         })
         with urllib_request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read())
+            data = json.loads(resp.read(524288))
             videos = data.get("videos", [])
+            skipped_duration = 0
             for video in videos:
                 duration = video.get("duration", 0)
                 if min_duration > 0 and duration < min_duration:
+                    skipped_duration += 1
                     continue
-                # Find best video file: portrait preferred, width >= 1080
                 best_file = _select_best_video_file(video.get("video_files", []))
                 if best_file:
+                    file_url = best_file.get("link")
+                    if not file_url:
+                        continue
+                    _log_image_usage("pexels", query)
                     return {
-                        "url": best_file["link"],
+                        "url": file_url,
                         "width": best_file.get("width", 0),
                         "height": best_file.get("height", 0),
                         "duration": duration,
                         "pexels_id": video.get("id"),
                     }
+            if skipped_duration and skipped_duration == len(videos):
+                print(f"[pexels-video] {len(videos)} results for '{query}' all shorter than {min_duration}s")
+            elif not videos:
+                print(f"[pexels-video] No results for '{query}'")
     except Exception as e:
         print(f"[pexels-video] Search failed for '{query}': {e}")
     return None
@@ -212,6 +226,7 @@ def _select_best_video_file(video_files: list[dict]) -> dict | None:
     """Select the best video file from Pexels video_files array.
 
     Priority: portrait (height > width) with width >= 1080, then landscape with width >= 1080.
+    For portrait, prefer highest height (closest to 9:16).
     """
     portrait_candidates = []
     landscape_candidates = []
@@ -226,15 +241,15 @@ def _select_best_video_file(video_files: list[dict]) -> dict | None:
         else:
             landscape_candidates.append(vf)
 
-    # Prefer portrait
+    # Prefer portrait — sort by height for best 9:16 fit
     if portrait_candidates:
-        return max(portrait_candidates, key=lambda f: f.get("width", 0))
+        return max(portrait_candidates, key=lambda f: f.get("height", 0))
     # Landscape fallback (will be crop-to-fill in compose)
     if landscape_candidates:
         return max(landscape_candidates, key=lambda f: f.get("width", 0))
-    # Last resort: any file
+    # Last resort: prefer portrait-like aspect ratio
     if video_files:
-        return max(video_files, key=lambda f: f.get("width", 0))
+        return max(video_files, key=lambda f: f.get("height", 0))
     return None
 
 
