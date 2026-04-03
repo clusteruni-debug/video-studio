@@ -10,7 +10,7 @@ from pathlib import Path
 from flask import Blueprint, jsonify, request as flask_request
 
 from worker.tts.providers import generate_tts
-from worker.bridge.image_router import route_image
+from worker.bridge.image_router import route_image, search_pexels_video
 from worker.bridge.layouts import DEFAULT_TTS_RATE
 
 media_bp = Blueprint("media", __name__)
@@ -111,6 +111,33 @@ def generate_image_route():
         return jsonify({"ok": False, "error": "No image found for this prompt"}), 404
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Pexels Video Search (RENDERING-SPEC §5.2)
+# ---------------------------------------------------------------------------
+
+@media_bp.route("/api/search-pexels-video", methods=["POST"])
+def search_pexels_video_route():
+    """Search Pexels for a stock video matching scene requirements.
+
+    Input JSON: {"query": str, "min_duration": float (optional)}
+    Output JSON: {"ok": true, "video": {"url": str, "width": int, "height": int, "duration": float}}
+    """
+    data = flask_request.get_json(silent=True) or {}
+    query = data.get("query", "").strip()
+    if not query:
+        return jsonify({"ok": False, "error": "query is required"}), 400
+
+    try:
+        min_duration = float(data.get("min_duration", 0))
+    except (TypeError, ValueError):
+        min_duration = 0.0
+
+    result = search_pexels_video(query, min_duration=min_duration)
+    if result:
+        return jsonify({"ok": True, "video": result})
+    return jsonify({"ok": False, "error": "No matching video found"}), 404
 
 
 # ---------------------------------------------------------------------------

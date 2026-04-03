@@ -156,6 +156,88 @@ def search_pexels(query: str, orientation: str = "portrait") -> str | None:
     return None
 
 
+def search_pexels_video(
+    query: str,
+    orientation: str = "portrait",
+    min_duration: float = 0,
+    per_page: int = 3,
+) -> dict | None:
+    """Search Pexels for a stock video. Returns info dict or None.
+
+    RENDERING-SPEC §5.2:
+    - orientation: "portrait" (9:16 preferred)
+    - duration >= scene.duration
+    - video_files with width >= 1080
+
+    Returns: {"url": str, "width": int, "height": int, "duration": float} or None.
+    """
+    api_key = _get_key("PEXELS_API_KEY")
+    if not api_key:
+        return None
+    try:
+        from urllib.parse import quote_plus
+        safe_query = quote_plus(query)
+        url = (
+            f"https://api.pexels.com/videos/search"
+            f"?query={safe_query}&orientation={orientation}"
+            f"&size=medium&per_page={per_page}"
+        )
+        req = urllib_request.Request(url, headers={
+            "Authorization": api_key,
+            "User-Agent": "VideoStudio/1.0",
+        })
+        with urllib_request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+            videos = data.get("videos", [])
+            for video in videos:
+                duration = video.get("duration", 0)
+                if min_duration > 0 and duration < min_duration:
+                    continue
+                # Find best video file: portrait preferred, width >= 1080
+                best_file = _select_best_video_file(video.get("video_files", []))
+                if best_file:
+                    return {
+                        "url": best_file["link"],
+                        "width": best_file.get("width", 0),
+                        "height": best_file.get("height", 0),
+                        "duration": duration,
+                        "pexels_id": video.get("id"),
+                    }
+    except Exception as e:
+        print(f"[pexels-video] Search failed for '{query}': {e}")
+    return None
+
+
+def _select_best_video_file(video_files: list[dict]) -> dict | None:
+    """Select the best video file from Pexels video_files array.
+
+    Priority: portrait (height > width) with width >= 1080, then landscape with width >= 1080.
+    """
+    portrait_candidates = []
+    landscape_candidates = []
+
+    for vf in video_files:
+        w = vf.get("width", 0)
+        h = vf.get("height", 0)
+        if w < 1080:
+            continue
+        if h > w:
+            portrait_candidates.append(vf)
+        else:
+            landscape_candidates.append(vf)
+
+    # Prefer portrait
+    if portrait_candidates:
+        return max(portrait_candidates, key=lambda f: f.get("width", 0))
+    # Landscape fallback (will be crop-to-fill in compose)
+    if landscape_candidates:
+        return max(landscape_candidates, key=lambda f: f.get("width", 0))
+    # Last resort: any file
+    if video_files:
+        return max(video_files, key=lambda f: f.get("width", 0))
+    return None
+
+
 def search_klipy(query: str, limit: int = 3) -> str | None:
     """Search Klipy (Tenor v2-compatible) for a GIF/MP4. Returns media URL or None."""
     api_key = _get_key("KLIPY_API_KEY")

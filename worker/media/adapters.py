@@ -41,7 +41,25 @@ ADAPTER_CONFIG = {
         "costTier": "cheap",
         "costPerUnit": 0.02,
     },
+    "pexels-image": {
+        "label": "Pexels Stock Image (free)",
+        "category": "image",
+        "model": "pexels-api-v1",
+        "outputKind": "image",
+        "envPrefix": "VIDEO_STUDIO_PEXELS",
+        "costTier": "free",
+        "costPerUnit": 0.0,
+    },
     # ----- video providers -----
+    "pexels-video": {
+        "label": "Pexels Stock Video (free)",
+        "category": "video",
+        "model": "pexels-api-videos",
+        "outputKind": "video",
+        "envPrefix": "VIDEO_STUDIO_PEXELS_VIDEO",
+        "costTier": "free",
+        "costPerUnit": 0.0,
+    },
     "wan": {
         "label": "Wan video adapter (local)",
         "category": "video",
