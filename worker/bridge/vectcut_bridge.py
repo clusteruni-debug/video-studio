@@ -51,7 +51,7 @@ _MAX_VIDEO_BYTES = 25 * 1024 * 1024  # 25 MB — Klipy GIFs regularly exceed 5 M
 # ---------------------------------------------------------------------------
 from collections import namedtuple
 
-VectCutModules = namedtuple("VectCutModules", ["create", "text", "audio", "image", "video", "hash_url", "cache"])
+VectCutModules = namedtuple("VectCutModules", ["create", "text", "audio", "image", "hash_url", "cache"])
 
 
 def _import_vectcut() -> VectCutModules:
@@ -62,14 +62,30 @@ def _import_vectcut() -> VectCutModules:
         from add_text_impl import add_text_impl as _text
         from add_audio_track import add_audio_track as _audio
         from add_image_impl import add_image_impl as _image
-        from add_video_track import add_video_track as _video
         from util import url_to_hash as _hash
         from draft_cache import DRAFT_CACHE as _cache
-        return VectCutModules(_create, _text, _audio, _image, _video, _hash, _cache)
+        return VectCutModules(_create, _text, _audio, _image, _hash, _cache)
     except ImportError as e:
         raise RuntimeError(
             f"VectCutAPI import failed (dir={VECTCUT_DIR}): {e}"
         ) from e
+
+
+_video_track_fn = None
+_video_track_fn_checked = False
+
+def _get_video_track_fn():
+    """Lazy import for add_video_track — requires imageio which may not be installed."""
+    global _video_track_fn, _video_track_fn_checked
+    if _video_track_fn_checked:
+        return _video_track_fn
+    _video_track_fn_checked = True
+    try:
+        from add_video_track import add_video_track
+        _video_track_fn = add_video_track
+    except ImportError as e:
+        print(f"[vectcut] add_video_track unavailable: {e}")
+    return _video_track_fn
 
 
 # Cache after first successful import (thread-safe double-check)
@@ -159,7 +175,12 @@ def add_video(
     background_blur: int | None = None,
 ) -> bool:
     """Add an animated video (e.g. Klipy GIF .mp4) to the draft.  Returns True on success."""
-    _video = _get_vectcut().video
+    _video = _get_video_track_fn()
+    if _video is None:
+        # Fallback: add as image if video track unavailable
+        return add_image(draft_id, video_url, start, end,
+                         track_name=track_name, scale_x=scale_x, scale_y=scale_y,
+                         transition=transition, background_blur=background_blur)
     try:
         duration = end - start
         kwargs = dict(

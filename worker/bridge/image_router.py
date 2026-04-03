@@ -143,7 +143,7 @@ def search_pexels(query: str, orientation: str = "portrait") -> str | None:
             "User-Agent": "VideoStudio/1.0",
         })
         with urllib_request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read())
+            data = json.loads(resp.read(524288))  # 512KB cap
             photos = data.get("photos", [])
             if photos:
                 # Prefer portrait-oriented photos
@@ -287,7 +287,7 @@ def search_klipy(query: str, limit: int = 3) -> str | None:
         )
         req = urllib_request.Request(url, headers={"User-Agent": "VideoStudio/1.0"})
         with urllib_request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read())
+            data = json.loads(resp.read(524288))  # 512KB cap
             results = data.get("results", [])
             if results:
                 formats = results[0].get("media_formats", {})

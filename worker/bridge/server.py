@@ -722,6 +722,23 @@ def create_draft_route():
         return jsonify({"ok": False, "error": f"Save failed: {e}"}), 500
 
     # ── Response ─────────────────────────────────────────────────────────
+    # _internal_scenes: scene objects for render-mp4 (server-side paths redacted from HTTP response)
+    # Stored on the scene list for programmatic use; the response only includes safe fields.
+    _internal_scenes = [
+        {
+            "scene_num": s["scene_num"],
+            "narration": s["narration"],
+            "display_text": s.get("display_text", ""),
+            "image_prompt": s.get("image_prompt", ""),
+            "image_source": s.get("image_source", ""),
+            "emotion": s.get("emotion", "neutral"),
+            "_tts_duration": s.get("_tts_duration", 5.0),
+            "_image_url": s.get("_image_url"),
+            "_is_video": s.get("_is_video", False),
+            "_sub_images": s.get("_sub_images"),
+        }
+        for s in scenes
+    ]
     return jsonify({
         "ok": True,
         "draft_id": draft_id,
@@ -743,11 +760,33 @@ def create_draft_route():
             }
             for s in scenes
         ],
+        "_internal_scenes": _internal_scenes,
         "tts_provider": tts_provider,
         "total_duration": round(cumulative_time, 1),
         "steps": steps_log,
         "message": "Draft saved — open in CapCut" if draft_path else "Draft created",
     })
+
+
+# ---------------------------------------------------------------------------
+# POST /api/render-mp4 — convert create-draft scenes → FFmpeg MP4 via compose
+# ---------------------------------------------------------------------------
+
+@app.route("/api/render-mp4", methods=["POST"])
+def render_mp4_route():
+    """Render MP4 from pre-built scene data.
+    Requires {"draft_scenes": [...], "prompt": "..."} — call /api/create-draft first,
+    then pass the _internal_scenes array here."""
+    from worker.bridge.draft_render import prepare_and_render
+
+    data = flask_request.get_json(silent=True) or {}
+    scenes = data.get("draft_scenes")
+    if not scenes:
+        return jsonify({"ok": False, "error": "draft_scenes is required. Call /api/create-draft first."}), 400
+
+    topic = data.get("prompt", "Untitled")
+    render_result = prepare_and_render(scenes, topic)
+    return jsonify(render_result)
 
 
 # ---------------------------------------------------------------------------
