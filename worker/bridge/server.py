@@ -328,12 +328,15 @@ def align_tts_route():
     return jsonify({"ok": True, "words": words})
 
 
-@app.route("/api/create-draft", methods=["POST"])
-def create_draft_route():
-    data = flask_request.get_json(silent=True) or {}
+def _execute_draft_core(data: dict) -> dict:
+    """Core draft-creation logic — pure function, no Flask dependency.
+
+    Accepts a dict payload and returns a dict result.
+    Used by the HTTP route, job queue, batch manager, and source auto-generators.
+    """
     topic = data.get("prompt", "").strip()
     if not topic:
-        return jsonify({"ok": False, "error": "prompt is required"}), 400
+        return {"ok": False, "error": "prompt is required"}
     lang = data.get("lang", "ko")
     tts_provider = data.get("tts_provider", "edge")
     voice_gender = data.get("voice_gender", "female")
@@ -355,7 +358,7 @@ def create_draft_route():
     steps_log.append(f"script: {len(scenes)} scenes ({script_source}, {template_type}, topic={topic[:30]})")
 
     # ── Step 2: Generate TTS for each scene ──────────────────────────────
-    draft_ts = str(int(time.time()))
+    draft_ts = f"{int(time.time())}_{os.getpid()}_{id(data) % 10000:04d}"
     tts_subdir = TTS_DIR / draft_ts
     tts_subdir.mkdir(parents=True, exist_ok=True)
 
@@ -461,7 +464,7 @@ def create_draft_route():
     try:
         script, draft_id = create_capcut_draft(1080, 1920)
     except RuntimeError as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return {"ok": False, "error": str(e)}
 
     cumulative_time = 0.0
     layout = TEMPLATE_LAYOUTS.get(template_type, DEFAULT_LAYOUT)
@@ -719,11 +722,9 @@ def create_draft_route():
             steps_log.append("saved to CapCut")
     except Exception as e:
         print(f"[save] Failed: {e}")
-        return jsonify({"ok": False, "error": f"Save failed: {e}"}), 500
+        return {"ok": False, "error": f"Save failed: {e}"}
 
     # ── Response ─────────────────────────────────────────────────────────
-    # _internal_scenes: scene objects for render-mp4 (server-side paths redacted from HTTP response)
-    # Stored on the scene list for programmatic use; the response only includes safe fields.
     _internal_scenes = [
         {
             "scene_num": s["scene_num"],
@@ -739,7 +740,7 @@ def create_draft_route():
         }
         for s in scenes
     ]
-    return jsonify({
+    return {
         "ok": True,
         "draft_id": draft_id,
         "draft_path": draft_path,
@@ -765,7 +766,20 @@ def create_draft_route():
         "total_duration": round(cumulative_time, 1),
         "steps": steps_log,
         "message": "Draft saved — open in CapCut" if draft_path else "Draft created",
-    })
+    }
+
+
+@app.route("/api/create-draft", methods=["POST"])
+def create_draft_route():
+    data = flask_request.get_json(silent=True) or {}
+    try:
+        result = _execute_draft_core(data)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    if not result.get("ok"):
+        status = 400 if result.get("error") == "prompt is required" else 500
+        return jsonify(result), status
+    return jsonify(result)
 
 
 # ---------------------------------------------------------------------------
@@ -793,25 +807,17 @@ def render_mp4_route():
 # Blueprint registration + helpers shared with route modules
 # ---------------------------------------------------------------------------
 
-def _execute_draft_via_test_client(payload: dict) -> dict:
-    """Execute a create-draft request through the Flask test client."""
-    with app.app_context():
-        with app.test_client() as client:
-            resp = client.post("/api/create-draft", json=payload, content_type="application/json")
-            return resp.get_json()
-
-
 init_media_routes(BRIDGE_HOST, BRIDGE_PORT, TTS_DIR, PROJECT_ROOT,
                   _get_audio_duration, _image_url_for_client, _safe_resolve)
-init_source_routes(_execute_draft_via_test_client)
+init_source_routes(_execute_draft_core)
 init_admin_routes(PROJECT_ROOT, CAPCUT_DRAFT_DIR, batch_manager, job_queue,
-                  _execute_draft_via_test_client, _safe_resolve)
+                  _execute_draft_core, _safe_resolve)
 
 app.register_blueprint(media_bp)
 app.register_blueprint(sources_bp)
 app.register_blueprint(admin_bp)
 
-job_queue.set_execute_fn(_execute_draft_via_test_client)
+job_queue.set_execute_fn(_execute_draft_core)
 
 
 # OLD ROUTES REMOVED — now in routes_media.py, routes_sources.py, routes_admin.py

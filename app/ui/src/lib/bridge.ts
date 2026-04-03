@@ -106,11 +106,12 @@ export interface BatchStatus {
   batch_id: string;
   topic: string;
   variants: number;
+  status?: "pending" | "running" | "completed" | "failed";
   completed?: number;
   failed?: number;
   progress?: number;
   total?: number;
-  results: DraftResult[];
+  results?: DraftResult[];
   error?: string;
 }
 

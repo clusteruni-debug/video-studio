@@ -349,6 +349,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     if (!state.activeBatchId) return;
     const batchId = state.activeBatchId;
     const id = setInterval(async () => {
+      if (document.hidden) return;
       const s = await getBatchStatus(batchId);
       if (s.ok) {
         dispatch({ type: "BATCH_UPDATE", status: s });

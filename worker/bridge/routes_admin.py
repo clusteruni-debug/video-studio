@@ -86,7 +86,7 @@ def create_batch_route():
     if not topic:
         return jsonify({"ok": False, "error": "prompt is required"}), 400
     try:
-        variants = min(int(data.get("variants", 3)), 10)
+        variants = max(1, min(int(data.get("variants", 3)), 10))
     except (ValueError, TypeError):
         variants = 3
 
@@ -102,6 +102,10 @@ def create_batch_route():
         target_duration=data.get("target_duration", "30s"),
         custom_instruction=data.get("custom_instruction", ""),
     )
+    # Atomic check-and-start: prevents TOCTOU race between has_running and thread.start
+    if not _batch_manager.start_batch_if_idle(batch_id):
+        _batch_manager.delete_batch(batch_id)
+        return jsonify({"ok": False, "error": "A batch is already running. Wait for it to complete."}), 409
     thread = threading.Thread(
         target=_batch_manager.run_batch,
         args=(batch_id, _execute_draft_fn),

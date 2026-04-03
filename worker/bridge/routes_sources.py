@@ -62,6 +62,8 @@ def reddit_auto_generate_route():
             "target_duration": data.get("target_duration", "30s"),
             "custom_instruction": data.get("custom_instruction", ""),
         })
+        if not result.get("ok"):
+            return jsonify(result), 500
 
         result["source_post"] = {
             "title": best["title"],
@@ -118,6 +120,9 @@ def news_auto_generate_route():
             "target_duration": data.get("target_duration", "30s"),
             "custom_instruction": data.get("custom_instruction", ""),
         })
+        if not result.get("ok"):
+            return jsonify(result), 500
+
         result["source_article"] = {
             "title": best["title"],
             "source": best["source"],

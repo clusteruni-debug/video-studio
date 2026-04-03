@@ -109,13 +109,18 @@ class JobQueue:
             t.start()
 
     def _worker_loop(self) -> None:
-        while True:
+        try:
+            while True:
+                with self._lock:
+                    if not self._queue:
+                        self._running = False
+                        return
+                    job_id = self._queue.popleft()
+                self._process_job(job_id)
+        except BaseException:
             with self._lock:
-                if not self._queue:
-                    self._running = False
-                    return
-                job_id = self._queue.popleft()
-            self._process_job(job_id)
+                self._running = False
+            raise
 
     def _process_job(self, job_id: str) -> None:
         job = self._jobs.get(job_id)
@@ -126,8 +131,13 @@ class JobQueue:
         try:
             if self._execute_fn is None:
                 raise RuntimeError("No execute function configured")
-            job.result = self._execute_fn(job.payload)
-            job.status = "completed"
+            result = self._execute_fn(job.payload)
+            job.result = result
+            if not result.get("ok"):
+                job.error = result.get("error", "pipeline error")
+                job.status = "failed"
+            else:
+                job.status = "completed"
         except Exception as e:
             job.error = str(e)
             job.status = "failed"

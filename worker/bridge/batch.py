@@ -33,7 +33,9 @@ class BatchJob:
     error: str | None = None
     created_at: float = field(default_factory=time.time)
 
-    def to_dict(self) -> dict:
+    def to_summary(self) -> dict:
+        """Lightweight dict for list endpoints — no results payload."""
+        failed = sum(1 for r in self.results if not r.get("ok"))
         return {
             "batch_id": self.batch_id,
             "topic": self.topic,
@@ -42,8 +44,16 @@ class BatchJob:
             "status": self.status,
             "progress": self.progress,
             "total": self.variants,
-            "results": self.results,
+            "completed": self.progress - failed,
+            "failed": failed,
             "error": self.error,
+        }
+
+    def to_dict(self) -> dict:
+        """Full dict including results — for detail endpoint."""
+        return {
+            **self.to_summary(),
+            "results": self.results,
         }
 
 
@@ -129,6 +139,26 @@ class BatchManager:
         with self._lock:
             return self._jobs.get(batch_id)
 
+    def has_running(self) -> bool:
+        """Check if any batch is currently running."""
+        with self._lock:
+            return any(j.status == "running" for j in self._jobs.values())
+
+    def start_batch_if_idle(self, batch_id: str) -> bool:
+        """Atomically check no batch is running and mark this one as running.
+
+        Returns True if the batch was started, False if another is already running.
+        Solves the TOCTOU race between has_running() and thread.start().
+        """
+        with self._lock:
+            if any(j.status == "running" for j in self._jobs.values()):
+                return False
+            job = self._jobs.get(batch_id)
+            if not job:
+                return False
+            job.status = "running"
+            return True
+
     def delete_batch(self, batch_id: str) -> bool:
         with self._lock:
             job = self._jobs.get(batch_id)
@@ -142,38 +172,52 @@ class BatchManager:
     def list_jobs(self, limit: int = 20) -> list[dict]:
         with self._lock:
             jobs = sorted(self._jobs.values(), key=lambda j: j.created_at, reverse=True)
-            return [j.to_dict() for j in jobs[:limit]]
+            return [j.to_summary() for j in jobs[:limit]]
 
     def run_batch(self, batch_id: str, generate_fn) -> None:
         """Execute in a background thread.  *generate_fn* receives a dict and
-        returns a dict (the same shape as the /api/create-draft response)."""
-        job = self._jobs.get(batch_id)
+        returns a dict (the same shape as the /api/create-draft response).
+
+        Caller must have already called start_batch_if_idle() to set status='running'.
+        """
+        with self._lock:
+            job = self._jobs.get(batch_id)
         if not job:
             return
-        job.status = "running"
 
-        lang_key = "en" if job.lang.startswith("en") else "ko"
-        suffixes = _VARIANT_SUFFIXES.get(lang_key, _VARIANT_SUFFIXES["ko"])
+        try:
+            lang_key = "en" if job.lang.startswith("en") else "ko"
+            suffixes = _VARIANT_SUFFIXES.get(lang_key, _VARIANT_SUFFIXES["ko"])
 
-        for i in range(job.variants):
-            suffix = suffixes[i % len(suffixes)]
-            variant_topic = f"{job.topic}{suffix}"
-            try:
-                result = generate_fn({
-                    "prompt": variant_topic,
-                    "lang": job.lang,
-                    "tts_provider": job.tts_provider,
-                    "voice_gender": job.voice_gender,
-                    "template_type": job.template_type,
-                    "subtitle_style": job.subtitle_style,
-                    "tone": job.tone,
-                    "target_duration": job.target_duration,
-                    "custom_instruction": job.custom_instruction,
-                })
-                job.results.append(result)
-            except Exception as e:
-                job.results.append({"ok": False, "error": str(e), "variant": i + 1})
-            job.progress = i + 1
+            for i in range(job.variants):
+                suffix = suffixes[i % len(suffixes)]
+                variant_topic = f"{job.topic}{suffix}"
+                try:
+                    result = generate_fn({
+                        "prompt": variant_topic,
+                        "lang": job.lang,
+                        "tts_provider": job.tts_provider,
+                        "voice_gender": job.voice_gender,
+                        "template_type": job.template_type,
+                        "subtitle_style": job.subtitle_style,
+                        "tone": job.tone,
+                        "target_duration": job.target_duration,
+                        "custom_instruction": job.custom_instruction,
+                    })
+                    job.results.append(result)
+                except Exception as e:
+                    job.results.append({"ok": False, "error": str(e), "variant": i + 1})
+                job.progress = i + 1
 
-        failed_count = sum(1 for r in job.results if not r.get("ok"))
-        job.status = "failed" if failed_count == job.variants else "completed"
+            failed_count = sum(1 for r in job.results if not r.get("ok"))
+            if failed_count == job.variants:
+                job.status = "failed"
+            elif failed_count > 0:
+                job.status = "completed"
+                job.error = f"{failed_count}/{job.variants} variants failed"
+            else:
+                job.status = "completed"
+        except BaseException:
+            job.status = "failed"
+            job.error = "batch thread crashed"
+            raise
