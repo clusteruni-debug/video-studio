@@ -74,7 +74,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=["http://127.0.0.1:5160", "http://localhost:5160"])
 
 batch_manager = BatchManager()
 job_queue = JobQueue()
