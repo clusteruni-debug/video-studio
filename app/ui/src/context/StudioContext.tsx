@@ -32,6 +32,7 @@ export interface StudioState {
   ttsProvider: string;
   voiceGender: "female" | "male";
   subtitleStyle: string;
+  bgmEnabled: boolean;
   targetDuration: "30s" | "1min" | "custom";
   customInstruction: string;
 
@@ -80,6 +81,7 @@ const initialState: StudioState = {
   ttsProvider: "edge",
   voiceGender: "female",
   subtitleStyle: "",
+  bgmEnabled: true,
   targetDuration: "30s",
   customInstruction: "",
 
@@ -225,6 +227,7 @@ export interface StudioActions {
   setTtsProvider(v: string): void;
   setVoiceGender(v: "female" | "male"): void;
   setSubtitleStyle(v: string): void;
+  setBgmEnabled(v: boolean): void;
   setTargetDuration(v: "30s" | "1min" | "custom"): void;
   setCustomInstruction(v: string): void;
   setActiveTab(tab: StudioTab): void;
@@ -392,6 +395,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     setTtsProvider(v) { dispatch({ type: "SET_FIELD", field: "ttsProvider", value: v }); },
     setVoiceGender(v) { dispatch({ type: "SET_FIELD", field: "voiceGender", value: v }); },
     setSubtitleStyle(v) { dispatch({ type: "SET_FIELD", field: "subtitleStyle", value: v }); },
+    setBgmEnabled(v) { dispatch({ type: "SET_FIELD", field: "bgmEnabled", value: v }); },
     setTargetDuration(v) { dispatch({ type: "SET_FIELD", field: "targetDuration", value: v }); },
     setCustomInstruction(v) { dispatch({ type: "SET_FIELD", field: "customInstruction", value: v }); },
     setActiveTab(tab) { dispatch({ type: "SET_FIELD", field: "activeTab", value: tab }); },
@@ -405,7 +409,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       if (!s.prompt.trim() || s.creating) return;
       dispatch({ type: "DRAFT_START" });
       try {
-        const result = await apiCreateDraft(s.prompt, s.lang, s.ttsProvider, s.voiceGender, s.templateType, s.subtitleStyle, s.tone, s.targetDuration, s.customInstruction);
+        const result = await apiCreateDraft(s.prompt, s.lang, s.ttsProvider, s.voiceGender, s.templateType, s.subtitleStyle, s.tone, s.targetDuration, s.customInstruction, s.bgmEnabled);
         if (result.ok) {
           dispatch({ type: "DRAFT_OK", result });
           // Refresh usage stats after a successful creation

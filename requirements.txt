@@ -2,3 +2,5 @@ flask>=3.0
 flask-cors>=5.0
 edge-tts>=7.0
 python-dotenv>=1.0
+# Optional: word-level karaoke alignment (align.py handles ImportError gracefully)
+# faster-whisper>=1.0

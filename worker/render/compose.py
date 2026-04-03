@@ -193,7 +193,7 @@ def _create_scene_poster_gradient(
             "-y",
             "-f", "lavfi",
             "-i", gradient_src,
-            "-vf", f"subtitles='{_ffmpeg_filter_path(ass_path)}'",
+            "-vf", f"ass='{_ffmpeg_filter_path(ass_path)}'",
             "-frames:v", "1",
             str(output_path),
         ],
@@ -417,41 +417,33 @@ def _write_project_subtitles(
     scenes: list[dict],
     subtitle_style: str = "",
 ) -> None:
-    # If a subtitle style preset is requested, emit ASS instead of SRT
-    if subtitle_style:
-        from worker.render.subtitles import SUBTITLE_PRESETS, write_styled_ass
-        style = SUBTITLE_PRESETS.get(subtitle_style)
-        if style:
-            ass_path = path.with_suffix(".ass")
-            entries = [
-                {
-                    "start_sec": s["startSec"],
-                    "end_sec": s["endSec"],
-                    "text": s["subtitleText"],
-                }
-                for s in scenes
-            ]
-            write_styled_ass(ass_path, entries, style)
-            return
+    from worker.render.subtitles import generate_ass_subtitle, STYLE_PRESETS
 
-    # Default: word-highlight ASS (karaoke style) with SRT fallback
+    entries = [
+        {
+            "start_sec": s["startSec"],
+            "end_sec": s["endSec"],
+            "text": s["subtitleText"],
+        }
+        for s in scenes
+    ]
+
+    # Always emit ASS (RENDERING-SPEC mandate)
+    ass_path = path.with_suffix(".ass")
+    preset = subtitle_style if subtitle_style in STYLE_PRESETS else "default"
+
     try:
-        from worker.render.subtitles import write_highlight_ass, SubtitleStyle
-        ass_path = path.with_suffix(".ass")
-        entries = [
-            {
-                "start_sec": s["startSec"],
-                "end_sec": s["endSec"],
-                "text": s["subtitleText"],
-            }
-            for s in scenes
-        ]
-        write_highlight_ass(ass_path, entries, SubtitleStyle())
+        generate_ass_subtitle(
+            words=entries,
+            style_preset=preset,
+            highlight_mode="none",  # Word-level highlight requires align.py timestamps
+            output_path=str(ass_path),
+        )
         return
     except Exception as e:
-        print(f"[subtitle] highlight ASS failed, falling back to SRT: {e}")
+        print(f"[subtitle] ASS generation failed, falling back to SRT: {e}")
 
-    # SRT fallback
+    # SRT fallback (kept for resilience)
     lines: list[str] = []
     for index, scene in enumerate(scenes, start=1):
         lines.extend(
@@ -483,12 +475,22 @@ def _get_scene_motion_preset(scene: dict) -> str:
     return scene.get("motionPreset") or DEFAULT_MOTION_PRESET
 
 
-def _find_bgm_track(project_root: Path, mood: str | None = None) -> Path | None:
-    """Find a BGM track from the local assets/bgm/ library (searches subdirectories)."""
+def _find_bgm_track(project_root: Path, mood: str | None = None, emotion: str | None = None) -> Path | None:
+    """Find a BGM track from the local assets/bgm/ library.
+
+    Uses RENDERING-SPEC §4.1 emotion→mood mapping when emotion is provided.
+    """
     import random as _random
+    from worker.render.bgm import EMOTION_MOOD_MAP
+
     bgm_dir = project_root / "assets" / "bgm"
     if not bgm_dir.is_dir():
         return None
+
+    # Map emotion to mood if mood not directly specified
+    if not mood and emotion:
+        mood = EMOTION_MOOD_MAP.get(emotion.lower(), "calm")
+
     # If a mood is specified, look in that subfolder first
     if mood:
         mood_dir = bgm_dir / mood
@@ -508,25 +510,25 @@ def _prepare_bgm_track(
     bgm_source: Path,
     output_path: Path,
     duration_sec: float,
-    volume: float,
+    volume: float,  # kept for backward compat but unused (RENDERING-SPEC mandates -8dB)
     log_lines: list[str],
 ) -> None:
-    """Trim BGM to duration and lower volume, output as WAV for mixing."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    _run_ffmpeg(
-        ffmpeg_path,
-        [
-            "-y",
-            "-i", str(bgm_source),
-            "-af", f"volume={volume},aloop=loop=-1:size=2000000000,atrim=0:{duration_sec:.2f},afade=t=out:st={max(0, duration_sec - 2):.2f}:d=2",
-            "-ar", "48000",
-            "-ac", "2",
-            "-c:a", "pcm_s16le",
-            "-t", f"{duration_sec:.2f}",
-            str(output_path),
-        ],
-        log_lines,
-    )
+    """Trim/loop BGM to duration with RENDERING-SPEC §4.2 volume rules.
+
+    - Base volume: -8dB (non-narration segments)
+    - Fade-in: 0.5s, Fade-out: 1.0s
+    - Sidechain ducking to -18dB is handled in _mix_bgm_into_output.
+    """
+    from worker.render.bgm import prepare_bgm_for_video
+    try:
+        prepare_bgm_for_video(
+            bgm_path=str(bgm_source),
+            output_path=str(output_path),
+            duration_sec=duration_sec,
+            ffmpeg_path=ffmpeg_path,
+        )
+    except RuntimeError as e:
+        log_lines.append(f"bgm_prepare_error={e}")
 
 
 def _mix_bgm_into_output(
@@ -536,15 +538,30 @@ def _mix_bgm_into_output(
     output_path: Path,
     log_lines: list[str],
 ) -> None:
-    """Mix BGM track into the final video at lower volume."""
+    """Mix BGM into video with sidechain ducking (RENDERING-SPEC §4.3).
+
+    Narration present: BGM at ~-18dB (sidechaincompress).
+    Narration absent: BGM at prepared volume (-8dB from prepare step).
+    """
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    # Sidechain ducking: compress BGM when narration audio is present
+    filter_complex = (
+        "[0:a]asplit=2[narr][sc];"
+        "[sc]aformat=channel_layouts=mono,"
+        "compand=attacks=0:decays=0.3:"
+        "points=-80/-80|-45/-45|-27/-30|0/-30,"
+        "aformat=channel_layouts=stereo[sidechain];"
+        "[1:a][sidechain]sidechaincompress="
+        "threshold=0.02:ratio=6:attack=10:release=300:level_sc=1[bgm_ducked];"
+        "[narr][bgm_ducked]amix=inputs=2:duration=first[aout]"
+    )
     _run_ffmpeg(
         ffmpeg_path,
         [
             "-y",
             "-i", str(video_path),
             "-i", str(bgm_path),
-            "-filter_complex", "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+            "-filter_complex", filter_complex,
             "-map", "0:v",
             "-map", "[aout]",
             "-c:v", "copy",
@@ -881,7 +898,7 @@ def compose_smoke_render(
                 "-f", "concat",
                 "-safe", "0",
                 "-i", concat_file_path.name,
-                "-vf", f"subtitles={_ffmpeg_filter_path(actual_subtitle_path)},scale=1080:1920,format=yuv420p",
+                "-vf", f"{'ass' if actual_subtitle_path.suffix == '.ass' else 'subtitles'}={_ffmpeg_filter_path(actual_subtitle_path)},scale=1080:1920,format=yuv420p",
                 "-c:v", "libx264",
                 "-pix_fmt", "yuv420p",
                 "-c:a", "aac",
@@ -893,16 +910,17 @@ def compose_smoke_render(
         )
 
     # BGM mixing: find a local track and mix it under the narration
-    # Try to read bgmMood from plan file if available
+    bgm_enabled = manifest.get("bgmEnabled", True)
     bgm_mood = None
-    plan_path = resolved_project_root / "storage" / "inputs" / manifest.get("projectId", "") / "project-plan.json"
-    if plan_path.exists():
-        try:
-            plan_data = json.loads(plan_path.read_text(encoding="utf-8"))
-            bgm_mood = plan_data.get("bgmMood")
-        except Exception:
-            pass
-    bgm_track = _find_bgm_track(resolved_project_root, mood=bgm_mood)
+    if bgm_enabled:
+        plan_path = resolved_project_root / "storage" / "inputs" / manifest.get("projectId", "") / "project-plan.json"
+        if plan_path.exists():
+            try:
+                plan_data = json.loads(plan_path.read_text(encoding="utf-8"))
+                bgm_mood = plan_data.get("bgmMood")
+            except Exception as e:
+                log_lines.append(f"bgm_plan_read_error={e}")
+    bgm_track = _find_bgm_track(resolved_project_root, mood=bgm_mood) if bgm_enabled else None
     if bgm_track:
         bgm_prepared = render_dir / "bgm-prepared.wav"
         total_duration = manifest.get("totalDurationSec", sum(scene_durations))

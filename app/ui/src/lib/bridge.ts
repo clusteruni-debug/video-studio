@@ -212,11 +212,13 @@ export function createDraft(
   tone: TonePreset = "casual_heyo",
   targetDuration: string = "30s",
   customInstruction: string = "",
+  bgmEnabled: boolean = true,
 ): Promise<DraftResult> {
   return _post<DraftResult>("/api/create-draft", {
     prompt, lang, tts_provider: ttsProvider, voice_gender: voiceGender,
     template_type: templateType, subtitle_style: subtitleStyle, tone,
     target_duration: targetDuration,
+    bgm_enabled: bgmEnabled,
     ...(customInstruction ? { custom_instruction: customInstruction } : {}),
   }, 300_000);
 }

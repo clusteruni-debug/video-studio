@@ -23,7 +23,7 @@ export default function Sidebar() {
   }, [state.creating]);
 
   const {
-    prompt, lang, templateType, tone, ttsProvider, voiceGender, subtitleStyle,
+    prompt, lang, templateType, tone, ttsProvider, voiceGender, subtitleStyle, bgmEnabled,
     targetDuration, customInstruction,
     bridgeStatus, availableProviders, availableTemplates, creating, error,
     projects, activeProjectId, usageStats,
@@ -138,6 +138,17 @@ export default function Sidebar() {
                 <option key={k} value={k}>{v}</option>
               ))}
             </select>
+          </div>
+          <div className="sidebar-field compact">
+            <span>BGM</span>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={bgmEnabled}
+                onChange={(e) => actions.setBgmEnabled(e.target.checked)}
+              />
+              <span style={{ fontSize: 13 }}>자동 BGM 매칭</span>
+            </label>
           </div>
         </div>
       )}

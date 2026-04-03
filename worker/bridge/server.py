@@ -195,10 +195,17 @@ def _safe_resolve(user_path: str, allowed_root: Path) -> Path | None:
     """Resolve *user_path* and verify it is under *allowed_root*."""
     try:
         resolved = Path(user_path).resolve()
+        root = allowed_root.resolve()
     except (OSError, ValueError):
         return None
-    if not str(resolved).startswith(str(allowed_root.resolve())):
-        return None
+    # Use is_relative_to for proper path-boundary check (no prefix collision)
+    try:
+        if not resolved.is_relative_to(root):
+            return None
+    except AttributeError:
+        # Python < 3.9 fallback
+        if not str(resolved).startswith(str(root) + os.sep) and resolved != root:
+            return None
     return resolved
 
 
@@ -234,6 +241,49 @@ def generate_thumbnail_route():
     return jsonify({"ok": False, "error": "Thumbnail generation failed"}), 500
 
 
+@app.route("/api/align-tts", methods=["POST"])
+def align_tts_route():
+    """Extract per-word timestamps from a WAV file using faster-whisper.
+
+    Input JSON: {"wav_path": str, "language": "ko"|"en", "text": str (optional fallback)}
+    Output JSON: {"ok": true, "words": [{"word": str, "start": float, "end": float}, ...]}
+    """
+    data = flask_request.get_json(silent=True) or {}
+    wav_path = data.get("wav_path", "").strip()
+    language = data.get("language", "ko")
+    fallback_text = data.get("text", "")
+    try:
+        fallback_duration = float(data.get("duration_sec", 0))
+    except (TypeError, ValueError):
+        fallback_duration = 0.0
+
+    if not wav_path:
+        return jsonify({"ok": False, "error": "wav_path is required"}), 400
+
+    resolved = _safe_resolve(wav_path, PROJECT_ROOT)
+    if not resolved or not resolved.exists():
+        return jsonify({"ok": False, "error": "WAV file not found or path not allowed"}), 400
+
+    from worker.render.align import align_tts, align_tts_fallback
+
+    try:
+        words = align_tts(str(resolved), language=language)
+    except ImportError:
+        # faster-whisper not installed — use proportional fallback
+        if fallback_text and fallback_duration > 0:
+            words = align_tts_fallback(fallback_text, fallback_duration)
+        else:
+            return jsonify({"ok": False, "error": "faster-whisper not installed and no fallback text/duration provided"}), 500
+    except Exception as e:
+        # Whisper failed — try fallback
+        if fallback_text and fallback_duration > 0:
+            words = align_tts_fallback(fallback_text, fallback_duration)
+        else:
+            return jsonify({"ok": False, "error": f"Alignment failed: {e}"}), 500
+
+    return jsonify({"ok": True, "words": words})
+
+
 @app.route("/api/create-draft", methods=["POST"])
 def create_draft_route():
     data = flask_request.get_json(silent=True) or {}
@@ -246,6 +296,7 @@ def create_draft_route():
     template_type = data.get("template_type", "news_explainer")
     tone = data.get("tone", "casual_heyo")
     subtitle_style = data.get("subtitle_style", "")
+    bgm_enabled = data.get("bgm_enabled", True)
     target_duration = data.get("target_duration", "30s")
     custom_instruction = data.get("custom_instruction", "")
 
@@ -491,7 +542,7 @@ def create_draft_route():
     # ── Step 4b: Add BGM track (mood-matched to template) ─────────────────
     bgm_dir = PROJECT_ROOT / "assets" / "bgm"
     bgm_file = None
-    if bgm_dir.exists():
+    if bgm_enabled and bgm_dir.exists():
         # Try mood-matched subdirectory first
         mood = TEMPLATE_BGM_MOOD.get(template_type, "calm")
         mood_dir = bgm_dir / mood

@@ -98,7 +98,39 @@ ollama --version
 - Use `npm run build` followed by `npm run preview` when you need a static `dist/` check on port `4160`.
 - Scene asset files are selected in the UI, held for the current browser session, and copied into `storage/inputs/<project-id>/uploads/` when the user saves or renders.
 
+## Rendering Rules (MANDATORY)
+
+> **`docs/RENDERING-SPEC.md`를 반드시 읽고 따른다.**
+> render, subtitle, compose, bgm, layout 관련 코드를 작성하거나 수정할 때,
+> RENDERING-SPEC.md의 수치와 다른 값을 사용하면 안 된다.
+
+### Summary (details in RENDERING-SPEC.md)
+
+**Safe Zones**
+- Content safe zone: x=60~950, y=100~1440 (1080×1920 basis)
+- Subtitle absolute prohibition: y>1536 (bottom 20%), x>950 (right 12%)
+- Main subtitle position: Alignment=5 (center), MarginR=130
+
+**Subtitles**
+- ASS format, not SRT (FFmpeg `ass=` filter)
+- Per-preset Style definitions: use RENDERING-SPEC.md §2.2 as-is
+- Korean line break: max 16 chars/line, max 2 lines
+- Karaoke highlight: faster-whisper word_timestamps → ASS color swap
+
+**BGM**
+- scene.emotion → BGM mood auto-matching (RENDERING-SPEC.md §4.1 table)
+- Narration segments: BGM -18dB ducking
+- Intro/outro: BGM -8dB + fade
+
+**Background Material Priority**
+1. User upload → 2. Pexels video → 3. Pexels image + Ken Burns → 4. Imagen → 5. Title card
+
+**Verification**
+- verify_render() must run after every render
+- Check: resolution 1080×1920, audio stream exists, ASS file exists
+
 ## References
 - `docs/ARCHITECTURE.md`
 - `docs/MODEL-ROUTING.md`
 - `docs/OPERATOR-CHECKLIST.md`
+- `docs/RENDERING-SPEC.md`
