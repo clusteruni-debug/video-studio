@@ -6,7 +6,7 @@
 - **Stack**: React + Vite UI, future Tauri 2 shell, Python 3.11 local AI worker, FFmpeg compositor
 - **Role**: Windows-first short-form video generation and editing app with hybrid local/API model routing
 - **Runtime**: Windows app runtime by default; optional OpenClaw planning bridge must respect the Windows/WSL boundary
-- **Scope**: Only files inside `projects/video-studio-app/`
+- **Scope**: Only files inside `projects/video-studio/`
 
 ## Core Rules
 1. Keep this project Windows-first unless a WSL worker is explicitly required and documented

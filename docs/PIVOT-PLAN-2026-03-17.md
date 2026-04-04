@@ -90,10 +90,10 @@ No time estimates are used.
    upload-first, still-first, premium-last.
 3. [CC] Update project docs so every product summary reflects the new policy.
    Files:
-   `projects/video-studio-app/README.md`
-   `projects/video-studio-app/CLAUDE.md`
-   `projects/video-studio-app/docs/IMPLEMENTATION-ROADMAP.md`
-   `projects/video-studio-app/docs/OPERATOR-CHECKLIST.md`
+   `projects/video-studio/README.md`
+   `projects/video-studio/CLAUDE.md`
+   `projects/video-studio/docs/IMPLEMENTATION-ROADMAP.md`
+   `projects/video-studio/docs/OPERATOR-CHECKLIST.md`
 4. [CC] Remove or reduce wording that frames FLUX/Wan as the normal happy path.
 5. [CC] Document premium generation as a hero-scene override instead of a baseline route.
 
@@ -113,10 +113,10 @@ Done criteria:
 
 Primary files:
 
-- `projects/video-studio-app/worker/media/model_router.py`
-- `projects/video-studio-app/shared/contracts/render.ts`
-- `projects/video-studio-app/app/ui/src/lib/planner.ts`
-- `projects/video-studio-app/worker/planner/ollama_planner.py`
+- `projects/video-studio/worker/media/model_router.py`
+- `projects/video-studio/shared/contracts/render.ts`
+- `projects/video-studio/app/ui/src/lib/planner.ts`
+- `projects/video-studio/worker/planner/ollama_planner.py`
 
 Done criteria:
 
@@ -137,9 +137,9 @@ Done criteria:
 
 Primary files:
 
-- `projects/video-studio-app/worker/render/compose.py`
-- `projects/video-studio-app/worker/media/runtime.py`
-- `projects/video-studio-app/shared/contracts/render.ts`
+- `projects/video-studio/worker/render/compose.py`
+- `projects/video-studio/worker/media/runtime.py`
+- `projects/video-studio/shared/contracts/render.ts`
 
 Done criteria:
 
@@ -157,10 +157,10 @@ Done criteria:
 
 Primary files:
 
-- `projects/video-studio-app/app/ui/src/App.tsx`
-- `projects/video-studio-app/app/ui/src/lib/planner.ts`
-- `projects/video-studio-app/worker/planner/save_plan.py`
-- `projects/video-studio-app/worker/media/runtime.py`
+- `projects/video-studio/app/ui/src/App.tsx`
+- `projects/video-studio/app/ui/src/lib/planner.ts`
+- `projects/video-studio/worker/planner/save_plan.py`
+- `projects/video-studio/worker/media/runtime.py`
 
 Done criteria:
 
@@ -179,8 +179,8 @@ Done criteria:
 
 Primary files:
 
-- `projects/video-studio-app/app/ui/src/App.tsx`
-- `projects/video-studio-app/app/ui/src/styles.css`
+- `projects/video-studio/app/ui/src/App.tsx`
+- `projects/video-studio/app/ui/src/styles.css`
 
 Done criteria:
 
@@ -197,10 +197,10 @@ Done criteria:
 
 Primary files:
 
-- `projects/video-studio-app/scripts/verify-render.ps1`
-- `projects/video-studio-app/scripts/verify-bridge.ps1`
-- `projects/video-studio-app/README.md`
-- `projects/video-studio-app/docs/OPERATOR-CHECKLIST.md`
+- `projects/video-studio/scripts/verify-render.ps1`
+- `projects/video-studio/scripts/verify-bridge.ps1`
+- `projects/video-studio/README.md`
+- `projects/video-studio/docs/OPERATOR-CHECKLIST.md`
 
 Done criteria:
 

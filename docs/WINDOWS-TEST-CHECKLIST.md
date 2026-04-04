@@ -8,7 +8,7 @@
 
 ## 1. Environment Check (1 min)
 
-- [ ] `cd C:\vibe\projects\video-studio-app`
+- [ ] `cd C:\vibe\projects\video-studio`
 - [ ] `.\.venv\Scripts\Activate.ps1`
 - [ ] `ffmpeg -version`
 - [ ] `ollama list` — qwen2.5:7b should be listed

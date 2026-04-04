@@ -219,7 +219,7 @@ def _backoff_seconds(
 
 def _request_once(url: str, timeout_sec: float, api_key: str | None) -> tuple[str, bytes]:
     headers = {
-        "User-Agent": "video-studio-app/0.1",
+        "User-Agent": "video-studio/0.1",
         "Accept": "image/*",
     }
     if api_key:

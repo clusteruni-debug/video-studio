@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://video-studio-app.local/contracts/project-plan.schema.json",
+    "$id": "https://video-studio.local/contracts/project-plan.schema.json",
     "title": "ProjectPlan",
     "type": "object",
     "additionalProperties": false,
