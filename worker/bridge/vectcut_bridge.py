@@ -32,6 +32,11 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # sys.path setup — runs ONCE at import time
 # ---------------------------------------------------------------------------
+# Import-order contract: ``VECTCUT_DIR`` is captured at module import time
+# from the ``VECTCUT_DIR`` environment variable (or a cwd-derived default).
+# Any caller that needs a custom VectCutAPI location must set the env var
+# BEFORE importing this module. ``server.py``/``compose.py`` call
+# ``load_dotenv`` before importing vectcut_bridge so ``.env`` overrides apply.
 VECTCUT_DIR = Path(os.environ.get("VECTCUT_DIR", str(Path.cwd().parent / "VectCutAPI")))
 if str(VECTCUT_DIR) not in sys.path:
     sys.path.insert(0, str(VECTCUT_DIR))

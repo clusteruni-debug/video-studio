@@ -23,6 +23,11 @@ _HTTP_ERRORS: tuple[type[BaseException], ...] = (
     json.JSONDecodeError, KeyError, IndexError, ValueError, UnicodeDecodeError,
 )
 
+# Maximum response body size for LLM translation replies. Batch translations
+# of 10-20 segments are under 50 KB; 1 MB bounds memory under malicious or
+# buggy upstream behavior.
+_MAX_LLM_RESPONSE_BYTES = 1_048_576  # 1 MB
+
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 
@@ -151,7 +156,7 @@ def _call_groq(prompt: str) -> str | None:
     )
     try:
         with urllib_request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read())
+            data = json.loads(resp.read(_MAX_LLM_RESPONSE_BYTES))
             return data["choices"][0]["message"]["content"]
     except _HTTP_ERRORS as e:
         logger.warning("groq translate %s: %s", type(e).__name__, e)
@@ -175,7 +180,7 @@ def _call_gemini(prompt: str) -> str | None:
     )
     try:
         with urllib_request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read())
+            data = json.loads(resp.read(_MAX_LLM_RESPONSE_BYTES))
             return data["candidates"][0]["content"]["parts"][0]["text"]
     except _HTTP_ERRORS as e:
         logger.warning("gemini translate failed: %s", type(e).__name__)

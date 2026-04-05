@@ -26,9 +26,13 @@ from worker.usage.limits import FREE_TIER_LIMITS
 
 admin_bp = Blueprint("admin", __name__)
 
-# Set by server.py at registration time
-_project_root: Path = Path.cwd()
-_capcut_draft_dir: Path = Path.home()
+# Initialized to None so that routes exercised before ``init_admin_routes``
+# (e.g. a test that imports the blueprint in isolation without calling the
+# init function) fail loud with a 503 rather than silently operating on
+# ``Path.cwd()`` / ``Path.home()`` — which could inadvertently cleanup the
+# developer's home directory via ``storage_cleanup_route``.
+_project_root: Path | None = None
+_capcut_draft_dir: Path | None = None
 _batch_manager = None
 _job_queue = None
 _execute_draft_fn = None
@@ -49,12 +53,25 @@ def init_admin_routes(
     _safe_resolve = safe_resolve
 
 
+def _require_initialized():
+    """Return a (jsonify, status) tuple when the blueprint is not yet wired."""
+    if _project_root is None or _capcut_draft_dir is None:
+        return jsonify({
+            "ok": False,
+            "error": "admin blueprint not initialized — init_admin_routes must be called first",
+        }), 503
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Storage management
 # ---------------------------------------------------------------------------
 
 @admin_bp.route("/api/storage/status", methods=["GET"])
 def storage_status_route():
+    uninitialized = _require_initialized()
+    if uninitialized is not None:
+        return uninitialized
     return jsonify({"ok": True, **storage_status(_project_root, _capcut_draft_dir)})
 
 
@@ -63,6 +80,9 @@ _cleanup_lock = threading.Lock()
 
 @admin_bp.route("/api/storage/cleanup", methods=["POST"])
 def storage_cleanup_route():
+    uninitialized = _require_initialized()
+    if uninitialized is not None:
+        return uninitialized
     if not _cleanup_lock.acquire(blocking=False):
         return jsonify({"ok": False, "error": "Cleanup already in progress"}), 409
     try:
@@ -171,6 +191,9 @@ def job_detail_route(job_id: str):
 
 @admin_bp.route("/api/draft/<draft_id>", methods=["DELETE"])
 def delete_draft_route(draft_id: str):
+    uninitialized = _require_initialized()
+    if uninitialized is not None:
+        return uninitialized
     safe_path = _safe_resolve(str(_capcut_draft_dir / draft_id), _capcut_draft_dir)
     if not safe_path:
         return jsonify({"ok": False, "error": "invalid draft id"}), 400

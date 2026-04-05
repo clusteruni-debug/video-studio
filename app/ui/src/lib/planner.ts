@@ -3,7 +3,6 @@ import { buildRenderManifest, type RenderManifest } from "../../../../shared/con
 
 export interface ProviderAvailability {
     premiumEnabled: boolean;
-    sora2: boolean;
     veo3: boolean;
 }
 
@@ -85,7 +84,7 @@ function escapeShell(s: string): string {
     return s.replace(/[\\"$`!]/g, "\\$&");
 }
 
-const SORA2_RATE_PER_SEC = 0.1;
+// Sora 2 retired 2026-04 — no cost constant needed.
 const VEO3_FAST_RATE_PER_SEC = 0.15;
 
 function clampScore(value: number): 1 | 2 | 3 | 4 | 5 {
@@ -184,7 +183,7 @@ export function createProjectPlan(input: {
             2,
             false,
             "이 영상의 첫인상은 여기서 결정됩니다.",
-            input.budgetMode === "premium" ? "sora2" : "local",
+            "local",  // Sora 2 retired 2026-04
         ),
         buildScene(
             "scene-02",
@@ -234,7 +233,7 @@ export function createProjectPlan(input: {
                 2,
                 false,
                 "조금 더 느리고 부드러운 아침을 시작해 보세요.",
-                input.budgetMode !== "free" ? "sora2" : "local",
+                "local",  // Sora 2 retired 2026-04
             ),
             buildScene(
                 "scene-02",
@@ -331,7 +330,7 @@ export function createProjectPlan(input: {
                 1,
                 false,
                 "손끝에 닿기 전부터 질감이 다르게 느껴지는 제품입니다.",
-                input.budgetMode !== "free" ? "sora2" : "local",
+                "local",  // Sora 2 retired 2026-04
             ),
             buildScene(
                 "scene-02",
@@ -412,15 +411,8 @@ export function chooseRoute(
         };
     }
 
-    if (scene.humanRealism >= 4 && availability.sora2) {
-        return {
-            sceneId: scene.id,
-            route: "sora2",
-            estimatedCostUsd: Number((scene.durationSec * SORA2_RATE_PER_SEC).toFixed(2)),
-            reason: "human realism requirement justifies premium video route",
-        };
-    }
-
+    // Sora 2 retired 2026-04 — humanRealism≥4 premium scenes now fall
+    // through to the local fallback until a replacement video provider lands.
     return {
         sceneId: scene.id,
         route: "local",
@@ -487,7 +479,6 @@ export function buildStudioProjectRecordFromWorker(input: {
 
 export function buildWorkerCommand(record: StudioProjectRecord): string {
     const routeFlags = [
-        record.routes.some((item) => item.route === "sora2") ? "--sora2" : "",
         record.routes.some((item) => item.route === "veo3") ? "--veo3" : "",
     ]
         .filter(Boolean)
@@ -498,7 +489,6 @@ export function buildWorkerCommand(record: StudioProjectRecord): string {
 
 export function buildSavePlanCommand(record: StudioProjectRecord): string {
     const routeFlags = [
-        record.routes.some((item) => item.route === "sora2") ? "--sora2" : "",
         record.routes.some((item) => item.route === "veo3") ? "--veo3" : "",
     ]
         .filter(Boolean)

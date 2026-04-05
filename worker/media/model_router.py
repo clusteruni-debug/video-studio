@@ -15,11 +15,6 @@ VEO3_FAST_RATE_PER_SEC = 0.15
 class ProviderAvailability:
     veo3: bool = False
     premium_enabled: bool = False
-    # ``sora2`` kept as a deprecated no-op field so existing CLI scripts,
-    # verify-bridge JSON payloads, and the UI-side TypeScript planner can
-    # still set ``availability.sora2`` without a Python-side TypeError.
-    # Sora 2 was retired 2026-04; routing never selects it.
-    sora2: bool = False
 
 
 @dataclass(slots=True)

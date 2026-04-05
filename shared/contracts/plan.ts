@@ -1,5 +1,7 @@
 export type BudgetMode = "free" | "standard" | "premium";
-export type RouteHint = "local" | "sora2" | "veo3";
+// Sora 2 retired 2026-04; any legacy plan JSON with ``routeHint: "sora2"``
+// is coerced to ``"local"`` via ``normalizeRouteHint`` below.
+export type RouteHint = "local" | "veo3";
 export type AspectRatio = "9:16";
 
 export interface SceneSpec {
@@ -25,7 +27,7 @@ export interface ProjectPlan {
     scenes: SceneSpec[];
 }
 
-const ROUTE_HINTS: RouteHint[] = ["local", "sora2", "veo3"];
+const ROUTE_HINTS: RouteHint[] = ["local", "veo3"];
 const BUDGET_MODES: BudgetMode[] = ["free", "standard", "premium"];
 
 function clampScore(value: number): 1 | 2 | 3 | 4 | 5 {

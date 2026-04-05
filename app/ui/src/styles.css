@@ -1088,11 +1088,6 @@ textarea {
     color: var(--success);
 }
 
-.route-sora2 {
-    background: var(--warning-dim);
-    color: var(--warning);
-}
-
 .route-veo3 {
     background: var(--accent-dim);
     color: var(--accent);

@@ -26,6 +26,11 @@ _LLM_HTTP_ERRORS: tuple[type[BaseException], ...] = (
     json.JSONDecodeError, KeyError, IndexError, ValueError, UnicodeDecodeError,
 )
 
+# Maximum response body size for LLM JSON replies. Gemini/Groq responses for
+# a 4-scene plan are under 30 KB; 1 MB is a safe ceiling that still bounds
+# memory pressure under malicious or buggy upstream behavior.
+_MAX_LLM_RESPONSE_BYTES = 1_048_576  # 1 MB
+
 def _get_key(name: str) -> str:
     return os.environ.get(name, "")
 
@@ -180,7 +185,7 @@ def _call_groq(prompt: str) -> str | None:
     )
     try:
         with urllib_request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read())
+            data = json.loads(resp.read(_MAX_LLM_RESPONSE_BYTES))
             return data["choices"][0]["message"]["content"]
     except _LLM_HTTP_ERRORS as e:
         logger.warning("groq call failed: %s", e)
@@ -206,7 +211,7 @@ def _call_gemini(prompt: str, use_search: bool = False) -> str | None:
     req = urllib_request.Request(url, data=payload, headers={"Content-Type": "application/json"})
     try:
         with urllib_request.urlopen(req, timeout=60) as resp:
-            data = json.loads(resp.read())
+            data = json.loads(resp.read(_MAX_LLM_RESPONSE_BYTES))
             candidate = data["candidates"][0]
             if use_search and "groundingMetadata" in candidate:
                 sources = candidate["groundingMetadata"].get("groundingChunks", [])

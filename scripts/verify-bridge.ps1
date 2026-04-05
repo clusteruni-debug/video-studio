@@ -61,8 +61,7 @@ try {
         budgetMode = "premium"
         availability = @{
             premiumEnabled = $true
-            sora2 = $true
-            veo3 = $false
+            veo3 = $true
         }
     } | ConvertTo-Json -Depth 4
     $routeResponse = Invoke-BridgeJson -Uri "$bridgeUrl/api/route-plan" -Method Post -Body $routePayload
@@ -79,8 +78,7 @@ try {
         projectId = "verify-bridge-save"
         availability = @{
             premiumEnabled = $true
-            sora2 = $true
-            veo3 = $false
+            veo3 = $true
         }
     } | ConvertTo-Json -Depth 4
     $saveResponse = Invoke-BridgeJson -Uri "$bridgeUrl/api/save-project" -Method Post -Body $savePayload

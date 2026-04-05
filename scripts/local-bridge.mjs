@@ -122,10 +122,10 @@ function buildProviderFlags(availability) {
         return [];
     }
 
+    // Sora 2 retired 2026-04; ``availability.sora2`` is ignored (the Python
+    // CLI still accepts ``--sora2`` as a deprecated no-op but we stop sending
+    // it here so the flag fully disappears from the request pipeline).
     const flags = [];
-    if (availability.sora2) {
-        flags.push("--sora2");
-    }
     if (availability.veo3) {
         flags.push("--veo3");
     }
@@ -138,9 +138,9 @@ function validateBudgetMode(value) {
 
 async function handleHealth(response) {
     const pythonReady = await pathExists(pythonPath);
-    const [ffmpeg, ollama, hf] = await Promise.all([
+    // Ollama backend retired 2026-04 — no longer probed.
+    const [ffmpeg, hf] = await Promise.all([
         resolveTool("ffmpeg"),
-        resolveTool("ollama"),
         resolveTool("hf"),
     ]);
 
@@ -153,7 +153,6 @@ async function handleHealth(response) {
         tools: {
             ffmpeg,
             hf,
-            ollama,
         },
     });
 }

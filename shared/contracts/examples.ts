@@ -24,7 +24,7 @@ export const sampleCafePlan: ProjectPlan = {
             nativeAudioNeed: 2,
             canUseStillImage: false,
             subtitleText: "Start your day with a calmer rhythm.",
-            routeHint: "sora2",
+            routeHint: "local",
         },
         {
             id: "scene-02",

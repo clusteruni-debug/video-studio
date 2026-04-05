@@ -171,8 +171,7 @@ try {
         projectId = "verify-render-draft"
         availability = @{
             premiumEnabled = $true
-            sora2 = $true
-            veo3 = $false
+            veo3 = $true
         }
         sceneAssets = @(
             @{

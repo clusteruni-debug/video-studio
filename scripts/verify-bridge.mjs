@@ -60,8 +60,7 @@ async function main() {
             budgetMode: "premium",
             availability: {
                 premiumEnabled: true,
-                sora2: true,
-                veo3: false,
+                veo3: true,
             },
         };
         const routeResponse = await fetchJson(`${bridgeUrl}/api/route-plan`, {
@@ -77,8 +76,7 @@ async function main() {
             projectId: "verify-bridge-save",
             availability: {
                 premiumEnabled: true,
-                sora2: true,
-                veo3: false,
+                veo3: true,
             },
         };
         const saveResponse = await fetchJson(`${bridgeUrl}/api/save-project`, {

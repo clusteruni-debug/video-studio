@@ -261,8 +261,6 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--project-id", default="project-sample", help="Project id for storage and output paths")
     parser.add_argument("--storage-root", default="storage", help="Relative storage root to use in the manifest")
     parser.add_argument("--veo3", action="store_true", help="Enable Veo 3 premium routing")
-    # Deprecated no-op retained for backward compat (see route_plan.py).
-    parser.add_argument("--sora2", action="store_true", help=argparse.SUPPRESS)
     return parser
 
 
@@ -283,7 +281,6 @@ def main() -> int:
     availability = ProviderAvailability(
         veo3=args.veo3,
         premium_enabled=bool(args.veo3),
-        sora2=args.sora2,  # deprecated no-op
     )
     decisions = route_project_plan(plan, availability)
     manifest = build_render_manifest(

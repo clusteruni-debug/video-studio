@@ -19,7 +19,7 @@ try {
     & $python -m worker.planner.route_plan --prompt "30-second cafe promo reel with a warm morning mood" --budget-mode free
 
     Write-Host "[verify] premium-mode sample route"
-    & $python -m worker.planner.route_plan --prompt "30-second cafe promo reel with a warm morning mood" --budget-mode premium --sora2 --veo3
+    & $python -m worker.planner.route_plan --prompt "30-second cafe promo reel with a warm morning mood" --budget-mode premium --veo3
 }
 finally {
     Pop-Location
@@ -27,19 +27,12 @@ finally {
 
 Write-Host "[verify] optional tools on PATH"
 $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
-$ollama = Get-Command ollama -ErrorAction SilentlyContinue
 $hf = Get-Command hf -ErrorAction SilentlyContinue
 
 if ($ffmpeg) {
     Write-Host "ffmpeg: ok"
 } else {
     Write-Warning "ffmpeg: not found on PATH in this shell"
-}
-
-if ($ollama) {
-    Write-Host "ollama: ok"
-} else {
-    Write-Warning "ollama: not found on PATH in this shell"
 }
 
 if ($hf) {

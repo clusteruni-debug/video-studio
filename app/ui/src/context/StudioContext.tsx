@@ -489,7 +489,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       const scene = stateRef.current.draftResult?.scenes?.[index];
       if (!scene?.image_prompt) return;
       const source = scene.image_source === "upload" ? "" : (scene.image_source ?? "");
-      const PAID_PROVIDERS = ["imagen", "dalle3", "veo3", "sora2", "elevenlabs", "openai-tts", "suno"];
+      const PAID_PROVIDERS = ["imagen", "dalle3", "veo3", "elevenlabs", "openai-tts", "suno"];
       if (source && PAID_PROVIDERS.includes(source)) {
         dispatch({
           type: "SHOW_PAID_CONFIRM",

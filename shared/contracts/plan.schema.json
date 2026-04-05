@@ -98,7 +98,7 @@
                     "type": "string"
                 },
                 "routeHint": {
-                    "enum": ["local", "sora2", "veo3"]
+                    "enum": ["local", "veo3"]
                 }
             }
         }

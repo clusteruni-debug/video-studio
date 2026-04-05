@@ -3,6 +3,11 @@
 This module reuses the existing compose_smoke_render pipeline.
 It converts the scene list from create-draft into the RenderManifest format,
 pre-placing TTS audio and downloaded images so compose.py skips re-generation.
+
+Import-order contract: ``PROJECT_ROOT = Path.cwd()`` is captured at module
+import time. Callers must import this module AFTER setting the working
+directory. Normal usage path (``server.py`` lazy-imports this inside the
+``/api/render-mp4`` handler) ensures cwd is the project root at import time.
 """
 from __future__ import annotations
 

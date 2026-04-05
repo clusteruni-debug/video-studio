@@ -4,6 +4,17 @@ Extracted from :mod:`worker.bridge.server` to keep the Flask entry point
 under the 660-line limit. No Flask imports here; ``execute_draft_core``
 is a plain function the HTTP route, job queue, batch manager, and
 source auto-generators all call.
+
+Import-order contract
+---------------------
+``PROJECT_ROOT = Path.cwd()`` and ``CAPCUT_DRAFT_DIR = os.environ.get(...)``
+are captured once at module import time. Any code that imports this module
+**must** have already called ``load_dotenv`` and ``os.chdir`` (if any).
+``worker.bridge.server`` is the canonical entry point and calls
+``load_dotenv`` before importing ``draft_executor``. Tests that import this
+module from a different working directory must either monkey-patch
+``PROJECT_ROOT`` / ``TTS_DIR`` / ``CAPCUT_DRAFT_DIR`` or set
+``CAPCUT_DRAFT_DIR`` in the environment before import.
 """
 from __future__ import annotations
 
@@ -57,8 +68,38 @@ CAPCUT_DRAFT_DIR = Path(os.environ.get(
 # ---------------------------------------------------------------------------
 # Path helpers (also used by routes_media/routes_admin via init callbacks)
 # ---------------------------------------------------------------------------
+
+# Allowed source roots for ``image_url_for_client`` fallback copy. Any path
+# outside this whitelist is rejected without copying, preventing an
+# attacker-controlled or malformed ``raw_url`` (flowing from LLM responses
+# or scene JSON) from pulling arbitrary local files (e.g. ``C:\Windows\
+# System32\drivers\etc\hosts``) into the web-served cache directory.
+_ALLOWED_IMAGE_SOURCE_ROOTS: tuple[Path, ...] = (
+    (PROJECT_ROOT / "storage").resolve(),
+    (PROJECT_ROOT / "assets").resolve(),
+)
+
+
+def _is_under_allowed_root(resolved: Path) -> bool:
+    """Return True when *resolved* lives under at least one allowed source root."""
+    for root in _ALLOWED_IMAGE_SOURCE_ROOTS:
+        try:
+            if resolved.is_relative_to(root):
+                return True
+        except AttributeError:  # pragma: no cover — Python < 3.9
+            if str(resolved).startswith(str(root) + os.sep) or resolved == root:
+                return True
+    return False
+
+
 def image_url_for_client(raw_url: str | None) -> str | None:
-    """Convert local file paths to bridge-accessible URLs; pass through HTTP URLs."""
+    """Convert local file paths to bridge-accessible URLs; pass through HTTP URLs.
+
+    Accepts HTTP URLs as-is. For local paths, only files under the allowed
+    source roots (``storage/``, ``assets/``) are served. Files outside those
+    roots are rejected rather than copied into the cache to prevent
+    path-traversal / arbitrary-file-read via malicious scene inputs.
+    """
     if not raw_url:
         return None
     if raw_url.startswith(("http://", "https://")):
@@ -69,11 +110,16 @@ def image_url_for_client(raw_url: str | None) -> str | None:
     except (OSError, ValueError):
         return None
     cache_root = IMAGE_CACHE_DIR.resolve()
-    # Only serve files under storage/cache — use trailing sep to prevent prefix collision
+    # Fast path: already inside the cache dir — serve directly.
     cache_prefix = str(cache_root) + os.sep
     if str(p).startswith(cache_prefix) or p.parent == cache_root:
         return f"http://{BRIDGE_HOST}:{BRIDGE_PORT}/api/images/{p.name}"
-    # File is outside cache — copy it in so the serve endpoint can find it
+    # File is outside cache — only copy if it's inside an allowed source root.
+    if not _is_under_allowed_root(p):
+        logger.warning(
+            "image_url_for_client rejected path outside allowed roots: %s", p,
+        )
+        return None
     if p.exists():
         import shutil
         dest = cache_root / p.name

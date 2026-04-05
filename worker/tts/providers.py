@@ -14,6 +14,14 @@ from urllib import request, error
 
 logger = logging.getLogger(__name__)
 
+# Upper bound for TTS audio responses. ElevenLabs + Google Cloud TTS produce
+# MP3/WAV at 128 kbps ≈ 16 KB/s; 10 MB covers > 10 minutes of narration which
+# is well above any single-scene TTS request.
+_MAX_TTS_RESPONSE_BYTES = 10 * 1024 * 1024  # 10 MB
+# Google Cloud TTS returns base64-encoded JSON, not raw audio bytes. The JSON
+# envelope is typically under 5 MB for a 1000-character narration segment.
+_MAX_TTS_JSON_BYTES = 5 * 1024 * 1024  # 5 MB
+
 # ---------------------------------------------------------------------------
 # Voice presets
 # ---------------------------------------------------------------------------
@@ -68,8 +76,25 @@ def generate_elevenlabs(text: str, lang: str, gender: str, output_path: Path) ->
     })
 
     with request.urlopen(req, timeout=30) as resp:
+        # ElevenLabs returns 200 + audio/mpeg on success. A non-200 response
+        # (429 quota, 5xx) carries a JSON or HTML error body — writing that
+        # as .mp3 silently produces a corrupt output file downstream.
+        if getattr(resp, "status", 200) != 200:
+            logger.warning(
+                "ElevenLabs returned status %s for voice %s",
+                getattr(resp, "status", "unknown"), voice_id,
+            )
+            return False
+        content_type = resp.headers.get("Content-Type", "")
+        if not content_type.startswith(("audio/", "application/octet-stream")):
+            logger.warning(
+                "ElevenLabs returned non-audio content-type %r; dropping body",
+                content_type,
+            )
+            return False
+        body = resp.read(_MAX_TTS_RESPONSE_BYTES)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(resp.read())
+        output_path.write_bytes(body)
     return output_path.exists() and output_path.stat().st_size > 0
 
 
@@ -98,8 +123,17 @@ def generate_google_tts(text: str, lang: str, gender: str, output_path: Path) ->
     })
 
     with request.urlopen(req, timeout=30) as resp:
-        data = json.loads(resp.read())
-        audio_bytes = base64.b64decode(data["audioContent"])
+        if getattr(resp, "status", 200) != 200:
+            logger.warning(
+                "Google TTS returned status %s", getattr(resp, "status", "unknown"),
+            )
+            return False
+        data = json.loads(resp.read(_MAX_TTS_JSON_BYTES))
+        audio_b64 = data.get("audioContent")
+        if not audio_b64:
+            logger.warning("Google TTS response missing audioContent field")
+            return False
+        audio_bytes = base64.b64decode(audio_b64)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(audio_bytes)
     success = output_path.exists() and output_path.stat().st_size > 0

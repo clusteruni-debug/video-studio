@@ -4,7 +4,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $python = Join-Path $projectRoot ".venv\Scripts\python.exe"
 
 Write-Host "[verify] route plan through planner CLI"
-$raw = & $python -m worker.planner.route_plan --prompt "Warm cafe promo reel, 20 seconds, hero opening shot" --budget-mode premium --sora2
+$raw = & $python -m worker.planner.route_plan --prompt "Warm cafe promo reel, 20 seconds, hero opening shot" --budget-mode premium --veo3
 
 if ($LASTEXITCODE -ne 0) {
     throw "Planner CLI exited with code $LASTEXITCODE"

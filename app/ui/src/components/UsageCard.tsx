@@ -115,7 +115,6 @@ export default function UsageCard({ stats, onRefresh }: UsageCardProps) {
     "imagen": "Imagen",
     "veo3": "Veo 3",
     "dalle3": "DALL-E 3",
-    "sora2": "Sora 2",
   };
 
   function providerLabel(key: string): string {

@@ -16,10 +16,10 @@ Write-Host "[verify] compile worker package"
 Push-Location $projectRoot
 try {
     Write-Host "[verify] save sample plan to storage/"
-    & $python -m worker.planner.save_plan --prompt "30-second cafe promo reel with a warm morning mood" --budget-mode premium --project-id verify-project-save --sora2
+    & $python -m worker.planner.save_plan --prompt "30-second cafe promo reel with a warm morning mood" --budget-mode premium --project-id verify-project-save --veo3
 
     Write-Host "[verify] emit render manifest preview"
-    & $python -m worker.render.render_manifest --prompt "30-second cafe promo reel with a warm morning mood" --budget-mode premium --project-id verify-project --sora2
+    & $python -m worker.render.render_manifest --prompt "30-second cafe promo reel with a warm morning mood" --budget-mode premium --project-id verify-project --veo3
 
     $manifestPath = Join-Path $projectRoot "storage\inputs\verify-project-save\render-manifest.json"
     if (-not (Test-Path $manifestPath)) {
