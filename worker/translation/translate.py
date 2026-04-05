@@ -7,8 +7,17 @@ following the same preference chain as the scene-script generator.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from urllib import request as urllib_request
+from urllib.error import URLError
+
+logger = logging.getLogger(__name__)
+
+_HTTP_ERRORS: tuple[type[BaseException], ...] = (
+    URLError, OSError, TimeoutError,
+    json.JSONDecodeError, KeyError, IndexError, ValueError,
+)
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
@@ -140,8 +149,8 @@ def _call_groq(prompt: str) -> str | None:
         with urllib_request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read())
             return data["choices"][0]["message"]["content"]
-    except Exception as e:
-        print(f"[groq/translate] {type(e).__name__}: {e}")
+    except _HTTP_ERRORS as e:
+        logger.warning("groq translate %s: %s", type(e).__name__, e)
         return None
 
 
@@ -164,6 +173,6 @@ def _call_gemini(prompt: str) -> str | None:
         with urllib_request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read())
             return data["candidates"][0]["content"]["parts"][0]["text"]
-    except Exception as e:
-        print(f"[gemini/translate] {type(e).__name__}")
+    except _HTTP_ERRORS as e:
+        logger.warning("gemini translate failed: %s", type(e).__name__)
         return None

@@ -53,9 +53,9 @@ def _candidates_for(name: str, project_root: Path) -> list[tuple[Path, str]]:
 
     candidates: list[tuple[Path, str]] = []
 
+    # Ollama resolver removed 2026-04 when the local LLM planner was retired.
     env_candidates = {
         "ffmpeg": ["VIDEO_STUDIO_FFMPEG_PATH", "FFMPEG_PATH"],
-        "ollama": ["VIDEO_STUDIO_OLLAMA_PATH", "OLLAMA_PATH"],
         "hf": ["VIDEO_STUDIO_HF_PATH", "HF_CLI_PATH"],
     }
     for env_name in env_candidates.get(name, []):
@@ -74,13 +74,6 @@ def _candidates_for(name: str, project_root: Path) -> list[tuple[Path, str]]:
                 (program_data / "chocolatey" / "bin" / "ffmpeg.exe", "chocolatey"),
                 (Path("C:/ffmpeg/bin/ffmpeg.exe"), "default"),
                 (program_files / "ffmpeg" / "bin" / "ffmpeg.exe", "program-files"),
-            ]
-        )
-    elif name == "ollama":
-        candidates.extend(
-            [
-                (local_app_data / "Programs" / "Ollama" / "ollama.exe", "local-programs"),
-                (program_files / "Ollama" / "ollama.exe", "program-files"),
             ]
         )
     elif name == "hf":
@@ -195,5 +188,5 @@ def probe_tool(name: str, project_root: Path | str = PROJECT_ROOT) -> ToolResolu
 def probe_tools(project_root: Path | str = PROJECT_ROOT) -> dict[str, ToolResolution]:
     return {
         tool_name: probe_tool(tool_name, project_root=project_root)
-        for tool_name in ("ffmpeg", "ollama", "hf")
+        for tool_name in ("ffmpeg", "hf")
     }

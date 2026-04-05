@@ -5,17 +5,21 @@ from typing import Literal
 
 from worker.planner.sample_plan import ProjectPlan, SceneSpec
 
-Route = Literal["local", "sora2", "veo3"]
+# Sora 2 retired 2026-04 (see memory/project-video-studio-ollama.md).
+Route = Literal["local", "veo3"]
 
-SORA2_RATE_PER_SEC = 0.10
 VEO3_FAST_RATE_PER_SEC = 0.15
 
 
 @dataclass(slots=True)
 class ProviderAvailability:
-    sora2: bool = False
     veo3: bool = False
     premium_enabled: bool = False
+    # ``sora2`` kept as a deprecated no-op field so existing CLI scripts,
+    # verify-bridge JSON payloads, and the UI-side TypeScript planner can
+    # still set ``availability.sora2`` without a Python-side TypeError.
+    # Sora 2 was retired 2026-04; routing never selects it.
+    sora2: bool = False
 
 
 @dataclass(slots=True)
@@ -45,14 +49,6 @@ def choose_route(scene: SceneSpec, budget_mode: str, availability: ProviderAvail
             "audio-first premium scene",
         )
 
-    if scene.humanRealism >= 4 and availability.sora2:
-        return RouteDecision(
-            scene.id,
-            "sora2",
-            round(scene.durationSec * SORA2_RATE_PER_SEC, 2),
-            "human realism requirement justifies premium video route",
-        )
-
     return RouteDecision(scene.id, "local", 0.0, "local fallback")
 
 
@@ -62,5 +58,3 @@ def route_project_plan(plan: ProjectPlan, availability: ProviderAvailability) ->
 
 def summarize_cost(decisions: list[RouteDecision]) -> float:
     return round(sum(item.estimatedCostUsd for item in decisions), 2)
-
-

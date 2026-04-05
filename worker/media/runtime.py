@@ -83,8 +83,8 @@ def _visual_adapter_key(
     """Choose the visual adapter key for a scene.
 
     If *override* is set and is a known adapter, use it directly.
-    Otherwise prefers ready adapters: for images, tries imagen3 → pexels.
-    For video, tries wan → sora2 → veo3.
+    Otherwise prefers ready adapters: for images, tries gemini-flash → imagen.
+    For video, tries wan → veo3 (Sora 2 was retired 2026-04).
     """
     if override:
         from worker.media.adapters import ADAPTER_CONFIG
@@ -101,7 +101,7 @@ def _visual_adapter_key(
         return "gemini-flash"
     else:
         if adapters:
-            for candidate in ("wan", "sora2", "veo3"):
+            for candidate in ("wan", "veo3"):
                 status = adapters.get(candidate)
                 if status and status.ready:
                     return candidate

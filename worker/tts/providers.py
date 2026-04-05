@@ -7,9 +7,12 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import os
 from pathlib import Path
 from urllib import request, error
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Voice presets
@@ -116,7 +119,8 @@ def generate_google_tts(text: str, lang: str, gender: str, output_path: Path) ->
                 metadata={"lang": lang, "gender": gender},
             )
         except Exception as _log_err:
-            print(f"[usage] google-tts log failed: {_log_err}")
+            # Usage log is diagnostic; failure must not abort the TTS call.
+            logger.debug("google-tts usage log failed: %s", _log_err)
     return success
 
 
@@ -164,11 +168,14 @@ def generate_tts(
     fn = PROVIDERS.get(provider)
     if fn and fn is not generate_edge_tts:
         if rate != "+0%" or pitch != "+0Hz":
-            print(f"[tts] {provider} does not support rate/pitch -- tone shift will only apply on edge-tts fallback")
+            logger.info(
+                "tts provider %s does not support rate/pitch — tone shift will only apply on edge-tts fallback",
+                provider,
+            )
         try:
             return fn(text, lang, gender, output_path)
         except Exception as e:
-            print(f"[tts] {provider} failed: {e}, falling back to edge-tts")
+            logger.warning("tts provider %s failed: %s, falling back to edge-tts", provider, e)
 
     return generate_edge_tts(text, lang, gender, output_path, rate=rate, pitch=pitch)
 

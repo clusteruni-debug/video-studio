@@ -4,9 +4,12 @@ Extracted from server.py to keep the main bridge under the 660-line limit.
 """
 from __future__ import annotations
 
+import logging
 import shutil
 import threading
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from flask import Blueprint, jsonify, request as flask_request
 
@@ -221,7 +224,7 @@ def usage_stats_route():
             "limit_chars": tts_info.get("wavenet_chars", 1_000_000),
         }
 
-        for prov in ("imagen", "serper", "veo3", "dalle3", "sora2"):
+        for prov in ("imagen", "serper", "veo3", "dalle3"):
             prov_month = get_monthly_stats(prov)
             limits[prov] = {
                 "cycle": "none",
@@ -231,7 +234,7 @@ def usage_stats_route():
 
         monthly_total = get_monthly_total_cost()
     except Exception as e:
-        print(f"[usage] usage_stats_route failed: {e}")
+        logger.warning("usage_stats_route failed: %s", e)
         monthly_total = 0.0
 
     return jsonify({

@@ -7,11 +7,23 @@ Gemini prompts emit "tenor" as image_source — this is a routing token that map
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 from urllib import request as urllib_request
+from urllib.error import URLError
+
+logger = logging.getLogger(__name__)
+
+# Shared exception tuple for outbound HTTP+JSON helpers.
+_HTTP_ERRORS: tuple[type[BaseException], ...] = (
+    URLError, OSError, TimeoutError,
+    json.JSONDecodeError, KeyError, ValueError, UnicodeDecodeError,
+    binascii.Error,
+)
 
 
 def _get_key(name: str) -> str:
@@ -51,8 +63,8 @@ def search_serper(query: str) -> str | None:
                         return url
                 # Fallback: first image regardless of aspect
                 return images[0].get("imageUrl")
-    except Exception as e:
-        print(f"[serper] Image search failed for '{query[:50]}': {e}")
+    except _HTTP_ERRORS as e:
+        logger.warning("serper image search failed for %r: %s", query[:50], e)
     return None
 
 
@@ -80,10 +92,10 @@ def generate_imagen(prompt: str, output_dir: str | None = None, aspect_ratio: st
         name_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
         save_path = save_dir / f"imagen_{name_hash}.png"
         save_path.write_bytes(image_bytes)
-        print(f"[imagen] Generated {len(image_bytes)} bytes → {save_path}")
+        logger.info("imagen generated %d bytes → %s", len(image_bytes), save_path)
         return str(save_path)
-    except Exception as e:
-        print(f"[imagen] Failed: {type(e).__name__}")
+    except _HTTP_ERRORS as e:
+        logger.warning("imagen failed: %s", type(e).__name__)
         return None
 
 
@@ -122,10 +134,10 @@ def generate_gemini_flash(prompt: str, output_dir: str | None = None) -> str | N
         name_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
         save_path = save_dir / f"gemini_flash_{name_hash}.png"
         save_path.write_bytes(image_bytes)
-        print(f"[gemini-flash] Generated {len(image_bytes)} bytes → {save_path}")
+        logger.info("gemini-flash generated %d bytes → %s", len(image_bytes), save_path)
         return str(save_path)
-    except Exception as e:
-        print(f"[gemini-flash] Failed: {type(e).__name__}")
+    except _HTTP_ERRORS as e:
+        logger.warning("gemini-flash failed: %s", type(e).__name__)
         return None
 
 
@@ -151,8 +163,8 @@ def search_pexels(query: str, orientation: str = "portrait") -> str | None:
                     if p.get("height", 0) > p.get("width", 0):
                         return p["src"]["portrait"]
                 return photos[0]["src"]["portrait"]
-    except Exception as e:
-        print(f"[pexels] Search failed for '{query}': {e}")
+    except _HTTP_ERRORS as e:
+        logger.warning("pexels search failed for %r: %s", query, e)
     return None
 
 
@@ -214,11 +226,14 @@ def search_pexels_video(
                         "pexels_id": video.get("id"),
                     }
             if skipped_duration and skipped_duration == len(videos):
-                print(f"[pexels-video] {len(videos)} results for '{query}' all shorter than {min_duration}s")
+                logger.info(
+                    "pexels-video %d results for %r all shorter than %ss",
+                    len(videos), query, min_duration,
+                )
             elif not videos:
-                print(f"[pexels-video] No results for '{query}'")
-    except Exception as e:
-        print(f"[pexels-video] Search failed for '{query}': {e}")
+                logger.info("pexels-video no results for %r", query)
+    except _HTTP_ERRORS as e:
+        logger.warning("pexels-video search failed for %r: %s", query, e)
     return None
 
 
@@ -267,8 +282,8 @@ def download_pexels_video(video_url: str, output_path: str, timeout: int = 60) -
                         break
                     f.write(chunk)
         return out.exists() and out.stat().st_size > 0
-    except Exception as e:
-        print(f"[pexels-video] Download failed: {e}")
+    except (URLError, OSError, TimeoutError) as e:
+        logger.warning("pexels-video download failed: %s", e)
         return False
 
 
@@ -297,8 +312,8 @@ def search_klipy(query: str, limit: int = 3) -> str | None:
                 gif = formats.get("gif")
                 if gif and gif.get("url"):
                     return gif["url"]
-    except Exception as e:
-        print(f"[klipy] Search failed for '{query}': {e}")
+    except _HTTP_ERRORS as e:
+        logger.warning("klipy search failed for %r: %s", query, e)
     return None
 
 
@@ -325,7 +340,9 @@ def _log_image_usage(provider: str, prompt: str) -> None:
             metadata={"prompt": prompt[:100]},
         )
     except Exception as _log_err:
-        print(f"[usage] image log failed: {_log_err}")
+        # Usage DB is non-critical diagnostics; a failed insert must never
+        # break the image-routing hot path.
+        logger.debug("image usage log failed: %s", _log_err)
 
 
 def route_image(scene: dict) -> tuple[str | None, str | None]:

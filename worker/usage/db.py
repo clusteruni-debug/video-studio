@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Session ID is generated once per process lifetime (bridge server startup).
 SESSION_ID: str = str(uuid.uuid4())
@@ -69,8 +72,10 @@ def log_usage(
                  tokens_in, tokens_out, units, is_free, meta_str),
             )
             conn.commit()
-    except Exception as e:
-        print(f"[usage] log_usage failed: {e}")
+    except (sqlite3.Error, OSError) as e:
+        # Usage DB is diagnostic; a write failure must never break the
+        # caller's hot path. Log at debug level to avoid noise.
+        logger.debug("log_usage failed: %s", e)
 
 
 def get_session_stats(session_id: str | None = None) -> dict:
@@ -97,8 +102,8 @@ def get_session_stats(session_id: str | None = None) -> dict:
             }
             for row in rows
         }
-    except Exception as e:
-        print(f"[usage] get_session_stats failed: {e}")
+    except sqlite3.Error as e:
+        logger.debug("get_session_stats failed: %s", e)
         return {}
 
 
@@ -122,8 +127,8 @@ def get_daily_stats(provider: str) -> dict:
             "cost_usd": round(row["total_cost"] or 0.0, 6),
             "date": today,
         }
-    except Exception as e:
-        print(f"[usage] get_daily_stats failed: {e}")
+    except sqlite3.Error as e:
+        logger.debug("get_daily_stats failed: %s", e)
         return {"calls": 0, "cost_usd": 0.0, "date": today}
 
 
@@ -147,8 +152,8 @@ def get_monthly_stats(provider: str) -> dict:
             "cost_usd": round(row["total_cost"] or 0.0, 6),
             "month": month,
         }
-    except Exception as e:
-        print(f"[usage] get_monthly_stats failed: {e}")
+    except sqlite3.Error as e:
+        logger.debug("get_monthly_stats failed: %s", e)
         return {"calls": 0, "total_units": 0.0, "cost_usd": 0.0, "month": month}
 
 
@@ -171,8 +176,8 @@ def get_hourly_stats(provider: str) -> dict:
             "calls": row["calls"] or 0,
             "cost_usd": round(row["total_cost"] or 0.0, 6),
         }
-    except Exception as e:
-        print(f"[usage] get_hourly_stats failed: {e}")
+    except sqlite3.Error as e:
+        logger.debug("get_hourly_stats failed: %s", e)
         return {"calls": 0, "cost_usd": 0.0}
 
 
@@ -191,6 +196,6 @@ def get_monthly_total_cost() -> float:
                 (month,),
             ).fetchone()
         return round(row["total"] or 0.0, 6)
-    except Exception as e:
-        print(f"[usage] get_monthly_total_cost failed: {e}")
+    except sqlite3.Error as e:
+        logger.debug("get_monthly_total_cost failed: %s", e)
         return 0.0

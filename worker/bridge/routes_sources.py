@@ -4,7 +4,11 @@ Extracted from server.py to keep the main bridge under the 660-line limit.
 """
 from __future__ import annotations
 
+import logging
+
 from flask import Blueprint, jsonify, request as flask_request
+
+logger = logging.getLogger(__name__)
 
 sources_bp = Blueprint("sources", __name__)
 
@@ -35,6 +39,9 @@ def reddit_posts_route():
         posts = fetch_reddit_posts(subreddit, sort=sort, limit=limit)
         return jsonify({"ok": True, "posts": posts})
     except Exception as e:
+        # Flask route handler: broad catch required to convert any downstream
+        # failure into a 500 response; log for observability.
+        logger.warning("reddit posts route failed: %s", e)
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
@@ -73,6 +80,9 @@ def reddit_auto_generate_route():
         }
         return jsonify(result)
     except Exception as e:
+        # Flask route handler: broad catch required to convert any downstream
+        # failure into a 500 response; log for observability.
+        logger.warning("reddit auto-generate route failed: %s", e)
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
@@ -91,6 +101,9 @@ def news_headlines_route():
         articles = fetch_news_headlines(query=query, country=country, category=category)
         return jsonify({"ok": True, "articles": articles})
     except Exception as e:
+        # Flask route handler: broad catch required to convert any downstream
+        # failure into a 500 response; log for observability.
+        logger.warning("news headlines route failed: %s", e)
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
@@ -130,4 +143,7 @@ def news_auto_generate_route():
         }
         return jsonify(result)
     except Exception as e:
+        # Flask route handler: broad catch required to convert any downstream
+        # failure into a 500 response; log for observability.
+        logger.warning("news auto-generate route failed: %s", e)
         return jsonify({"ok": False, "error": str(e)}), 500

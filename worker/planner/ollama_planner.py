@@ -1,24 +1,36 @@
+"""Project planner — Gemini primary, sample fallback.
+
+Historical note: this file was originally the Ollama local-LLM planner. The
+Ollama backend was retired (see ``memory/project-video-studio-ollama.md``
+2026-04-02) and its code paths removed in the Tier 2 audit. The filename is
+kept to avoid touching the four call sites in ``route_plan.py``,
+``save_plan.py``, ``render_manifest.py``, and ``worker/planner/__init__.py``.
+"""
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
-from urllib import error, request
+from urllib import request
+from urllib.error import URLError
 
 from worker.planner.sample_plan import ProjectPlan, SceneSpec, build_sample_project_plan
 
+logger = logging.getLogger(__name__)
+
 PlannerMode = Literal["auto", "gemini", "sample"]
 
-DEFAULT_OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
-DEFAULT_OLLAMA_MODEL = (
-    os.environ.get("VIDEO_STUDIO_OLLAMA_MODEL")
-    or os.environ.get("OLLAMA_PLANNER_MODEL")
-    or "qwen2.5:7b"
-)
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+# Shared exception tuple for outbound HTTP helpers.
+_HTTP_ERRORS: tuple[type[BaseException], ...] = (
+    URLError, OSError, TimeoutError,
+    json.JSONDecodeError, KeyError, IndexError, ValueError, UnicodeDecodeError,
+)
 
 
 @dataclass(slots=True)
@@ -26,19 +38,6 @@ class PlannerMetadata:
     backend: str
     model: str | None
     fallbackUsed: bool
-    detail: str
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass(slots=True)
-class PlannerRuntimeStatus:
-    ready: bool
-    backend: str
-    model: str | None
-    availableModels: list[str]
-    host: str
     detail: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -81,7 +80,7 @@ def _duration_value(value: Any) -> float:
 
 def _route_hint(raw: Any, budget_mode: str, human_realism: int, native_audio_need: int) -> str:
     normalized = str(raw or "").strip().lower()
-    if normalized in {"local", "sora2", "veo3"}:
+    if normalized in {"local", "veo3"}:
         if budget_mode == "free" and normalized != "local":
             return "local"
         return normalized
@@ -91,14 +90,15 @@ def _route_hint(raw: Any, budget_mode: str, human_realism: int, native_audio_nee
     if native_audio_need >= 5:
         return "veo3"
     if human_realism >= 4:
-        return "sora2"
+        # Sora 2 was retired (2026-04); fall through to the local path.
+        return "local"
     return "local"
 
 
 def _extract_json_object(raw: str) -> dict[str, Any]:
     text = raw.strip()
     if not text:
-        raise ValueError("ollama returned an empty response")
+        raise ValueError("LLM returned an empty response")
 
     try:
         parsed = json.loads(text)
@@ -117,82 +117,9 @@ def _extract_json_object(raw: str) -> dict[str, Any]:
     start = text.find("{")
     end = text.rfind("}")
     if start == -1 or end == -1 or end <= start:
-        raise ValueError("could not find JSON object in ollama response")
+        raise ValueError("could not find JSON object in LLM response")
 
     return json.loads(text[start : end + 1])
-
-
-def _http_json(url: str, payload: dict[str, Any] | None = None, timeout: int = 15) -> dict[str, Any]:
-    data = None
-    headers = {"Content-Type": "application/json"}
-    if payload is not None:
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-
-    _MAX_RESPONSE = 1_048_576  # 1 MB
-    req = request.Request(url=url, data=data, headers=headers, method="POST" if payload is not None else "GET")
-    with request.urlopen(req, timeout=timeout) as response:
-        body = response.read(_MAX_RESPONSE)
-        return json.loads(body.decode("utf-8"))
-
-
-def list_ollama_models(host: str = DEFAULT_OLLAMA_HOST, timeout: int = 4) -> list[str]:
-    payload = _http_json(f"{host}/api/tags", timeout=timeout)
-    models = payload.get("models", [])
-    names: list[str] = []
-    for model in models:
-        if isinstance(model, dict) and model.get("name"):
-            names.append(str(model["name"]))
-    return names
-
-
-def probe_planner_runtime(
-    model: str = DEFAULT_OLLAMA_MODEL,
-    host: str = DEFAULT_OLLAMA_HOST,
-    timeout: int = 4,
-) -> PlannerRuntimeStatus:
-    try:
-        models = list_ollama_models(host=host, timeout=timeout)
-    except error.URLError as exc:
-        return PlannerRuntimeStatus(
-            ready=False,
-            backend="sample",
-            model=model,
-            availableModels=[],
-            host=host,
-            detail=f"Ollama service unreachable: {exc.reason}",
-        )
-    except Exception as exc:  # pragma: no cover - defensive
-        return PlannerRuntimeStatus(
-            ready=False,
-            backend="sample",
-            model=model,
-            availableModels=[],
-            host=host,
-            detail=f"Ollama probe failed: {exc}",
-        )
-
-    if model in models:
-        return PlannerRuntimeStatus(
-            ready=True,
-            backend="ollama",
-            model=model,
-            availableModels=models,
-            host=host,
-            detail=f"Ollama planner ready with model {model}",
-        )
-
-    detail = f"Ollama is running but model {model} is not installed"
-    if models:
-        detail = f"{detail}. Installed models: {', '.join(models)}"
-
-    return PlannerRuntimeStatus(
-        ready=False,
-        backend="sample",
-        model=model,
-        availableModels=models,
-        host=host,
-        detail=detail,
-    )
 
 
 def _scene_from_payload(index: int, payload: dict[str, Any], budget_mode: str) -> SceneSpec:
@@ -251,14 +178,14 @@ def _build_prompt(prompt: str, budget_mode: str) -> str:
     )
 
 
-def _build_project_plan_from_ollama_payload(
+def _build_project_plan_from_payload(
     payload: dict[str, Any],
     prompt: str,
     budget_mode: str,
 ) -> ProjectPlan:
     raw_scenes = payload.get("scenes")
     if not isinstance(raw_scenes, list) or len(raw_scenes) < 4:
-        raise ValueError("ollama response did not contain enough scenes")
+        raise ValueError("LLM response did not contain enough scenes")
 
     scenes = [
         _scene_from_payload(index, scene_payload if isinstance(scene_payload, dict) else {}, budget_mode)
@@ -266,7 +193,7 @@ def _build_project_plan_from_ollama_payload(
     ]
 
     if len(scenes) < 4:
-        raise ValueError("ollama planner produced fewer than 4 usable scenes")
+        raise ValueError("LLM planner produced fewer than 4 usable scenes")
 
     valid_moods = {"upbeat", "calm", "cinematic", "tense", "energetic"}
     raw_mood = str(payload.get("bgmMood") or "upbeat").strip().lower()
@@ -282,35 +209,6 @@ def _build_project_plan_from_ollama_payload(
         scenes=scenes,
         bgmMood=bgm_mood,
     )
-
-
-def build_ollama_project_plan(
-    prompt: str,
-    budget_mode: str,
-    model: str = DEFAULT_OLLAMA_MODEL,
-    host: str = DEFAULT_OLLAMA_HOST,
-    timeout: int = 45,
-) -> ProjectPlan:
-    status = probe_planner_runtime(model=model, host=host)
-    if not status.ready:
-        raise RuntimeError(status.detail)
-
-    response = _http_json(
-        f"{host}/api/generate",
-        payload={
-            "model": model,
-            "prompt": _build_prompt(prompt, budget_mode),
-            "stream": False,
-            "format": "json",
-            "options": {
-                "temperature": 0.2,
-            },
-        },
-        timeout=timeout,
-    )
-    response_text = str(response.get("response") or "").strip()
-    payload = _extract_json_object(response_text)
-    return _build_project_plan_from_ollama_payload(payload, prompt=prompt, budget_mode=budget_mode)
 
 
 def _get_gemini_api_key() -> str:
@@ -365,15 +263,13 @@ def build_gemini_project_plan(
         raise ValueError("Empty text in Gemini response")
 
     parsed = _extract_json_object(response_text)
-    return _build_project_plan_from_ollama_payload(parsed, prompt=prompt, budget_mode=budget_mode)
+    return _build_project_plan_from_payload(parsed, prompt=prompt, budget_mode=budget_mode)
 
 
 def build_project_plan(
     prompt: str,
     budget_mode: str = "free",
     planner_mode: PlannerMode = "auto",
-    model: str = DEFAULT_OLLAMA_MODEL,
-    host: str = DEFAULT_OLLAMA_HOST,
 ) -> tuple[ProjectPlan, PlannerMetadata]:
     normalized_prompt = prompt.strip()
     if planner_mode == "sample":
@@ -404,10 +300,19 @@ def build_project_plan(
                     detail=f"Gemini planner generated a {len(plan.scenes)}-scene plan",
                 ),
             )
-        except Exception as exc:
+        except _HTTP_ERRORS as exc:
             if planner_mode == "gemini":
                 raise
             gemini_error = f"{type(exc).__name__}: {exc}"
+            logger.info("gemini planner unavailable, falling back to sample: %s", gemini_error)
+        except RuntimeError as exc:
+            # `build_gemini_project_plan` raises RuntimeError when the API
+            # key is missing — that is expected and should fall through to
+            # the sample planner without noise.
+            if planner_mode == "gemini":
+                raise
+            gemini_error = f"{type(exc).__name__}: {exc}"
+            logger.info("gemini planner disabled, using sample: %s", gemini_error)
 
     # Fallback: sample planner
     return (

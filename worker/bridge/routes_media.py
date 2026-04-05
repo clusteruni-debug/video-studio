@@ -4,10 +4,13 @@ Extracted from server.py to keep the main bridge under the 660-line limit.
 """
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request as flask_request
+
+logger = logging.getLogger(__name__)
 
 from worker.tts.providers import generate_tts
 from worker.bridge.image_router import route_image, search_pexels_video
@@ -78,6 +81,9 @@ def regenerate_scene_tts_route():
         tts_url = f"http://{_bridge_host}:{_bridge_port}/api/tts/{regen_ts}/scene_{scene_num}.mp3"
         return jsonify({"ok": True, "_tts_url": tts_url, "duration": round(duration, 1)})
     except Exception as e:
+        # Flask route handler: broad catch required to convert any downstream
+        # failure into a 500 response; log for observability.
+        logger.warning("%s failed: %s", flask_request.path, e)
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
@@ -110,6 +116,9 @@ def generate_image_route():
             return jsonify({"ok": True, "image_url": client_url, "source": display_source})
         return jsonify({"ok": False, "error": "No image found for this prompt"}), 404
     except Exception as e:
+        # Flask route handler: broad catch required to convert any downstream
+        # failure into a 500 response; log for observability.
+        logger.warning("%s failed: %s", flask_request.path, e)
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
@@ -173,4 +182,7 @@ def dub_route():
         )
         return jsonify({"ok": True, **result})
     except Exception as e:
+        # Flask route handler: broad catch required to convert any downstream
+        # failure into a 500 response; log for observability.
+        logger.warning("%s failed: %s", flask_request.path, e)
         return jsonify({"ok": False, "error": str(e)}), 500

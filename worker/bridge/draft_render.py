@@ -7,12 +7,15 @@ pre-placing TTS audio and downloaded images so compose.py skips re-generation.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import subprocess
 import time
 from pathlib import Path
 from urllib import request as urllib_request
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path.cwd()
 
@@ -146,7 +149,7 @@ def _download_to(url: str, dest: Path, timeout: int = 20) -> bool:
         with urllib_request.urlopen(req, timeout=timeout) as resp:
             ct = (resp.headers.get("Content-Type") or "").split(";")[0].strip()
             if ct and not any(ct.startswith(t) for t in _VALID_MEDIA_TYPES):
-                print(f"[draft_render] invalid content-type {ct} for {url[:60]}")
+                logger.warning("invalid content-type %s for %s", ct, url[:60])
                 return False
             with open(str(dest), "wb") as fp:
                 total = 0
@@ -161,7 +164,7 @@ def _download_to(url: str, dest: Path, timeout: int = 20) -> bool:
                     fp.write(chunk)
         return True
     except Exception as e:
-        print(f"[draft_render] download failed {url[:60]}: {e}")
+        logger.warning("download failed %s: %s", url[:60], e)
         dest.unlink(missing_ok=True)
         return False
 

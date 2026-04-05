@@ -6,11 +6,21 @@ Extracted from server.py to keep the main bridge file under the 660-line limit.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from urllib import request as urllib_request
+from urllib.error import URLError
 
 from worker.bridge.templates import TEMPLATE_TYPES, build_template_prompt, _HOOK_EXEMPT
+
+logger = logging.getLogger(__name__)
+
+# Shared exception tuple for outbound LLM HTTP calls (Groq, Gemini, etc.).
+_LLM_HTTP_ERRORS: tuple[type[BaseException], ...] = (
+    URLError, OSError, TimeoutError,
+    json.JSONDecodeError, KeyError, IndexError, ValueError, UnicodeDecodeError,
+)
 
 def _get_key(name: str) -> str:
     return os.environ.get(name, "")
@@ -168,8 +178,8 @@ def _call_groq(prompt: str) -> str | None:
         with urllib_request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read())
             return data["choices"][0]["message"]["content"]
-    except Exception as e:
-        print(f"[groq] Failed: {e}")
+    except _LLM_HTTP_ERRORS as e:
+        logger.warning("groq call failed: %s", e)
         return None
 
 
@@ -197,7 +207,7 @@ def _call_gemini(prompt: str, use_search: bool = False) -> str | None:
             if use_search and "groundingMetadata" in candidate:
                 sources = candidate["groundingMetadata"].get("groundingChunks", [])
                 if sources:
-                    print(f"[gemini] Grounded with {len(sources)} web sources")
+                    logger.info("gemini grounded with %d web sources", len(sources))
             result_text = candidate["content"]["parts"][0]["text"]
             # --- Usage logging ---
             try:
@@ -217,10 +227,12 @@ def _call_gemini(prompt: str, use_search: bool = False) -> str | None:
                     metadata={"use_search": use_search},
                 )
             except Exception as _log_err:
-                print(f"[usage] gemini log failed: {_log_err}")
+                # Usage DB is non-critical diagnostics; an insert failure
+                # must never break the LLM call flow.
+                logger.debug("gemini usage log failed: %s", _log_err)
             return result_text
-    except Exception as e:
-        print(f"[gemini] Failed: {e}")
+    except _LLM_HTTP_ERRORS as e:
+        logger.warning("gemini call failed: %s", e)
         return None
 
 
@@ -260,11 +272,11 @@ def _enrich_image_prompts(scenes: list[dict], topic: str) -> None:
     )
     text, enrich_provider = _call_llm(prompt)
     if not text:
-        print("[enrich] Step 2 skipped: no LLM response")
+        logger.info("enrich step 2 skipped: no LLM response")
         return
     parsed = parse_scenes_json(text)
     if not parsed:
-        print("[enrich] Step 2 skipped: failed to parse response")
+        logger.info("enrich step 2 skipped: failed to parse response")
         return
     prompt_map: dict[int, str] = {}
     for item in parsed:
@@ -281,7 +293,10 @@ def _enrich_image_prompts(scenes: list[dict], topic: str) -> None:
         if sn in prompt_map:
             s["image_prompt"] = prompt_map[sn]
             updated += 1
-    print(f"[enrich] Step 2: {updated}/{len(scenes)} image prompts enriched ({enrich_provider})")
+    logger.info(
+        "enrich step 2: %d/%d image prompts enriched (%s)",
+        updated, len(scenes), enrich_provider,
+    )
 
 
 def _clear_llm_image_sources(scenes: list[dict]) -> None:
@@ -344,7 +359,7 @@ def _filter_image_prompts(scenes: list[dict], topic: str) -> None:
         prompt = s.get("image_prompt", "")
         if _ABSTRACT_IMAGE_WORDS.search(prompt):
             s["image_prompt"] = s.get("fallback_prompt") or f"photograph related to {topic}, natural lighting"
-            print(f"[filter] scene {s.get('scene_num')}: abstract prompt replaced")
+            logger.info("filter scene %s: abstract prompt replaced", s.get('scene_num'))
 
 
 def _enforce_hook(scenes: list[dict], template_type: str = "") -> None:
@@ -404,10 +419,13 @@ def generate_scenes_llm(
         # Quality gate: evaluate and keep best
         try:
             score, feedback = _evaluate_script_quality(scenes, topic, template_type)
-        except Exception as e:
-            print(f"[quality] evaluation error: {e}")
+        except _LLM_HTTP_ERRORS as e:
+            logger.warning("quality evaluation error: %s", e)
             score, feedback = 7, ""
-        print(f"[quality] attempt {attempt+1}: score={score}/10 feedback={feedback[:60]}")
+        logger.info(
+            "quality attempt %d: score=%d/10 feedback=%s",
+            attempt + 1, score, feedback[:60],
+        )
 
         if score > best_score:
             best_scenes = scenes
@@ -420,8 +438,8 @@ def generate_scenes_llm(
         _enforce_hook(best_scenes, template_type)
         try:
             _enrich_image_prompts(best_scenes, topic)
-        except Exception as e:
-            print(f"[enrich] Step 2 failed, keeping original prompts: {e}")
+        except _LLM_HTTP_ERRORS as e:
+            logger.warning("enrich step 2 failed, keeping original prompts: %s", e)
         _filter_image_prompts(best_scenes, topic)
         return best_scenes, best_provider
 

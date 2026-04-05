@@ -6,17 +6,28 @@ should import from here instead.
 
 VectCutAPI is a flat script collection (no ``__init__.py``), so we
 must add its directory to ``sys.path`` before importing.
+
+Exception-handling policy: VectCutAPI is an external project outside
+our control and does not document its exception surface. Each public
+wrapper (``add_image``, ``add_video``, ``add_subtitle`` …) deliberately
+catches a broad ``Exception``, logs it via :mod:`logging`, and returns
+``False`` so a single misbehaving asset cannot abort an entire draft
+build. Narrowing these catches would silently re-raise previously
+handled errors the first time VectCutAPI surfaces a new error class.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import sys
 import threading
 from pathlib import Path
 from urllib import request as urllib_request
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # sys.path setup — runs ONCE at import time
@@ -35,12 +46,14 @@ if _PINNED and VECTCUT_DIR.is_dir():
             cwd=VECTCUT_DIR, capture_output=True, text=True, timeout=5,
         ).stdout.strip()
         if _head and not _head.startswith(_PINNED):
-            print(
-                f"[vectcut_bridge] WARNING: VectCutAPI commit {_head} != pinned {_PINNED}. "
-                f"If something breaks, run: cd {VECTCUT_DIR} && git checkout {_PINNED}"
+            logger.warning(
+                "VectCutAPI commit %s != pinned %s. "
+                "If something breaks, run: cd %s && git checkout %s",
+                _head, _PINNED, VECTCUT_DIR, _PINNED,
             )
-    except Exception:
-        pass
+    except (OSError, subprocess.TimeoutExpired, subprocess.SubprocessError) as pin_err:
+        # Pin check is diagnostic-only; don't block import if git is missing or slow.
+        logger.debug("VectCutAPI pin check skipped: %s", pin_err)
 
 _MAX_IMAGE_BYTES = 5 * 1024 * 1024   # 5 MB
 _MAX_VIDEO_BYTES = 25 * 1024 * 1024  # 25 MB — Klipy GIFs regularly exceed 5 MB
@@ -84,7 +97,7 @@ def _get_video_track_fn():
         from add_video_track import add_video_track
         _video_track_fn = add_video_track
     except ImportError as e:
-        print(f"[vectcut] add_video_track unavailable: {e}")
+        logger.warning("add_video_track unavailable: %s", e)
     return _video_track_fn
 
 
@@ -155,7 +168,7 @@ def add_image(
         _image(**kwargs)
         return True
     except Exception as e:
-        print(f"[vectcut] add_image: {e}")
+        logger.warning("add_image failed: %s", e)
         return False
 
 
@@ -206,7 +219,7 @@ def add_video(
         _video(**kwargs)
         return True
     except Exception as e:
-        print(f"[vectcut] add_video: {e}")
+        logger.warning("add_video failed: %s", e)
         return False
 
 
@@ -256,7 +269,7 @@ def add_subtitle(
         _text(**kwargs)
         return True
     except Exception as e:
-        print(f"[vectcut] add_text scene {scene_num}: {e}")
+        logger.warning("add_text scene %s failed: %s", scene_num, e)
         return False
 
 
@@ -281,7 +294,7 @@ def add_narration(
         )
         return True
     except Exception as e:
-        print(f"[vectcut] add_audio scene {scene_num}: {e}")
+        logger.warning("add_audio scene %s failed: %s", scene_num, e)
         return False
 
 
@@ -305,7 +318,7 @@ def add_bgm(
         )
         return True
     except Exception as e:
-        print(f"[vectcut] add_bgm: {e}")
+        logger.warning("add_bgm failed: %s", e)
         return False
 
 
@@ -435,7 +448,7 @@ def save_draft_to_capcut(
                     if oversized:
                         img_path.unlink(missing_ok=True)
             except Exception as e:
-                print(f"[download] Image failed: {e}")
+                logger.warning("image download failed: %s", e)
 
     # -- Download/copy video assets (Klipy GIFs etc.) --
     video_dest = dest / "assets" / "video"
@@ -474,9 +487,12 @@ def save_draft_to_capcut(
                             fp.write(chunk)
                     if oversized:
                         vid_path.unlink(missing_ok=True)
-                        print(f"[download] Video oversized (>{_MAX_VIDEO_BYTES // 1024 // 1024}MB): {vid_url[:80]}")
+                        logger.warning(
+                            "video oversized (>%dMB): %s",
+                            _MAX_VIDEO_BYTES // 1024 // 1024, vid_url[:80],
+                        )
             except Exception as e:
-                print(f"[download] Video failed: {e}")
+                logger.warning("video download failed: %s", e)
 
     # -- Fix material paths on VectCutAPI script object --
     actual_by_stem: dict[str, Path] = {}

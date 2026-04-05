@@ -13,9 +13,9 @@
 ## Target Stack
 - UI: React + Vite (App shell + Sidebar/ImageCanvas/StoryboardPanel/BottomBar/DebugDrawer/SceneDetailPanel + shared utils)
 - Desktop shell: Tauri 2 after the web UI stabilizes
-- Planner: Ollama `qwen2.5:7b` local, browser-sample fallback
-- Image: Serper/Google Images (primary, $0.001/query), Imagen 4 (AI fallback, $0.02/img), Pexels (free stock fallback), Klipy (free GIF/reaction)
-- Video: local Wan (free), Sora 2, Veo 3
+- Planner: Gemini 2.5 Flash (primary) → hardcoded sample fallback. Ollama local LLM retired 2026-04.
+- Image: Serper/Google Images (primary, $0.001/query), Gemini Flash (free AI, 500/day), Imagen 4 (AI fallback, $0.02/img), Pexels (free stock fallback), Klipy (free GIF/reaction)
+- Video: local Wan (free), Veo 3 (Sora 2 retired 2026-04)
 - TTS: Edge TTS (free default, +35% rate), ElevenLabs, OpenAI TTS
 - BGM: Local mood-matched library (upbeat/tense/calm/cinematic, 16 tracks, MIT license)
 - Composition: FFmpeg with motion presets + xfade transitions
@@ -37,12 +37,14 @@
   - `components/SceneDetailPanel.tsx` — selected-scene asset and provider override controls
   - `components/shared.ts` — shared types + utility functions
 - `worker/planner/` — planning and routing adapters
+  - `ollama_planner.py` — Gemini planner + sample fallback (filename historical; Ollama local LLM retired 2026-04)
 - `worker/media/` — adapter registry, provider policy, cost estimation
-  - `adapters.py` — 18 provider configs across 5 categories
+  - `adapters.py` — 17 provider configs across 5 categories (Sora 2 retired 2026-04)
   - `provider_policy.py` — free-first selection + manual approval
   - `model_router.py` — per-scene cost breakdown
 - `worker/render/` — FFmpeg composition
-  - `compose.py` — orchestrator
+  - `compose.py` — orchestrator (compose_smoke_render + CLI)
+  - `compose_ffmpeg.py` — FFmpeg primitives, subtitle writers, BGM/TTS helpers (split out 2026-04)
   - `motion.py` — Ken Burns zoompan presets
   - `transitions.py` — xfade + gradient background builders
 - `scripts/` — provider adapter scripts (standalone, argparse-based)
@@ -55,11 +57,11 @@
 - `scripts/edge_tts.py` — free cross-platform TTS
 - `scripts/dalle3_image.py` — DALL-E 3 images
 - `scripts/imagen3_image.py` — Imagen 3 images
-- `scripts/sora2_video.py` — Sora 2 video
 - `scripts/veo3_video.py` — Veo 3 video
 - `scripts/elevenlabs_tts.py` — ElevenLabs TTS
 - `scripts/openai_tts.py` — OpenAI TTS
 - `scripts/suno_bgm.py` — Suno BGM [UNCERTAIN API]
+- `scripts/sora2_video.py` — REMOVED 2026-04 (Sora 2 retired; replacement research in `docs/VIDEO-PROVIDER-RESEARCH.md`)
 
 ## Usage Tracking
 - Local SQLite DB at `worker/usage/usage.db` (gitignored) — tracks API calls, costs, tokens per session
@@ -73,6 +75,14 @@
 - Required API keys: `GEMINI_API_KEY`, `PEXELS_API_KEY`, `SERPER_API_KEY`, `GROQ_API_KEY`
 - FLUX/Wan default to `stub` mode until the operator sets command-backed adapter env vars
 - Suno API adapter is marked [UNCERTAIN] — API surface may not be stable
+
+## Logging
+- Worker modules use ``logging.getLogger(__name__)`` (not ``print()``). Entry points (``worker.bridge.server``, ``worker.render.compose``) call ``logging.basicConfig`` honouring the ``LOG_LEVEL`` environment variable (default ``INFO``). CLI scripts under ``scripts/`` and ``_test()``/``main()`` JSON output paths keep ``print()`` so shell redirection and ``jq`` piping stay intact.
+- Flask route handlers in ``worker/bridge/server.py``, ``routes_admin.py``, ``routes_media.py``, ``routes_sources.py`` keep broad ``except Exception`` with ``logger.warning`` + intent comment, because the handler must convert any downstream failure into a 500 response. ``image_router.py``, ``scene_generator.py``, ``translate.py`` narrow outbound HTTP+JSON errors via a shared ``_HTTP_ERRORS`` tuple.
+- ``worker/bridge/vectcut_bridge.py`` is the single boundary to VectCutAPI. Its public wrappers (``add_image``, ``add_video``, ``add_subtitle`` …) intentionally catch broad ``Exception`` with ``logger.warning`` — see the module docstring for the rationale (VectCutAPI is an external project with an undocumented exception surface).
+
+## Sora 2 Status (retired 2026-04)
+Sora 2 was removed from the active provider pool following the ``memory/project-video-studio-ollama.md`` decision. The ``--sora2`` CLI flag on ``route_plan.py``/``save_plan.py``/``render_manifest.py`` and the ``ProviderAvailability.sora2`` field are retained as **deprecated no-ops** for backward compatibility with ``scripts/verify-*.ps1``, ``scripts/local-bridge.mjs``, and the ``app/ui/src/lib/planner.ts`` client-side planner. ``adapters.py`` no longer lists a ``sora2`` adapter, ``model_router.py`` no longer routes to ``"sora2"``, ``provider_policy.py`` video list excludes it, and ``runtime.py`` fallback chain is ``("wan", "veo3")``. ``scripts/sora2_video.py`` is deleted. Removing the UI, contracts, schema, and verify-script mentions is deferred to a coordinated React + TypeScript session.
 
 ## Verified Commands
 ```bash

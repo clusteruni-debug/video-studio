@@ -69,15 +69,10 @@ ADAPTER_CONFIG = {
         "costTier": "free",
         "costPerUnit": 0.0,
     },
-    "sora2": {
-        "label": "Sora 2 (OpenAI)",
-        "category": "video",
-        "model": "sora-2",
-        "outputKind": "video",
-        "envPrefix": "VIDEO_STUDIO_SORA2",
-        "costTier": "premium",
-        "costPerUnit": 0.10,
-    },
+    # Sora 2 retired 2026-04 — see memory/project-video-studio-ollama.md.
+    # Candidate replacement: Kling 3.0 / Runway Gen-4 Turbo (see
+    # docs/VIDEO-PROVIDER-RESEARCH.md). Entry removed to stop probing a
+    # dead provider at health-check time.
     "veo3": {
         "label": "Veo 3 (Google)",
         "category": "video",

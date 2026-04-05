@@ -28,8 +28,9 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["auto", "gemini", "sample"],
         help="Planner backend preference. auto uses Gemini first and falls back safely.",
     )
-    parser.add_argument("--sora2", action="store_true", help="Enable Sora 2 premium routing")
     parser.add_argument("--veo3", action="store_true", help="Enable Veo 3 premium routing")
+    # Deprecated no-op retained for backward compat (see route_plan.py).
+    parser.add_argument("--sora2", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
         "--project-id",
         help="Optional explicit project id to reuse an existing storage target",
@@ -252,9 +253,9 @@ def main() -> int:
     args = parser.parse_args()
 
     availability = ProviderAvailability(
-        sora2=args.sora2,
         veo3=args.veo3,
-        premium_enabled=args.sora2 or args.veo3,
+        premium_enabled=bool(args.veo3),
+        sora2=args.sora2,  # deprecated no-op
     )
     payload = save_project_bundle(
         prompt=args.prompt,

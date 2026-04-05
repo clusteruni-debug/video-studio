@@ -4,7 +4,8 @@ from dataclasses import asdict, dataclass
 from typing import Literal
 
 BudgetMode = Literal["free", "standard", "premium"]
-RouteHint = Literal["local", "sora2", "veo3"]
+# Sora 2 retired 2026-04 (see memory/project-video-studio-ollama.md).
+RouteHint = Literal["local", "veo3"]
 AspectRatio = Literal["9:16"]
 
 
@@ -112,7 +113,7 @@ def build_sample_project_plan(prompt: str, budget_mode: BudgetMode = "free") -> 
                 2,
                 False,
                 "조금 더 느리고 부드러운 아침을 시작해 보세요.",
-                "sora2" if budget_mode != "free" else "local",
+                "local",  # Sora 2 retired 2026-04; local-only until a new high-realism video provider lands.
             ),
             _make_scene(
                 "scene-02",
@@ -211,7 +212,7 @@ def build_sample_project_plan(prompt: str, budget_mode: BudgetMode = "free") -> 
                 1,
                 False,
                 "손끝에 닿기 전부터 질감이 다르게 느껴지는 제품입니다.",
-                "sora2" if budget_mode != "free" else "local",
+                "local",  # Sora 2 retired 2026-04; local-only until a new high-realism video provider lands.
             ),
             _make_scene(
                 "scene-02",

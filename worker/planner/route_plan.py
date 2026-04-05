@@ -22,8 +22,10 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["auto", "gemini", "sample"],
         help="Planner backend preference. auto uses Gemini first and falls back safely.",
     )
-    parser.add_argument("--sora2", action="store_true", help="Enable Sora 2 premium routing")
     parser.add_argument("--veo3", action="store_true", help="Enable Veo 3 premium routing")
+    # Deprecated no-op retained so existing verify scripts and the Node bridge
+    # still parse. Sora 2 was retired 2026-04; passing this flag has no effect.
+    parser.add_argument("--sora2", action="store_true", help=argparse.SUPPRESS)
     return parser
 
 
@@ -37,9 +39,9 @@ def main() -> int:
         planner_mode=args.planner_mode,
     )
     availability = ProviderAvailability(
-        sora2=args.sora2,
         veo3=args.veo3,
-        premium_enabled=args.sora2 or args.veo3,
+        premium_enabled=bool(args.veo3),
+        sora2=args.sora2,  # deprecated no-op
     )
     decisions = route_project_plan(plan, availability)
 
