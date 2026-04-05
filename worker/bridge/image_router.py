@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import http.client
 import json
 import logging
 import os
@@ -19,8 +20,12 @@ from urllib.error import URLError
 logger = logging.getLogger(__name__)
 
 # Shared exception tuple for outbound HTTP+JSON helpers.
+# Note: ``http.client.HTTPException`` covers ``IncompleteRead`` / ``BadStatusLine``
+# / ``RemoteDisconnected`` etc. which are NOT ``OSError`` subclasses and would
+# otherwise crash the Flask thread when a provider closes the connection
+# mid-body (common with Imagen / Gemini Flash on large image responses).
 _HTTP_ERRORS: tuple[type[BaseException], ...] = (
-    URLError, OSError, TimeoutError,
+    URLError, OSError, TimeoutError, http.client.HTTPException,
     json.JSONDecodeError, KeyError, ValueError, UnicodeDecodeError,
     binascii.Error,
 )

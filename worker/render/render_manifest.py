@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import os
 import re
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
@@ -264,6 +267,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    logging.basicConfig(
+        level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        stream=sys.stderr,  # keep stdout clean for JSON payload
+    )
     parser = _build_parser()
     args = parser.parse_args()
 

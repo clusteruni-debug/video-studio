@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import os
 
 from worker.media.model_router import ProviderAvailability, route_project_plan, summarize_cost
 from worker.planner.ollama_planner import build_project_plan
@@ -30,6 +32,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    import sys
+    logging.basicConfig(
+        level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        stream=sys.stderr,  # keep stdout clean for JSON payload
+    )
     parser = _build_parser()
     args = parser.parse_args()
 

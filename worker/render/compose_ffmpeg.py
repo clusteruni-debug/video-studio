@@ -205,10 +205,10 @@ def write_project_subtitles(
             output_path=str(ass_path),
         )
         return
-    except (OSError, ValueError, KeyError) as e:
-        # ASS generation can fail on font loading, malformed entries, or
-        # missing style presets — fall back to SRT so the render still ships
-        # captioned output.
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
+        # ASS generation can fail on font loading, malformed entries (missing
+        # keys, non-string ``subtitleText``), or missing style presets — fall
+        # back to SRT so the render still ships captioned output.
         logger.warning("ASS generation failed, falling back to SRT: %s", e)
 
     # SRT fallback (kept for resilience)

@@ -7,7 +7,7 @@ from worker.media.adapters import ADAPTER_CONFIG
 # Default provider preference per category (first match wins)
 DEFAULT_PREFERENCE = {
     "image": ["gemini-flash"],  # free-only: Gemini Flash (free AI gen). Pexels/Serper handled separately in bridge image_router
-    "video": ["wan", "sora2", "veo3", "runway"],
+    "video": ["wan", "veo3", "runway"],  # Sora 2 retired 2026-04; removed from adapters.py registry.
     "tts": ["edge-tts", "windows-tts", "elevenlabs", "openai-tts"],
     "bgm": ["local-bgm", "suno"],
     "sfx": ["local-sfx", "freesound"],

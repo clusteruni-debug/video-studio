@@ -3,10 +3,10 @@
 ## Status
 - Content automation tool with multi-provider media pipeline
 - React + Vite + TypeScript UI using a shell + sidebar/canvas/bottom-bar flow with debug drawer and per-scene detail panel
-- 18 provider adapters across 5 categories (image, video, tts, bgm, sfx)
+- 17 provider adapters across 5 categories (image, video, tts, bgm, sfx) — Sora 2 retired 2026-04
 - Free-first provider policy — zero-cost path works with Pexels (stock) + Edge TTS + local BGM; Imagen 4 ($0.02/img) for AI generation
 - FFmpeg composition with Ken Burns motion, xfade transitions, gradient backgrounds, BGM mixing
-- Local Python bridge with runtime tool probing, Ollama planning, scene-asset upload handling
+- Local Python bridge with runtime tool probing, Gemini/sample planning, scene-asset upload handling
 - No DB or remote storage yet
 - Windows-first desktop/web hybrid content production tool
 

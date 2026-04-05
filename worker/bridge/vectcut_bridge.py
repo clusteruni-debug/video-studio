@@ -36,23 +36,36 @@ VECTCUT_DIR = Path(os.environ.get("VECTCUT_DIR", str(Path.cwd().parent / "VectCu
 if str(VECTCUT_DIR) not in sys.path:
     sys.path.insert(0, str(VECTCUT_DIR))
 
-# Version pin check — warn if VectCutAPI was updated since last verified commit
+# Version pin — the actual check runs lazily on first _get_vectcut() call so
+# the resulting ``logger.warning`` goes through the handler configured by
+# ``server.py:main()`` / ``compose.py:main()`` rather than the root logger's
+# ``lastResort`` stderr fallback (which silently skips format and hides the
+# warning from structured log pipelines).
 _PINNED = os.environ.get("VECTCUT_PINNED_COMMIT", "")
-if _PINNED and VECTCUT_DIR.is_dir():
+_pin_checked = False
+
+
+def _verify_pin_once() -> None:
+    """Run the pin-mismatch check once, on demand, after logging is configured."""
+    global _pin_checked
+    if _pin_checked or not _PINNED or not VECTCUT_DIR.is_dir():
+        _pin_checked = True
+        return
+    _pin_checked = True
     try:
         import subprocess
-        _head = subprocess.run(
+        head = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
             cwd=VECTCUT_DIR, capture_output=True, text=True, timeout=5,
         ).stdout.strip()
-        if _head and not _head.startswith(_PINNED):
+        if head and not head.startswith(_PINNED):
             logger.warning(
                 "VectCutAPI commit %s != pinned %s. "
                 "If something breaks, run: cd %s && git checkout %s",
-                _head, _PINNED, VECTCUT_DIR, _PINNED,
+                head, _PINNED, VECTCUT_DIR, _PINNED,
             )
     except (OSError, subprocess.TimeoutExpired, subprocess.SubprocessError) as pin_err:
-        # Pin check is diagnostic-only; don't block import if git is missing or slow.
+        # Pin check is diagnostic-only; don't block if git is missing or slow.
         logger.debug("VectCutAPI pin check skipped: %s", pin_err)
 
 _MAX_IMAGE_BYTES = 5 * 1024 * 1024   # 5 MB
@@ -111,6 +124,7 @@ def _get_vectcut():
     if _vectcut is None:
         with _vectcut_lock:
             if _vectcut is None:
+                _verify_pin_once()
                 _vectcut = _import_vectcut()
     return _vectcut
 

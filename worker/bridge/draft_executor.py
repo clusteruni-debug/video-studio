@@ -1,7 +1,7 @@
 """CapCut draft executor — pure orchestrator for the create-draft pipeline.
 
 Extracted from :mod:`worker.bridge.server` to keep the Flask entry point
-under the 660-line limit. No Flask imports here; ``_execute_draft_core``
+under the 660-line limit. No Flask imports here; ``execute_draft_core``
 is a plain function the HTTP route, job queue, batch manager, and
 source auto-generators all call.
 """
