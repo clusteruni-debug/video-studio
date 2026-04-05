@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import re
 import subprocess
 import time
@@ -181,8 +182,6 @@ def execute_draft_core(data: dict) -> dict:
     Accepts a dict payload and returns a dict result.
     Used by the HTTP route, job queue, batch manager, and source auto-generators.
     """
-    import random
-
     topic = data.get("prompt", "").strip()
     if not topic:
         return {"ok": False, "error": "prompt is required"}
@@ -203,6 +202,12 @@ def execute_draft_core(data: dict) -> dict:
         target_duration=target_duration,
         custom_instruction=custom_instruction,
     )
+    if not scenes:
+        # generate_scenes_llm guarantees a non-empty list via
+        # generate_scenes_fallback, but a corrupt ``templates`` dict or a
+        # future refactor could regress that contract. Fail loud rather
+        # than silently build an empty CapCut draft with no scenes.
+        return {"ok": False, "error": "scene generation produced no scenes"}
     wrap_narration(scenes)
     steps_log.append(f"script: {len(scenes)} scenes ({script_source}, {template_type}, topic={topic[:30]})")
 

@@ -8,6 +8,7 @@ kept to avoid touching the four call sites in ``route_plan.py``,
 """
 from __future__ import annotations
 
+import http.client
 import json
 import logging
 import os
@@ -27,8 +28,10 @@ DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 # Shared exception tuple for outbound HTTP helpers.
+# ``http.client.HTTPException`` covers ``IncompleteRead`` / ``BadStatusLine`` /
+# ``RemoteDisconnected`` (not ``OSError`` subclasses).
 _HTTP_ERRORS: tuple[type[BaseException], ...] = (
-    URLError, OSError, TimeoutError,
+    URLError, OSError, TimeoutError, http.client.HTTPException,
     json.JSONDecodeError, KeyError, IndexError, ValueError, UnicodeDecodeError,
 )
 

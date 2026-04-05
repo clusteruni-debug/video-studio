@@ -6,6 +6,7 @@ following the same preference chain as the scene-script generator.
 
 from __future__ import annotations
 
+import http.client
 import json
 import logging
 import os
@@ -14,9 +15,12 @@ from urllib.error import URLError
 
 logger = logging.getLogger(__name__)
 
+# ``http.client.HTTPException`` covers ``IncompleteRead`` / ``BadStatusLine`` /
+# ``RemoteDisconnected`` (not ``OSError`` subclasses). ``UnicodeDecodeError``
+# covers truncated-mid-codepoint responses from bounded ``resp.read(N)`` calls.
 _HTTP_ERRORS: tuple[type[BaseException], ...] = (
-    URLError, OSError, TimeoutError,
-    json.JSONDecodeError, KeyError, IndexError, ValueError,
+    URLError, OSError, TimeoutError, http.client.HTTPException,
+    json.JSONDecodeError, KeyError, IndexError, ValueError, UnicodeDecodeError,
 )
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")

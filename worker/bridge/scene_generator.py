@@ -5,6 +5,7 @@ Extracted from server.py to keep the main bridge file under the 660-line limit.
 
 from __future__ import annotations
 
+import http.client
 import json
 import logging
 import os
@@ -17,8 +18,11 @@ from worker.bridge.templates import TEMPLATE_TYPES, build_template_prompt, _HOOK
 logger = logging.getLogger(__name__)
 
 # Shared exception tuple for outbound LLM HTTP calls (Groq, Gemini, etc.).
+# ``http.client.HTTPException`` covers ``IncompleteRead`` / ``BadStatusLine`` /
+# ``RemoteDisconnected`` etc. which are NOT ``OSError`` subclasses and would
+# otherwise crash the Flask thread on mid-body connection close.
 _LLM_HTTP_ERRORS: tuple[type[BaseException], ...] = (
-    URLError, OSError, TimeoutError,
+    URLError, OSError, TimeoutError, http.client.HTTPException,
     json.JSONDecodeError, KeyError, IndexError, ValueError, UnicodeDecodeError,
 )
 

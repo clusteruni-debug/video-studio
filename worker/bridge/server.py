@@ -165,7 +165,13 @@ def align_tts_route():
     try:
         words = align_tts(str(resolved), language=language)
     except ImportError:
-        # faster-whisper not installed — use proportional fallback
+        # faster-whisper not installed — use proportional fallback.
+        # Note: this branch is only reachable on the FIRST call to align_tts
+        # in the process lifetime. After that, faster-whisper is cached in
+        # ``sys.modules`` and a subsequent ImportError cannot fire. Keep the
+        # branch for the initial-boot window; the broader ``except Exception``
+        # below handles post-import runtime failures (CUDA DLL missing, model
+        # download errors, etc.).
         if fallback_text and fallback_duration > 0:
             words = align_tts_fallback(fallback_text, fallback_duration)
         else:
