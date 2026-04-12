@@ -502,7 +502,8 @@ button { cursor: pointer; }
 }
 
 .scene-card-visual.selected {
-    border-color: var(--accent);
+    border-color: rgba(124, 108, 240, 0.4);
+    background: linear-gradient(180deg, rgba(124, 108, 240, 0.06), var(--bg-elevated));
 }
 
 /* Thumbnail area */
@@ -590,7 +591,8 @@ button { cursor: pointer; }
 }
 
 .scene-row.selected {
-    border-color: var(--accent);
+    border-color: rgba(124, 108, 240, 0.4);
+    background: linear-gradient(180deg, rgba(124, 108, 240, 0.06), var(--bg-elevated));
 }
 
 .scene-row-num {
@@ -626,6 +628,57 @@ button { cursor: pointer; }
 .scene-emotion-funny { background: var(--warning-dim); color: var(--warning); }
 .scene-emotion-serious { background: var(--accent-dim); color: var(--accent); }
 .scene-emotion-sad { background: var(--accent-dim); color: var(--accent); }
+
+/* Scene status pills */
+.scene-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 999px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.scene-status-pill.ready { color: var(--success); background: var(--success-dim); }
+.scene-status-pill.generating { color: var(--warning); background: var(--warning-dim); }
+.scene-status-pill.error { color: var(--error); background: var(--error-dim); }
+
+.scene-status-pill .status-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.scene-status-pill.generating .status-dot {
+    animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+/* Scene number large watermark (for grid cards) */
+.scene-card-idx {
+    font-size: 18px;
+    font-weight: 800;
+    color: rgba(255, 255, 255, 0.15);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.03em;
+}
+
+.scene-card-duration-chip {
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    font-size: 9px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.8);
+    background: rgba(0, 0, 0, 0.6);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+}
 
 .scene-row-content {
     flex: 1;
