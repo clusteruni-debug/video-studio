@@ -62,7 +62,7 @@ sfx:   local-sfx → freesound
 The compose pipeline (`worker/render/compose.py`) currently uses a hardcoded
 fallback chain for TTS (Edge TTS → Windows Speech → sine tone) rather than
 dynamic dispatch via provider selection. Per-scene provider selection UI is
-planned but not yet implemented (see `docs/CODEX-TASKS.md` CX-5).
+planned but not yet implemented (see `docs/archive/CODEX-TASKS.md` CX-5).
 
 ## Video Route Selection (Legacy)
 

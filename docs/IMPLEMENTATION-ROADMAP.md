@@ -16,13 +16,12 @@ Milestone gate:
 - planner can emit a valid `ProjectPlan` for three sample prompts
 
 Current status:
-- completed as an Ollama-first draft flow with safe sample fallback
+- completed — Gemini 2.5 Flash is the primary planner with safe sample fallback (Ollama local LLM retired 2026-04)
 - project drafts currently persist in browser localStorage
 - local worker bridge now exists as both CLI handoff via `worker.planner.save_plan` and HTTP bridge via `worker.bridge.server`
 - the UI can now call the bridge for route planning and project saves
-- planner metadata now surfaces whether the machine used Ollama or the sample fallback
-- `qwen2.5:7b` has now been pulled and verified as the normal planner path on the current machine
-- next upgrade is keeping this planner path and replacing the remaining media-generation placeholders with real model-backed adapters
+- planner metadata now surfaces whether the machine used Gemini or the sample fallback
+- next upgrade is replacing the remaining media-generation placeholders with real model-backed adapters
 
 ## Phase 2 — Local Free Path
 - add local FLUX image generation adapter
@@ -60,7 +59,7 @@ Current status:
 - real FLUX/Wan/Whisper-generated media still depends on the operator wiring actual adapter commands and model runtimes behind the new skeleton (TTS is now handled by Edge TTS)
 
 ## Phase 4 — Paid Premium Routing
-- add per-scene Sora 2 adapter
+- add per-scene Kling 3.0 / Veo 3 adapter (Sora 2 retired 2026-04; see `docs/VIDEO-PROVIDER-RESEARCH.md`)
 - add budget and spend-cap controls
 - show premium route approval before execution
 - keep local fallback when the provider is disabled or rate-limited
@@ -68,9 +67,9 @@ Current status:
 Milestone gate:
 - one project renders with one premium scene and local fallback support
 
-## Phase 5 — Optional Veo 3
-- add Veo 3 only if Sora 2 does not cover the premium audio-first requirement
-- keep Veo 3 behind a separate provider toggle and budget limit
+## Phase 5 — Optional Secondary Premium
+- add secondary premium provider if Kling 3.0 does not cover all use cases
+- keep behind a separate provider toggle and budget limit
 
 Milestone gate:
-- route selection works across local, Sora 2, and Veo 3 without manual file edits
+- route selection works across local, Kling 3.0, and fallback without manual file edits

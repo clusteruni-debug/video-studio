@@ -24,7 +24,7 @@ Scene Script JSON  <-- this doc defines the schema
   |       Pexels   <- neutral, serious, sad
   |       Tenor    <- funny, shock, anger (GIF/MP4)
   |       DALL-E   <- origin_story (style-unified AI art)
-  |       Pollinations FLUX <- fallback / free AI generation
+  |       Imagen 4 <- fallback / AI generation (Pollinations retired 2026-03)
   |
   v
 VectCutAPI (pyJianYingDraft)
@@ -60,7 +60,7 @@ Gemini (or Claude) generates this JSON. The bridge server (`server.py`) consumes
       "narration": "TTS reads this. Natural spoken sentence.",
       "display_text": "Screen subtitle.\nShort, bold, max 4 lines.",
       "image_prompt": "search query for Pexels/Tenor/DALL-E",
-      "image_source": "pexels | tenor | dalle | pollinations",
+      "image_source": "pexels | tenor | dalle | imagen",
       "emotion": "neutral | funny | serious | shock | sad | anger",
       "fallback_prompt": "alternate search query if primary fails",
       "transition": "Dissolve | Fade_In | none",
@@ -142,7 +142,7 @@ When `image_source` is specified:
 | `pexels` | Pexels v1 | `PEXELS_API_KEY` | JPG | Stock photos, backgrounds, locations |
 | `tenor` | Klipy (Tenor v2-compatible) | `KLIPY_API_KEY` | GIF/MP4 | Memes, reactions, humor |
 | `dalle` | DALL-E 3 | `OPENAI_API_KEY` | PNG | Style-unified AI art (origin_story) |
-| `pollinations` | Pollinations FLUX | None | PNG | Free AI generation fallback |
+| `imagen` | Imagen 4 | `GEMINI_API_KEY` | PNG | AI generation fallback (Pollinations retired 2026-03) |
 
 ### Klipy Integration Notes
 
@@ -498,11 +498,11 @@ else:
 **DALL-E** (AI art):
 1. Append style suffix to `image_prompt`
 2. Generate at 1024x1024
-3. On API failure, fall back to Pollinations FLUX with same prompt
+3. On API failure, fall back to Imagen 4 with same prompt
 
-**Pollinations FLUX** (free AI fallback):
-1. Generate from `image_prompt`
-2. Rate-limited (~90s between requests, see `pollinations-rate-limit.json`)
+**Imagen 4** (AI generation fallback):
+1. Generate from `image_prompt` (Pollinations retired 2026-03)
+2. Requires `GEMINI_API_KEY` for authentication
 3. Last resort before text-only card
 
 ### Quality Filters
