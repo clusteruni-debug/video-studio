@@ -1,6 +1,8 @@
-/* ─── Design tokens ─── */
+/* ─── Primitive (raw hex — mode-agnostic) ─── */
 :root {
     color-scheme: dark;
+
+    /* ─── Semantic (purpose aliases — single dark palette) ─── */
     --bg-base: #0c0c0e;
     --bg-elevated: #141416;
     --bg-surface: #1a1a1e;
@@ -13,16 +15,21 @@
     --border-subtle: #1e1e24;
     --accent: #7c6cf0;
     --accent-dim: rgba(124, 108, 240, 0.12);
+    --accent-hover: #6b5ce0;
     --success: #34c77b;
     --success-dim: rgba(52, 199, 123, 0.12);
     --warning: #e8a33c;
     --warning-dim: rgba(232, 163, 60, 0.12);
     --error: #e85454;
     --error-dim: rgba(232, 84, 84, 0.12);
+    --color-white: #ffffff;
     --radius-sm: 8px;
     --radius-md: 12px;
     --radius-lg: 16px;
+
+    /* ─── Component (component-specific) ─── */
     --sidebar-width: 320px;
+    --top-bar-height: 44px;
 }
 
 * { box-sizing: border-box; }
@@ -203,14 +210,14 @@ button { cursor: pointer; }
     border: none;
     border-radius: var(--radius-md);
     padding: 10px 16px;
-    color: #fff;
+    color: var(--color-white);
     background: var(--accent);
     font-weight: 600;
     font-size: 0.88rem;
 }
 
 .generate-button:hover:not(:disabled) {
-    background: #6b5ce0;
+    background: var(--accent-hover);
 }
 
 .generate-button:disabled {
@@ -509,7 +516,7 @@ button { cursor: pointer; }
     padding: 2px 8px;
     border-radius: 999px;
     background: rgba(0, 0, 0, 0.6);
-    color: #fff;
+    color: var(--color-white);
     font-size: 0.68rem;
     font-weight: 600;
     backdrop-filter: blur(4px);
@@ -896,11 +903,11 @@ button { cursor: pointer; }
 .bottom-bar-btn.accent {
     border: none;
     background: var(--accent);
-    color: #fff;
+    color: var(--color-white);
 }
 
 .bottom-bar-btn.accent:hover:not(:disabled) {
-    background: #6b5ce0;
+    background: var(--accent-hover);
 }
 
 .bottom-bar-btn:disabled {
@@ -1251,7 +1258,7 @@ textarea {
 
 .mode-toggle-btn.active {
     background: var(--accent);
-    color: #fff;
+    color: var(--color-white);
 }
 
 /* ─── Batch mode toggle (smaller pill) ─── */
@@ -1376,7 +1383,7 @@ textarea {
     border: none;
     border-radius: var(--radius-sm);
     background: rgba(0, 0, 0, 0.6);
-    color: #fff;
+    color: var(--color-white);
     font-size: 0.85rem;
     opacity: 0;
     backdrop-filter: blur(4px);
