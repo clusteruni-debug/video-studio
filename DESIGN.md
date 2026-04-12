@@ -12,33 +12,9 @@ The defining choice is **professional studio density with purple accent discipli
 
 ## 1. Color Palette (3-layer token architecture)
 
-Three layers in `app/ui/src/styles.css`: **primitive** (raw hex) → **semantic** (purpose aliases, already well-structured) → **component** (component-specific). Dark-only, `color-scheme: dark` on `:root`. The project already has 25 well-organized tokens — this refactor adds layer markers and a few missing tokens.
+This project uses a **flat semantic layer** — tokens are semantic by name but defined directly with hex values (no separate primitive indirection). This is intentional: the project already had well-structured token names (`--bg-base`, `--text-primary`, `--accent`, etc.) before the rollout. Adding a primitive layer would be over-engineering for 25 tokens with no light/dark switching. The 3-layer comment markers in `styles.css` formalize the existing grouping without restructuring.
 
-### Primitive (raw hex — mode-agnostic)
-
-| Token | Value | Notes |
-|---|---|---|
-| `--color-neutral-950` | `#0c0c0e` | Deepest surface (body) |
-| `--color-neutral-900` | `#141416` | Elevated panels (sidebar, top bar) |
-| `--color-neutral-850` | `#1a1a1e` | Card surface |
-| `--color-neutral-800` | `#222228` | Hover surface |
-| `--color-neutral-750` | `#2a2a30` | Active surface / border |
-| `--color-neutral-700` | `#1e1e24` | Subtle border |
-| `--color-white` | `#ffffff` | Pure white (button text) |
-| `--color-text-light` | `#e8e8ec` | Primary text (off-white) |
-| `--color-text-mid` | `#8a8a96` | Secondary text |
-| `--color-text-dim` | `#5c5c68` | Tertiary text |
-| `--color-purple-500` | `#7c6cf0` | Brand accent |
-| `--color-purple-600` | `#6b5ce0` | Accent hover (darker) |
-| `--color-purple-500-dim` | `rgba(124, 108, 240, 0.12)` | Accent tint |
-| `--color-green-500` | `#34c77b` | Success / ready |
-| `--color-green-500-dim` | `rgba(52, 199, 123, 0.12)` | Success tint |
-| `--color-amber-500` | `#e8a33c` | Warning / generating |
-| `--color-amber-500-dim` | `rgba(232, 163, 60, 0.12)` | Warning tint |
-| `--color-red-500` | `#e85454` | Error / delete |
-| `--color-red-500-dim` | `rgba(232, 84, 84, 0.12)` | Error tint |
-
-### Semantic (purpose aliases — single dark palette)
+### Semantic (purpose aliases — single dark palette, defined directly as hex)
 
 | Token | Points to | Meaning |
 |---|---|---|
@@ -71,8 +47,9 @@ Three layers in `app/ui/src/styles.css`: **primitive** (raw hex) → **semantic*
 | Token | Value | Used by |
 |---|---|---|
 | `--top-bar-height` | `44px` | Top bar fixed height |
-| `--scene-thumb-width` | `88px` | Scene card thumbnail width |
-| `--scene-idx-opacity` | `0.15` | Scene number watermark opacity |
+| `--sidebar-width` | `320px` | Sidebar panel width |
+
+Note: scene thumbnail width (88px) and scene index opacity (0.15) are defined as CSS class values in `.scene-card-idx` and `.scene-card-thumb`, not as `:root` custom properties.
 
 ### Legacy aliases
 
