@@ -18,6 +18,7 @@ export default function TopBar() {
   return (
     <header className="top-bar">
       <div className="top-bar-brand">
+        <span className="top-bar-logo">VS</span>
         <span className="top-bar-title">Video Studio</span>
         <span
           className={`bridge-dot bridge-dot-${bridgeStatus}`}
