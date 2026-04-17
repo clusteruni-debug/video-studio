@@ -1,5 +1,7 @@
 # Video Studio — Rendering Improvement Task Board
 
+**Status**: ✅ COMPLETED — inline Status Tracker (bottom of doc) marks all 3 tasks DONE. Shipped in commit `2d43412 feat: ASS subtitle engine + karaoke alignment + BGM sidechain ducking`. Verified artifacts: `worker/render/align.py`, `worker/render/bgm.py`, `worker/bridge/server.py` `/api/align-tts` route, `bgmEnabled` in UI.
+
 > Claude Code handoff document. Each task follows the 4-field structure: Background / Goal / Constraints / Deliverables.
 > **Before execution, always read `docs/RENDERING-SPEC.md`.**
 
