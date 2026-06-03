@@ -107,7 +107,7 @@ def generate_google_tts(text: str, lang: str, gender: str, output_path: Path) ->
         raise RuntimeError("GOOGLE_TTS_API_KEY not set")
 
     voice_cfg = VOICES["google"][_voice_key(lang, gender)]
-    url = f"https://texttospeech.googleapis.com/v1/text:synthesize?key={api_key}"
+    url = "https://texttospeech.googleapis.com/v1/text:synthesize"
 
     payload = json.dumps({
         "input": {"text": text},
@@ -120,6 +120,7 @@ def generate_google_tts(text: str, lang: str, gender: str, output_path: Path) ->
 
     req = request.Request(url, data=payload, headers={
         "Content-Type": "application/json",
+        "x-goog-api-key": api_key,
     })
 
     with request.urlopen(req, timeout=30) as resp:

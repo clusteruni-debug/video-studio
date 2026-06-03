@@ -238,7 +238,7 @@ def build_gemini_project_plan(
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is not set")
 
-    url = GEMINI_API_URL.format(model=model) + f"?key={api_key}"
+    url = GEMINI_API_URL.format(model=model)
     system_prompt = _build_prompt(prompt, budget_mode)
     payload = json.dumps({
         "contents": [{"parts": [{"text": system_prompt}]}],
@@ -248,7 +248,11 @@ def build_gemini_project_plan(
         },
     }, ensure_ascii=False).encode("utf-8")
 
-    req = request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+    req = request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+    )
     with request.urlopen(req, timeout=timeout) as response:
         body = json.loads(response.read(1_048_576).decode("utf-8"))
 

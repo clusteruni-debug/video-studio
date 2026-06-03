@@ -2,7 +2,7 @@
 plan_id: PLAN-CODE-REVIEW-FOLLOWUP-20260603
 project: video-studio
 status: IN_PROGRESS
-status_reason: Original MED findings resolved 2026-06-04 (10 fixed CC-direct + Codex review; B2/B3/B4 push-back, D3 deferred); systemic API-key-in-URL leak at 5 more Google sites pending scope decision (see body)
+status_reason: Original 10 MED findings + systemic key-in-URL (5 Google sites) resolved 2026-06-04 (CC-direct + Codex review); B2/B3/B4 push-back, D3 useCallback deferred
 created: 2026-06-03
 source: 6 parallel code-reviewer agents over 64 uncommitted files (worker backend + UI + grok system)
 ---
@@ -56,8 +56,13 @@ C2 fixed `scene_generator` only, but the same `?key=<api_key>` leak (keys → lo
 - `worker/tts/providers.py:110` (Google TTS `:synthesize`)
 - (`worker/bridge/image_router.py:368` — Klipy `&key=`, same class, non-Google)
 
-All Google APIs accept the `x-goog-api-key` header → mechanical fix. Out of this plan's
-original scope; awaiting decision before expanding (MO-0 scope guard).
+All Google APIs accept the `x-goog-api-key` header → mechanical fix.
+
+**RESOLVED 2026-06-04** (user-approved scope expansion): all 5 Google sites moved their key
+to the `x-goog-api-key` header. Klipy (`image_router.py:368`) left as-is (non-Google API,
+header support unverified). Verified: `compileall worker` exit 0; image_router / ollama_planner
+/ translate / tts.providers import OK; grep confirms 0 Google key-in-URL sites remain;
+pytest zero_paid + provider_policy + ssrf green.
 
 ## MED findings — historical list (SUPERSEDED by Resolution 2026-06-04 above)
 

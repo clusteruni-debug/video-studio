@@ -102,12 +102,16 @@ def generate_imagen(prompt: str, output_dir: str | None = None, aspect_ratio: st
         return None
     model = "imagen-4.0-fast-generate-001"
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:predict?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:predict"
         payload = json.dumps({
             "instances": [{"prompt": prompt}],
             "parameters": {"sampleCount": 1, "aspectRatio": aspect_ratio},
         }).encode("utf-8")
-        req = urllib_request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        req = urllib_request.Request(
+            url,
+            data=payload,
+            headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+        )
         with urllib_request.urlopen(req, timeout=60) as resp:
             body = json.loads(resp.read(16_777_216).decode("utf-8"))
         b64_data = body["predictions"][0]["bytesBase64Encoded"]
@@ -144,12 +148,16 @@ def generate_gemini_flash(prompt: str, output_dir: str | None = None) -> str | N
         return None
     model = "gemini-2.5-flash-image"
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         payload = json.dumps({
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"responseModalities": ["image", "text"]},
         }).encode("utf-8")
-        req = urllib_request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        req = urllib_request.Request(
+            url,
+            data=payload,
+            headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+        )
         with urllib_request.urlopen(req, timeout=60) as resp:
             body = json.loads(resp.read(16_777_216).decode("utf-8"))
         # Extract inline image data from response parts

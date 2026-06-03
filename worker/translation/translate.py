@@ -167,7 +167,6 @@ def _call_gemini(prompt: str) -> str | None:
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
         f"{os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash')}:generateContent"
-        f"?key={GEMINI_API_KEY}"
     )
     payload = json.dumps({
         "contents": [{"parts": [{"text": prompt}]}],
@@ -176,7 +175,7 @@ def _call_gemini(prompt: str) -> str | None:
     req = urllib_request.Request(
         url,
         data=payload,
-        headers={"Content-Type": "application/json", "User-Agent": "VideoStudio/1.0"},
+        headers={"Content-Type": "application/json", "User-Agent": "VideoStudio/1.0", "x-goog-api-key": GEMINI_API_KEY},
     )
     try:
         with urllib_request.urlopen(req, timeout=30) as resp:
