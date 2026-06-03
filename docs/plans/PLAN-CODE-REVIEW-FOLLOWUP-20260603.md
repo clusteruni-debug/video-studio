@@ -1,7 +1,7 @@
 ---
 plan_id: PLAN-CODE-REVIEW-FOLLOWUP-20260603
 project: video-studio
-status: open
+status: PROPOSED
 status_reason: 6-agent parallel code review of previously-uncommitted Codex work surfaced MED findings; code committed as-is (operational), fixes deferred here
 created: 2026-06-03
 source: 6 parallel code-reviewer agents over 64 uncommitted files (worker backend + UI + grok system)
