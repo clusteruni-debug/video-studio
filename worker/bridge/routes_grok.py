@@ -9143,7 +9143,7 @@ def _download_file_from_request(value: object, download_dir: Path) -> tuple[Path
     if resolved.suffix.lower() != ".mp4":
         return None, "downloadFilePath must point to an .mp4 file"
     try:
-        resolved.relative_to(download_dir)
+        resolved.relative_to(download_dir.resolve())
     except ValueError:
         return None, "downloadFilePath must stay inside downloadDir"
     return resolved, None

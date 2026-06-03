@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +14,8 @@ from worker.media.adapters import (
     run_local_media_adapter,
 )
 from worker.media.provider_policy import allowed_preference, is_paid_provider, paid_providers_allowed
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -132,7 +135,14 @@ def _visual_adapter_key(
         cfg = ADAPTER_CONFIG.get(override)
         if cfg and cfg["category"] in ("image", "video"):
             if is_paid_provider(override) and not paid_providers_allowed():
-                return "gemini-flash" if cfg["category"] == "image" else "wan"
+                fallback = "gemini-flash" if cfg["category"] == "image" else "wan"
+                logger.warning(
+                    "Paid provider override %r ignored by zero-paid policy; using %r instead. "
+                    "Set VIDEO_STUDIO_ALLOW_PAID_PROVIDERS=1 to allow paid providers.",
+                    override,
+                    fallback,
+                )
+                return fallback
             return override
 
     category = "image" if scene.get("visualKind") == "image" else "video"

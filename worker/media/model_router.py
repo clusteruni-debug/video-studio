@@ -3,13 +3,17 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Literal
 
+from worker.media.adapters import ADAPTER_CONFIG
 from worker.media.provider_policy import paid_providers_allowed
 from worker.planner.sample_plan import ProjectPlan, SceneSpec
 
 # Sora 2 retired 2026-04 (see memory/project-video-studio-ollama.md).
 Route = Literal["local", "veo3"]
 
-VEO3_FAST_RATE_PER_SEC = 0.15
+# Single source of truth for the premium VEO3 rate lives in adapters.py
+# (ADAPTER_CONFIG["veo3"]["costPerUnit"]). Deriving it here keeps the cost
+# estimate from silently drifting away from the adapter registry.
+VEO3_FAST_RATE_PER_SEC = float(ADAPTER_CONFIG["veo3"]["costPerUnit"])
 
 
 @dataclass(slots=True)

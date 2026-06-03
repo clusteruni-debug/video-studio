@@ -236,7 +236,7 @@ def _call_gemini(prompt: str, use_search: bool = False) -> str | None:
     if not _get_key("GEMINI_API_KEY"):
         return None
     model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={_get_key("GEMINI_API_KEY")}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     gen_config: dict = {"temperature": 0.7, "maxOutputTokens": 4096}
     # google_search tool is incompatible with responseMimeType: "application/json"
     if not use_search:
@@ -248,7 +248,16 @@ def _call_gemini(prompt: str, use_search: bool = False) -> str | None:
     if use_search:
         body["tools"] = [{"google_search": {}}]
     payload = json.dumps(body).encode("utf-8")
-    req = urllib_request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+    # API key goes in the x-goog-api-key header, not the URL query string, so it
+    # does not leak into request logs / proxies / referrers.
+    req = urllib_request.Request(
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": _get_key("GEMINI_API_KEY"),
+        },
+    )
     try:
         with urllib_request.urlopen(req, timeout=60) as resp:
             data = json.loads(resp.read(_MAX_LLM_RESPONSE_BYTES))

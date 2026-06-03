@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 from urllib import request as urllib_request
 from urllib.error import URLError
+from urllib.parse import urlparse
 
 from worker.media.provider_policy import paid_providers_allowed
 
@@ -329,8 +330,18 @@ def _select_best_video_file(video_files: list[dict]) -> dict | None:
     return None
 
 
+_PEXELS_VIDEO_HOSTS = frozenset({"videos.pexels.com", "player.vimeo.com"})
+
+
 def download_pexels_video(video_url: str, output_path: str, timeout: int = 60) -> bool:
     """Download a Pexels video file to a local path. Returns True on success."""
+    parsed = urlparse(video_url)
+    # SSRF guard: video_url comes from a Pexels API response. Pexels serves video
+    # files from its own CDN and from Vimeo's player CDN (per the Pexels API docs);
+    # allow only those over https, never an arbitrary or internal host.
+    if parsed.scheme != "https" or parsed.hostname not in _PEXELS_VIDEO_HOSTS:
+        logger.warning("pexels-video download rejected non-allowlisted host: %r", parsed.hostname)
+        return False
     try:
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)

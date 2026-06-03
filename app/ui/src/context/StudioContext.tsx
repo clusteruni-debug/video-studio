@@ -826,10 +826,12 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
 
   // Bridge health on mount
   useEffect(() => {
-    checkHealth().then((h) => {
-      if (h) dispatch({ type: "BRIDGE_READY", health: h });
-      else dispatch({ type: "BRIDGE_OFFLINE" });
-    });
+    checkHealth()
+      .then((h) => {
+        if (h) dispatch({ type: "BRIDGE_READY", health: h });
+        else dispatch({ type: "BRIDGE_OFFLINE" });
+      })
+      .catch(() => dispatch({ type: "BRIDGE_OFFLINE" }));
   }, []);
 
   // Usage stats polling — every 30s when bridge is connected
@@ -857,10 +859,12 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       const s = await getBatchStatus(batchId);
       if (s.ok) {
         dispatch({ type: "BATCH_UPDATE", status: s });
-        // Use progress/total (backend) with completed/failed as fallback
+        // Use progress/total (backend) with completed/failed as fallback.
+        // Only terminate when the server reported a real variant/total count —
+        // the synthetic fallback must not stop polling before the count arrives.
         const done = (s.completed ?? s.progress ?? 0) + (s.failed ?? 0);
-        const total = s.variants ?? s.total ?? 1;
-        if (done >= total) {
+        const total = s.variants ?? s.total ?? 0;
+        if (total > 0 && done >= total) {
           dispatch({ type: "SET_FIELD", field: "activeBatchId", value: null });
         }
       }

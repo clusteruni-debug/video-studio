@@ -5,6 +5,12 @@ const KEEPALIVE_ALARM_NAME = "videoStudioGrokCompanionKeepalive";
 const KEEPALIVE_PERIOD_MINUTES = 1;
 const handledAutostartKeys = new Set();
 
+// SSRF guard: command payloads may only be fetched from the local bridge origin.
+// Must match the extension manifest host_permissions (127.0.0.1:5161 only).
+const BRIDGE_ALLOWED_ORIGINS = new Set([
+  "http://127.0.0.1:5161",
+]);
+
 async function getStoredCommand() {
   const data = await chrome.storage.local.get(STORAGE_KEY);
   return data[STORAGE_KEY] || null;
@@ -37,7 +43,16 @@ function extensionVersion() {
 
 async function loadCommandFromUrl(url) {
   if (!url) return null;
-  const response = await fetch(url);
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch (error) {
+    throw new Error(`refusing to load command from invalid URL: ${url}`);
+  }
+  if (!BRIDGE_ALLOWED_ORIGINS.has(parsed.origin)) {
+    throw new Error(`refusing to load command from non-bridge origin: ${parsed.origin}`);
+  }
+  const response = await fetch(parsed.href);
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) {
     throw new Error(data.error || `command load failed: HTTP ${response.status}`);
@@ -439,7 +454,13 @@ async function runAutostartFromTabUrl(tabId, url) {
   handledAutostartKeys.add(key);
   let command = null;
   try {
-    if (!request.operatorApproved || !request.commandUrl.includes("operatorApproved=true")) {
+    let approvedInUrl = false;
+    try {
+      approvedInUrl = new URL(request.commandUrl).searchParams.get("operatorApproved") === "true";
+    } catch (error) {
+      approvedInUrl = false;
+    }
+    if (!request.operatorApproved || !approvedInUrl) {
       throw new Error("operatorApproved=true is required in the Grok autostart URL.");
     }
     await postDirectAutostartEvent(request, {
@@ -529,6 +550,10 @@ async function prepGenerateNextScene(nextCommand, previousCommand) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     if (message?.type === "store-command") {
+      if (sender?.id !== chrome.runtime.id) {
+        sendResponse({ ok: false, error: "store-command sender not allowed" });
+        return;
+      }
       await setStoredCommand(message.command);
       await setStoredCommandUrl(message.commandUrl || message.command?.commandUrl || "");
       await postHeartbeat(message.command, "Command stored in companion.");

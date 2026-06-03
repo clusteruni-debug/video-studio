@@ -1,8 +1,8 @@
 ---
 plan_id: PLAN-CODE-REVIEW-FOLLOWUP-20260603
 project: video-studio
-status: PROPOSED
-status_reason: 6-agent parallel code review of previously-uncommitted Codex work surfaced MED findings; code committed as-is (operational), fixes deferred here
+status: IN_PROGRESS
+status_reason: Original MED findings resolved 2026-06-04 (10 fixed CC-direct + Codex review; B2/B3/B4 push-back, D3 deferred); systemic API-key-in-URL leak at 5 more Google sites pending scope decision (see body)
 created: 2026-06-03
 source: 6 parallel code-reviewer agents over 64 uncommitted files (worker backend + UI + grok system)
 ---
@@ -25,7 +25,41 @@ findings below are real and worth fixing, but none were immediate-blockers.
 - Verified: `compileall` (3 files) + `pytest tests/test_zero_paid.py` = **7 passed**.
 - [UNCERTAIN] ffmpeg single-quote escape exact form unverified against a real `'`-containing NTFS filename (rare edge); escape direction is safe.
 
-## MED findings — REMAINING (fix candidates — Codex dispatch)
+## Resolution 2026-06-04 (CC direct — Codex write-dispatch blocked again)
+Codex dispatch (`task-mpy8ben3`) again hit the read-only sandbox (`apply_patch` rejected
+by approval settings) — 2nd same-direction failure, so CC implemented directly per Rule #1
+exception. A Codex read-only review (`task-mpy9dpvh`) supplied the Rule #14 cross-model pass.
+
+**Fixed (10):**
+- A1 `model_router.py` — VEO3 rate derived from `ADAPTER_CONFIG["veo3"]["costPerUnit"]` (no more hardcoded 0.15)
+- A2 `runtime.py` — module logger + warning when a paid override is downgraded by zero-paid policy
+- B1 `routes_grok.py` — `_download_file_from_request` resolves `download_dir` on both sides of `relative_to`
+- C1 `image_router.py` — `download_pexels_video` SSRF allowlist (https + `{videos.pexels.com, player.vimeo.com}`); regression test `tests/test_image_router_ssrf.py` (Red-Green-Revert verified)
+- C2 `scene_generator.py` — Gemini key moved from `?key=` URL to `x-goog-api-key` header
+- D1/D2 `StudioContext.tsx` — `checkHealth()` `.catch()` + batch polling no longer terminates on the synthetic `total` fallback
+- E1/E2/E3 `background.js` — bridge-origin allowlist on `loadCommandFromUrl`, `store-command` gated to `sender.id === chrome.runtime.id`, `operatorApproved` via `URL.searchParams`
+
+**Won't fix (push-back, confirmed by Codex review):**
+- B2 `routes_media.py` `import_local_video_folder_route` / B3 `free_audio_import_route` — these intentionally COPY operator-approved files from an EXTERNAL operator-chosen folder into project storage (copy-in only, no content read-back, 127.0.0.1, `operatorApproved`-gated). Project-root containment would break the feature; no file-read exploit in that path.
+- B4 `compose.py` `_resolve_operator_bgm_selection` — already resolves both `candidate` and `project_root`; on Python 3.12/Windows `Path.resolve()` resolves junctions, so the realpath-vs-resolve premise does not hold.
+
+**Deferred:**
+- D3 `RenderReviewPanel.tsx` `useCallback` — non-security, stale-closure risk; defer to a dedicated UI pass.
+
+**Verification:** `compileall worker` exit 0; model_router/runtime/image_router/scene_generator/routes_grok import OK (no cycle, VEO3=0.15 derived); pytest test_zero_paid + test_bridge_server + test_grok_handoff + test_provider_policy + test_grok_video_cli + new SSRF test = **164 passed**; `npm run build` (tsc --noEmit && vite build) exit 0; `node --check background.js` OK.
+
+## NEW finding 2026-06-04 — systemic API-key-in-URL leak (beyond original scope)
+C2 fixed `scene_generator` only, but the same `?key=<api_key>` leak (keys → logs/proxies/referrers) exists at 5 more Google API sites:
+- `worker/bridge/image_router.py:105` (Imagen `:predict`), `:147` (Gemini Flash image)
+- `worker/planner/ollama_planner.py:241` (Gemini planner)
+- `worker/translation/translate.py:170` (Gemini translate)
+- `worker/tts/providers.py:110` (Google TTS `:synthesize`)
+- (`worker/bridge/image_router.py:368` — Klipy `&key=`, same class, non-Google)
+
+All Google APIs accept the `x-goog-api-key` header → mechanical fix. Out of this plan's
+original scope; awaiting decision before expanding (MO-0 scope guard).
+
+## MED findings — historical list (SUPERSEDED by Resolution 2026-06-04 above)
 
 ### Policy / cost
 - **`worker/media/model_router.py:34`** — paid-gate guard `if not paid_providers_allowed() and availability.premium_enabled` is fragile. Currently safe via a second `not premium_enabled` check at line 37, but the conjunction should be dropped: `if not paid_providers_allowed(): return local` unconditionally. Zero-paid policy is core.
