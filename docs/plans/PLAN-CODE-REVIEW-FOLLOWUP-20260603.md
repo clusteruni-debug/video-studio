@@ -17,7 +17,15 @@ single-user bridge (127.0.0.1)** where operator = the user, so SSRF/XSS/path-tra
 exploitability is low. Code was committed as-is (already operational + tested). The MED
 findings below are real and worth fixing, but none were immediate-blockers.
 
-## MED findings (fix candidates — Codex dispatch)
+## Fixed 2026-06-03 (CC direct — Codex dispatch hit read-only sandbox, write mode not preserved)
+- ✅ `model_router.py` paid-gate — dropped `premium_enabled` conjunction; returns local unconditionally when not paid_providers_allowed()
+- ✅ `compose_ffmpeg.py` — single-quote escape (`'\''`) in `ffmpeg_filter_path` + `write_concat_file`
+- ✅ `foley.py` — `math.isfinite()` guard (+ `import math`) on lavfi duration
+- ✅ `tests/test_zero_paid.py` — assert elevenlabs/openai-tts blocked in tts, suno in bgm
+- Verified: `compileall` (3 files) + `pytest tests/test_zero_paid.py` = **7 passed**.
+- [UNCERTAIN] ffmpeg single-quote escape exact form unverified against a real `'`-containing NTFS filename (rare edge); escape direction is safe.
+
+## MED findings — REMAINING (fix candidates — Codex dispatch)
 
 ### Policy / cost
 - **`worker/media/model_router.py:34`** — paid-gate guard `if not paid_providers_allowed() and availability.premium_enabled` is fragile. Currently safe via a second `not premium_enabled` check at line 37, but the conjunction should be dropped: `if not paid_providers_allowed(): return local` unconditionally. Zero-paid policy is core.

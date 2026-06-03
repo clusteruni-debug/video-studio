@@ -27,6 +27,9 @@ def test_paid_providers_disabled_by_default(monkeypatch):
     assert "imagen" not in allowed_preference("image")
     assert "veo3" not in allowed_preference("video")
     assert "runway" not in allowed_preference("video")
+    assert "elevenlabs" not in allowed_preference("tts")
+    assert "openai-tts" not in allowed_preference("tts")
+    assert "suno" not in allowed_preference("bgm")
 
 
 def test_paid_providers_require_explicit_opt_in(monkeypatch):

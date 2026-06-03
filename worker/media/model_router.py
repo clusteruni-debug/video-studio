@@ -31,7 +31,7 @@ class RouteDecision:
 
 
 def choose_route(scene: SceneSpec, budget_mode: str, availability: ProviderAvailability) -> RouteDecision:
-    if not paid_providers_allowed() and availability.premium_enabled:
+    if not paid_providers_allowed():
         return RouteDecision(scene.id, "local", 0.0, "paid providers disabled by zero-paid policy")
 
     if budget_mode == "free" or not availability.premium_enabled:

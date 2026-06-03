@@ -1,6 +1,7 @@
 """Local procedural foley helpers for no-voice Grok-first renders."""
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from worker.render.compose_ffmpeg import run_ffmpeg
@@ -104,6 +105,8 @@ def _foley_components(pattern: str, duration_sec: float) -> list[dict[str, str]]
 
 
 def _build_procedural_foley_args(output_path: Path, duration_sec: float, pattern: str) -> list[str]:
+    if not math.isfinite(duration_sec) or duration_sec <= 0:
+        duration_sec = 1.0  # guard against inf/nan/zero from manifest reaching lavfi atrim
     components = _foley_components(pattern, duration_sec)
     input_args: list[str] = []
     filter_parts: list[str] = []

@@ -447,12 +447,19 @@ def get_scene_motion_preset(scene: dict) -> str:
 
 
 def write_concat_file(path: Path, clip_paths: list[Path]) -> None:
-    lines = [f"file '{clip_path.resolve().as_posix()}'" for clip_path in clip_paths]
+    # concat demuxer single-quotes each path; a literal ' must be closed/escaped/reopened
+    # ('\'') so an NTFS filename containing a quote can't break or inject the file list.
+    lines = [
+        "file '" + clip_path.resolve().as_posix().replace("'", "'\\''") + "'"
+        for clip_path in clip_paths
+    ]
     write_text(path, "\n".join(lines) + "\n")
 
 
 def ffmpeg_filter_path(path: Path) -> str:
-    return path.resolve().as_posix().replace(":", r"\:")
+    # ':' is the filter-arg separator; call sites single-quote the value
+    # (filename='...', ass='...'), so a literal ' must also be escaped as '\''.
+    return path.resolve().as_posix().replace(":", r"\:").replace("'", "'\\''")
 
 
 def resolve_ffmpeg_executable(project_root: Path) -> tuple[str, dict]:
