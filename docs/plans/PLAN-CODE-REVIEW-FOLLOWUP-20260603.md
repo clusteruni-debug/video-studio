@@ -1,0 +1,66 @@
+---
+plan_id: PLAN-CODE-REVIEW-FOLLOWUP-20260603
+project: video-studio
+status: open
+status_reason: 6-agent parallel code review of previously-uncommitted Codex work surfaced MED findings; code committed as-is (operational), fixes deferred here
+created: 2026-06-03
+source: 6 parallel code-reviewer agents over 64 uncommitted files (worker backend + UI + grok system)
+---
+
+# Code Review Follow-up — Security Hardening (2026-06-03)
+
+## Context
+On 2026-06-03 a 6-agent parallel review covered 64 uncommitted Codex-authored files
+(worker/bridge, worker/render, worker/media, app/ui, tools/chrome-grok-companion, tests).
+All 6 returned NEEDS_CHANGES, but a 4-Q reality check downgraded most: this is a **local
+single-user bridge (127.0.0.1)** where operator = the user, so SSRF/XSS/path-traversal
+exploitability is low. Code was committed as-is (already operational + tested). The MED
+findings below are real and worth fixing, but none were immediate-blockers.
+
+## MED findings (fix candidates — Codex dispatch)
+
+### Policy / cost
+- **`worker/media/model_router.py:34`** — paid-gate guard `if not paid_providers_allowed() and availability.premium_enabled` is fragile. Currently safe via a second `not premium_enabled` check at line 37, but the conjunction should be dropped: `if not paid_providers_allowed(): return local` unconditionally. Zero-paid policy is core.
+- **`worker/media/model_router.py:12,43`** — `VEO3_FAST_RATE_PER_SEC=0.15` duplicates `adapters.py` costPerUnit; read from ADAPTER_CONFIG or assert equality to prevent drift.
+- **`worker/media/runtime.py:134`** — paid override silently downgraded to free with no log; add `logging.warning` so operators see the override was ignored.
+
+### Path safety
+- **`worker/bridge/routes_grok.py:9144`** — `_download_file_from_request` containment check uses pre-resolve `download_dir`; use `resolved.relative_to(download_dir.resolve())`.
+- **`worker/bridge/routes_media.py:1866`** — `import_local_video_folder_route` has no `relative_to(_project_root)` guard (every other path route does). Add it.
+- **`worker/bridge/routes_media.py:1312`** — `free_audio_import_route` resolves sourcePath but only checks is_file()/ext, no project-root containment. Add `_resolve_under_project`.
+- **`worker/render/compose.py:159`** — `_resolve_operator_bgm_selection` relative_to bypassable via NTFS junction; use realpath on both sides.
+
+### FFmpeg injection (NTFS filenames can contain `'`)
+- **`worker/render/compose_ffmpeg.py:454`** — `ffmpeg_filter_path` escapes `:` but not `'`; subtitle path in single-quoted `-vf` breaks out. Escape `'` → `'\''`.
+- **`worker/render/compose_ffmpeg.py:449`** — `write_concat_file` writes `file '{path}'` unescaped; escape `'` as `''` per concat spec.
+- **`worker/render/foley.py:107`** — lavfi duration from manifest not `math.isfinite()` checked → `atrim=0:inf/nan` possible. Guard.
+
+### Network
+- **`worker/bridge/image_router.py:332`** — `download_pexels_video` passes API-response URL to urlopen with no host allowlist (SSRF). Require `https://videos.pexels.com/` prefix.
+- **`worker/bridge/scene_generator.py:239`** — Gemini key in URL query string (leaks to logs); use `x-goog-api-key` header.
+
+### UI
+- **`app/ui/src/context/StudioContext.tsx:829`** — mount `checkHealth().then()` has no `.catch()`; network failure leaves app stuck in "checking" forever. Add `.catch(() => dispatch BRIDGE_OFFLINE)`.
+- **`app/ui/src/context/StudioContext.tsx:862`** — batch polling `done` calc fallback `1` terminates polling before server returns variant count; only terminate when `total > 0`.
+- **`app/ui/src/components/RenderReviewPanel.tsx:1857`** — 7 async handlers in default export lack `useCallback` (re-created every render).
+
+### Chrome extension (`tools/chrome-grok-companion/`)
+- **`background.js:38`** — `loadCommandFromUrl` bare `fetch(url)` with no origin validation (SSRF via crafted grok.com hash). Allowlist `127.0.0.1:5161`.
+- **`background.js:529`** — `onMessage` listener no `sender.id` check; another extension could replace stored command. Gate `store-command` to own extension.
+- **`background.js:442`** — `operatorApproved` checked via `includes("operatorApproved=true")` substring; use `new URL().searchParams.get()`.
+- **`content.js:67` / `RenderReviewPanel.tsx:265`** — `document.execCommand` deprecated; keep as fallback only.
+
+### Tests
+- **`tests/test_zero_paid.py:21`** — only asserts imagen/veo3/runway blocked; **missing elevenlabs/openai-tts (tts) + suno (bgm)**. A regression unblocking paid TTS/BGM would go undetected. Add assertions.
+
+## LOW (reality-check downgraded — informational, not scheduled)
+- HTML attribute XSS in routes_grok review-packet (`escape` without `quote=True`) — operator views own prompt on own local page; near-zero exploit motive.
+- File-size violations: routes_grok.py ~13K lines, routes_media.py ~11K, compose_ffmpeg.py 4.7K, SceneDetailPanel.tsx 3889, RenderReviewPanel.tsx 2896 — all far over the 500/660 split limit. Tracked as tech debt; split when touched.
+- `docs/ARCHITECTURE.md` stale (mentions retired ComposerPanel/ExecutionPanel, 18-adapter count vs 17).
+- `vite.config.ts:11` hardcoded `C:/vibe/projects/video-studio` (dev-only).
+- Sidebar.tsx spin animation via inline style — prefer CSS class.
+
+## Dispatch note
+When fixing, batch by domain (matches the 6 review agents): policy+cost, path-safety,
+ffmpeg-escape, ui, chrome-ext, tests. Each is independent; FFmpeg-escape and test-gap are
+the cheapest high-value fixes. Re-run the relevant test after each (regression Red-Green).

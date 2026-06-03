@@ -1,0 +1,28 @@
+{
+  "mixkit-minimal-techno-01-162.mp3": {
+    "provider": "mixkit-audio",
+    "title": "Minimal Techno 01",
+    "artist": "Alejandro Magana (A. M.)",
+    "creator": "Alejandro Magana (A. M.)",
+    "sourceUrl": "https://mixkit.co/free-stock-music/tech-house/",
+    "sourceExternalId": "162",
+    "sourceLicense": "Mixkit Stock Music Free License",
+    "licenseUrl": "https://mixkit.co/license/#musicFree",
+    "attribution": "Attribution appreciated but not required by Mixkit.",
+    "attributionRequired": false,
+    "downloadDate": "2026-05-26"
+  },
+  "mixkit-swish-swed-201.mp3": {
+    "provider": "mixkit-audio",
+    "title": "Swish Swed",
+    "artist": "Arulo",
+    "creator": "Arulo",
+    "sourceUrl": "https://mixkit.co/free-stock-music/tech-house/",
+    "sourceExternalId": "201",
+    "sourceLicense": "Mixkit Stock Music Free License",
+    "licenseUrl": "https://mixkit.co/license/#musicFree",
+    "attribution": "Attribution appreciated but not required by Mixkit.",
+    "attributionRequired": false,
+    "downloadDate": "2026-05-26"
+  }
+}

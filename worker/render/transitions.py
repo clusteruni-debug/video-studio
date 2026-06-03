@@ -84,9 +84,9 @@ def build_xfade_filter_complex(
         safe_path = subtitle_file.resolve().as_posix().replace(":", r"\:")
         # Use ass= filter for full ASS style support (RENDERING-SPEC §6)
         if subtitle_file.suffix == ".ass":
-            final_video_filters.append(f"ass='{safe_path}'")
+            final_video_filters.append(f"ass=filename='{safe_path}'")
         else:
-            final_video_filters.append(f"subtitles='{safe_path}'")
+            final_video_filters.append(f"subtitles=filename='{safe_path}'")
     final_video_filters.append(f"scale={output_scale}")
     final_video_filters.append("format=yuv420p")
 
@@ -107,7 +107,11 @@ def build_simple_concat_with_subtitles(
     the existing behaviour as a fallback.
     """
     # Use ass= filter for .ass files (RENDERING-SPEC §6)
-    sub_filter = f"ass={subtitle_file.name}" if subtitle_file.suffix == ".ass" else f"subtitles={subtitle_file.name}"
+    sub_filter = (
+        f"ass=filename='{subtitle_file.name}'"
+        if subtitle_file.suffix == ".ass"
+        else f"subtitles=filename='{subtitle_file.name}'"
+    )
     return [
         "-y",
         "-f", "concat",

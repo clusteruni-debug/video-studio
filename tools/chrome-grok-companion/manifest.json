@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Video Studio Grok Companion",
+  "version": "0.1.0",
+  "description": "Operator-approved Grok web handoff helper for an existing signed-in Chrome profile.",
+  "permissions": [
+    "activeTab",
+    "alarms",
+    "downloads",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:5161/*",
+    "https://grok.com/*",
+    "https://*.grok.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://grok.com/*",
+        "https://*.grok.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Video Studio Grok Companion",
+    "default_popup": "popup.html"
+  }
+}

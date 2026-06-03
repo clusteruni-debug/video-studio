@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -66,6 +67,24 @@ ADAPTER_CONFIG = {
         "model": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
         "outputKind": "video",
         "envPrefix": "VIDEO_STUDIO_WAN",
+        "costTier": "free",
+        "costPerUnit": 0.0,
+    },
+    "ltx-video": {
+        "label": "LTX-Video adapter (local)",
+        "category": "video",
+        "model": "Lightricks/LTX-Video",
+        "outputKind": "video",
+        "envPrefix": "VIDEO_STUDIO_LTX_VIDEO",
+        "costTier": "free",
+        "costPerUnit": 0.0,
+    },
+    "hunyuan-video": {
+        "label": "HunyuanVideo adapter (local)",
+        "category": "video",
+        "model": "tencent/HunyuanVideo",
+        "outputKind": "video",
+        "envPrefix": "VIDEO_STUDIO_HUNYUAN_VIDEO",
         "costTier": "free",
         "costPerUnit": 0.0,
     },
@@ -254,6 +273,16 @@ def _replace_placeholders(value: str, replacements: dict[str, str]) -> str:
     return resolved
 
 
+def parse_command_template_value(value: object, source_name: str) -> tuple[list[str] | None, str | None]:
+    if not isinstance(value, list) or not value:
+        return None, f"{source_name} must be a non-empty JSON string array"
+
+    if any(not isinstance(item, str) or not item.strip() for item in value):
+        return None, f"{source_name} entries must be non-empty strings"
+
+    return [str(item) for item in value], None
+
+
 def _parse_command_template(env_name: str) -> tuple[list[str] | None, str | None]:
     raw = os.environ.get(env_name)
     if not raw:
@@ -264,13 +293,57 @@ def _parse_command_template(env_name: str) -> tuple[list[str] | None, str | None
     except json.JSONDecodeError as error:
         return None, f"{env_name} must be a JSON string array: {error.msg}"
 
-    if not isinstance(parsed, list) or not parsed:
-        return None, f"{env_name} must be a non-empty JSON string array"
+    return parse_command_template_value(parsed, env_name)
 
-    if any(not isinstance(item, str) or not item.strip() for item in parsed):
-        return None, f"{env_name} entries must be non-empty strings"
 
-    return parsed, None
+def _project_python_entrypoint(project_root: Path) -> str | None:
+    candidates = [
+        project_root / ".venv" / "Scripts" / "python.exe",
+        project_root / ".venv" / "bin" / "python",
+        Path(sys.executable),
+    ]
+    for candidate in candidates:
+        if candidate and os.path.lexists(str(candidate)):
+            return str(candidate)
+    return shutil.which("python")
+
+
+def _builtin_command_template(key: str, project_root: Path) -> tuple[list[str] | None, str | None]:
+    if key != "edge-tts":
+        return None, None
+    script_path = project_root / "scripts" / "edge_tts.py"
+    python_entry = _project_python_entrypoint(project_root)
+    if not script_path.exists():
+        return None, f"built-in edge-tts script missing: {script_path}"
+    if not python_entry:
+        return None, "python entrypoint for built-in edge-tts command was not found"
+    return [
+        python_entry,
+        str(script_path),
+        "--prompt-path",
+        "{prompt_path}",
+        "--output-path",
+        "{output_path}",
+    ], "built-in zero-paid edge-tts command"
+
+
+def _command_template_for_adapter(
+    key: str,
+    env_prefix: str,
+    project_root: Path,
+) -> tuple[list[str] | None, str | None, str | None]:
+    if os.environ.get(f"{env_prefix}_COMMAND"):
+        command_template, parse_error = _parse_command_template(f"{env_prefix}_COMMAND")
+        if command_template and not parse_error:
+            return command_template, None, f"{env_prefix}_COMMAND"
+        return None, parse_error or f"{env_prefix}_COMMAND is not configured", None
+    command_template, parse_error = _parse_command_template(f"{env_prefix}_COMMAND")
+    if command_template and not parse_error:
+        return command_template, None, f"{env_prefix}_COMMAND"
+    builtin_template, builtin_detail = _builtin_command_template(key, project_root)
+    if builtin_template:
+        return builtin_template, None, builtin_detail
+    return None, parse_error or builtin_detail or f"{env_prefix}_COMMAND is not configured", None
 
 
 def _resolve_entry_point(command_template: list[str], project_root: Path) -> tuple[str | None, str | None]:
@@ -322,7 +395,9 @@ def probe_local_media_adapter(key: str, project_root: Path | str = ".") -> Media
     config = ADAPTER_CONFIG[key]
     resolved_project_root = Path(project_root).resolve()
     env_prefix = config["envPrefix"]
-    mode = _normalize_mode(os.environ.get(f"{env_prefix}_MODE"))
+    raw_mode = os.environ.get(f"{env_prefix}_MODE")
+    builtin_template, _builtin_detail = _builtin_command_template(key, resolved_project_root)
+    mode = "command" if raw_mode is None and builtin_template else _normalize_mode(raw_mode)
 
     if mode == "off":
         return MediaAdapterStatus(
@@ -352,7 +427,7 @@ def probe_local_media_adapter(key: str, project_root: Path | str = ".") -> Media
             detail=f"{env_prefix}_MODE=stub; configure {env_prefix}_COMMAND to switch from placeholder fallback to model execution",
         )
 
-    command_template, parse_error = _parse_command_template(f"{env_prefix}_COMMAND")
+    command_template, parse_error, command_source = _command_template_for_adapter(key, env_prefix, resolved_project_root)
     if parse_error or not command_template:
         return MediaAdapterStatus(
             key=key,
@@ -379,7 +454,7 @@ def probe_local_media_adapter(key: str, project_root: Path | str = ".") -> Media
         entryPoint=entry_point,
         commandPreview=_command_preview(command_template, resolved_project_root),
         detail=(
-            "command adapter ready"
+            f"command adapter ready ({command_source})"
             if entry_point
             else f"command entrypoint not found: {resolved_probe}"
         ),
@@ -393,12 +468,46 @@ def probe_local_media_adapters(project_root: Path | str = ".") -> dict[str, Medi
     }
 
 
+def probe_command_template_adapter(
+    key: str,
+    command_template: list[str],
+    project_root: Path | str = ".",
+) -> MediaAdapterStatus:
+    if key not in ADAPTER_CONFIG:
+        raise KeyError(f"Unknown local media adapter: {key}")
+
+    config = ADAPTER_CONFIG[key]
+    resolved_project_root = Path(project_root).resolve()
+    entry_point, resolved_probe = _resolve_entry_point(command_template, resolved_project_root)
+    return MediaAdapterStatus(
+        key=key,
+        label=config["label"],
+        mode="command",
+        outputKind=config["outputKind"],
+        model=config["model"],
+        ready=bool(entry_point),
+        fallbackAvailable=True,
+        entryPoint=entry_point,
+        commandPreview=_command_preview(command_template, resolved_project_root),
+        detail=(
+            "operator-approved command override ready"
+            if entry_point
+            else f"operator-approved command override entrypoint not found: {resolved_probe}"
+        ),
+    )
+
+
 def run_local_media_adapter(
     key: str,
     context: AdapterExecutionContext,
     project_root: Path | str = ".",
+    command_template_override: list[str] | None = None,
 ) -> MediaGenerationResult:
-    status = probe_local_media_adapter(key, project_root=project_root)
+    status = (
+        probe_command_template_adapter(key, command_template_override, project_root=project_root)
+        if command_template_override
+        else probe_local_media_adapter(key, project_root=project_root)
+    )
     output_path = Path(context.outputPath)
     request_path = Path(context.requestPath)
     log_path = Path(context.logPath)
@@ -422,7 +531,14 @@ def run_local_media_adapter(
             logPath=str(log_path),
         )
 
-    command_template, parse_error = _parse_command_template(f"{ADAPTER_CONFIG[key]['envPrefix']}_COMMAND")
+    if command_template_override:
+        command_template, parse_error = command_template_override, None
+    else:
+        command_template, parse_error, _command_source = _command_template_for_adapter(
+            key,
+            ADAPTER_CONFIG[key]["envPrefix"],
+            Path(project_root).resolve(),
+        )
     if parse_error or not command_template:
         return MediaGenerationResult(
             sceneId=context.sceneId,

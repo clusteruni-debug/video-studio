@@ -2,10 +2,18 @@ import { useState } from "react";
 import { X, RefreshCw, Trash2, HardDrive } from "lucide-react";
 import { useStudioState, useStudioActions } from "../context/StudioContext";
 import { operatorSteps } from "../lib/sample-data";
-import { getStorageStatus, cleanupStorage, type StorageStatusResult, type CleanupResult } from "../lib/bridge";
+import { getStorageStatus, cleanupStorage, type StorageStatusResult, type CleanupResult, type MediaAdapterHealth } from "../lib/bridge";
+
+const LOCAL_ADAPTER_KEYS = ["wan", "ltx-video", "hunyuan-video"] as const;
+
+function adapterClass(status?: MediaAdapterHealth): string {
+  if (status?.ready) return "ready";
+  if (status?.mode === "off") return "off";
+  return "stub";
+}
 
 export default function DebugDrawer() {
-  const { debugOpen, bridgeStatus, bridgeHealth } = useStudioState();
+  const { debugOpen, bridgeStatus, bridgeHealth, grokHandoff } = useStudioState();
   const actions = useStudioActions();
   const [storageInfo, setStorageInfo] = useState<StorageStatusResult | null>(null);
   const [cleaning, setCleaning] = useState(false);
@@ -73,6 +81,81 @@ export default function DebugDrawer() {
               <RefreshCw size={12} style={{ marginRight: 4 }} /> 재확인
             </button>
           </div>
+
+          {/* Grok browser automation */}
+          {grokHandoff?.projectId && (
+            <div className="debug-section">
+              <div className="debug-section-title">Grok Browser Automation</div>
+              <div className="debug-bridge-row">
+                <span>Project</span>
+                <span style={{ fontSize: "0.72rem", wordBreak: "break-all" }}>{grokHandoff.projectId}</span>
+              </div>
+              <div className="debug-bridge-row">
+                <span>Status</span>
+                <span>{grokHandoff.automationStatus?.status || "handoff-ready"}</span>
+              </div>
+              {grokHandoff.automationStatus?.sceneId && (
+                <div className="debug-bridge-row">
+                  <span>Scene</span>
+                  <span>{grokHandoff.automationStatus.sceneId}</span>
+                </div>
+              )}
+              {grokHandoff.automationStatus?.detail && (
+                <p className="debug-message">{grokHandoff.automationStatus.detail}</p>
+              )}
+              {grokHandoff.automationStatus?.browserBlocker && (
+                <div className="debug-bridge-row">
+                  <span>Blocker</span>
+                  <span>{grokHandoff.automationStatus.browserBlocker}</span>
+                </div>
+              )}
+              {grokHandoff.automationJob?.jobId && (
+                <>
+                  <div className="debug-bridge-row">
+                    <span>Background job</span>
+                    <span>{grokHandoff.automationJob.status || "queued"}</span>
+                  </div>
+                  <div className="debug-bridge-row">
+                    <span>Job scene</span>
+                    <span>{grokHandoff.automationJob.sceneId || "-"}</span>
+                  </div>
+                  {grokHandoff.automationJob.detail && (
+                    <p className="debug-message">{grokHandoff.automationJob.detail}</p>
+                  )}
+                </>
+              )}
+              {typeof grokHandoff.readyScenes === "number" && typeof grokHandoff.totalScenes === "number" && (
+                <div className="debug-bridge-row">
+                  <span>Ready MP4</span>
+                  <span>{grokHandoff.readyScenes}/{grokHandoff.totalScenes}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Local video adapters */}
+          {bridgeHealth?.media && (
+            <div className="debug-section">
+              <div className="debug-section-title">Local Video Adapters</div>
+              <div className="debug-adapter-list">
+                {LOCAL_ADAPTER_KEYS.map((key) => {
+                  const status = bridgeHealth.media?.[key];
+                  return (
+                    <div key={key} className={`debug-adapter-row ${adapterClass(status)}`}>
+                      <div>
+                        <strong>{status?.label || key}</strong>
+                        <small>{status?.model || "not reported"}</small>
+                      </div>
+                      <div>
+                        <span>{status?.ready ? "ready" : status?.mode || "unknown"}</span>
+                        <small>{status?.detail || "bridge health has no adapter detail"}</small>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* TTS Providers */}
           {bridgeHealth?.tts_providers && (

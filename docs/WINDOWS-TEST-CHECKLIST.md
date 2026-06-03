@@ -50,7 +50,7 @@
 | Playback | Plays without crash | |
 | Audio (TTS) | Korean Edge TTS voice heard | |
 | Subtitles | Per-scene subtitles shown | |
-| Visuals | Pollinations images OR gradient fallback | |
+| Visuals | uploaded/Pexels/Gemini Flash OR gradient fallback | |
 | Motion | Ken Burns zoom/pan effects applied | |
 | Transitions | Fade between scenes | |
 
@@ -63,7 +63,7 @@
 
 ## 7. Provider Override Test (3 min)
 
-- [ ] Change one scene's dropdown from "자동" to "Pollinations FLUX"
+- [ ] Keep paid providers disabled; uploaded/free-stock/Gemini Flash paths only
 - [ ] Save + render → check that scene's request.json has `"adapter": "pollinations"`
 - [ ] Check `storage/cache/<project-id>/<scene-id>/` for `.request.json` file
 
@@ -82,7 +82,7 @@
 - Fallback: Edge TTS fail → Windows TTS → sine tone
 
 ### All visuals are placeholders
-- Normal behavior (Pollinations anonymous access unstable)
+- Normal behavior when optional free stock/image providers are unavailable
 - Check that gradient+motion fallback is applied (not flat cards)
 - Future work: find stable free image generation path
 
@@ -95,7 +95,7 @@
 
 ## After Testing
 
-**MP4 works + quality OK** → next: find stable free image source (replace Pollinations)
+**MP4 works + quality OK** -> next: wire local Wan or optional free image/stock sources
 
 **MP4 works but quality poor** → next: improve fallback visuals (gradient→motion quality)
 

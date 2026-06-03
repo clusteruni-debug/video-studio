@@ -91,6 +91,57 @@ Style: Main,Pretendard,54,&H00FFFFFF,&H0000FFFF,&H00000000,&H00000000,0,0,0,0,10
 Style: Hook,Pretendard,60,&H00FFFFFF,&H0000FFFF,&H00000000,&H00000000,1,0,0,0,100,100,1,0,1,3,0,8,60,130,120,1
 ```
 
+**production caption layout overlays**
+These are the scene-level layout presets used by the dashboard source switcher
+and render manifest. They intentionally differ from the legacy `Main`/`Hook`
+styles because the current quality bar requires larger, faster, safer captions
+that read on mobile without covering the subject or the YouTube Shorts UI.
+The current production default is restrained: captions should support the shot,
+not become the shot. Use the larger impact/ranking presets only for templates
+that explicitly require a title-card or ranking rhythm.
+
+```
+Style: CenterShort,Pretendard,64,&H00FFFFFF,&H0000FFFF,&H00000000,&H90000000,1,0,0,0,100,100,0.2,0,1,3.5,1,5,72,170,0,1
+Style: TopHook,Pretendard,74,&H00FFFFFF,&H0000FFFF,&H00000000,&H90000000,1,0,0,0,100,100,0.2,0,1,4,1.2,8,72,170,150,1
+Style: LowerInfo,Pretendard,52,&H00FFFFFF,&H0000FFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,0.8,2,72,170,540,1
+Style: RankBadge,Pretendard,108,&H0000E6FF,&H0000FFFF,&H001A1A1A,&H80000000,1,0,0,0,100,100,0,0,1,5,1.2,7,78,170,164,1
+Style: RankTitle,Pretendard,58,&H00FFFFFF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,0,0,3,14,0,7,190,170,174,1
+Style: FactChip,Pretendard,44,&H00FFFFFF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,0,0,3,12,0,1,74,170,430,1
+Style: StoryHook,NanumMyeongjo,66,&H00F0F0F0,&H0000FFFF,&H00101010,&H90000000,0,0,0,0,100,100,1.2,0,1,3.5,1,8,92,170,188,1
+Style: StoryLower,NanumMyeongjo,48,&H00F4F4F4,&H0000FFFF,&H00101010,&H88000000,0,0,0,0,100,100,0.8,0,1,3,0.8,2,94,170,505,1
+Style: ChapterKicker,Pretendard,38,&H0000D4FF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,1,0,3,10,0,7,74,170,150,1
+Style: ChapterTitle,Pretendard,62,&H00FFFFFF,&H0000FFFF,&H00101010,&H9A000000,1,0,0,0,100,100,0.4,0,3,12,0,7,74,170,218,1
+Style: StepChip,Pretendard,42,&H00FFFFFF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,0.4,0,3,10,0,7,74,170,155,1
+```
+
+Maximum display durations:
+- `top-hook`: 1.35s
+- `center-short`: 1.6s
+- `lower-info`: 1.8s
+
+Template layout variants:
+- `rank-countdown`, `one-question-three-answers`: render a left top rank badge,
+  boxed rank title, and lower proof chip. Use for ranking/list Shorts where the
+  viewer must see the list structure immediately.
+- `character-continuity`, `object-mystery`, `pov-diary`, `ambient-routine`:
+  render cinematic story hooks and restrained lower story captions. Use for
+  persona/story or vlog-like edits where captions should not flatten the shot.
+- `grok-first-hook`, `grok-first-continuity`, `grok-first-proof`: render a
+  Grok/app-web MP4 as the hero footage with a short top hook or chip plus one
+  restrained lower beat. Use when the scene source is a reviewed Grok/Wan/LTX/
+  Hunyuan MP4; never burn production notes, prompt text, or model labels into
+  viewer-facing captions.
+- `chapter-evidence`, `documentary-explainer`, `timeline-brief`,
+  `headline-evidence`: render chapter kicker/title plus a lower evidence chip.
+  Use for long-form or explainer edits instead of Shorts-style center captions.
+- `hands-proof`, `screen-walkthrough`, `route-recap`, `fan-atmosphere`, and
+  related chip variants: render a compact top-left chip plus lower fact note.
+
+For Korean template families that commonly look templated when repeated
+(`ranking_list`, `tutorial_steps`, `persona_story`, `kculture_fandom`,
+`longform_deep_dive`, `interview_documentary`, `live_recap`), missing
+`layoutVariantKey` is a failed quality gate, not merely a warning.
+
 ### 2.3 Font Fallback Order
 
 1. Pretendard (verify system installation)
@@ -179,8 +230,14 @@ def generate_ass_subtitle(
 
 ### 4.2 BGM Volume Rules
 
-- Narration segments: BGM volume = **-18dB** (sidechain ducking)
-- Non-narration segments (transitions, intro): BGM volume = **-8dB**
+- BGM preparation: base track is trimmed/looped with fade and a conservative
+  initial level.
+- Final MP4 mix: prepared BGM is gain-compensated and sidechain-ducked under
+  narration so the bed is audible on speakers, not erased.
+- Default render mix: `VIDEO_STUDIO_BGM_MIX_GAIN=1.55`,
+  `VIDEO_STUDIO_BGM_DUCK_THRESHOLD=0.08`,
+  `VIDEO_STUDIO_BGM_DUCK_RATIO=2.6`,
+  `VIDEO_STUDIO_BGM_DUCK_RELEASE_MS=180`.
 - Fade-in: first 0.5s
 - Fade-out: last 1.0s
 
@@ -195,7 +252,7 @@ ffmpeg -i narration.wav -i bgm.wav \
 Sidechain ducking (volume varies based on narration presence):
 ```bash
 ffmpeg -i narration.wav -i bgm.wav \
-  -filter_complex "[0:a]asplit=2[narr][sc];[sc]aformat=channel_layouts=mono,compand=attacks=0:decays=0.3:points=-80/-80|-45/-45|-27/-30|0/-30,aformat=channel_layouts=stereo[sidechain];[1:a][sidechain]sidechaincompress=threshold=0.02:ratio=6:attack=10:release=300:level_sc=1[bgm_ducked];[narr][bgm_ducked]amix=inputs=2:duration=first[out]" \
+  -filter_complex "[0:a]asplit=2[narr][sc];[sc]aformat=channel_layouts=mono,compand=attacks=0:decays=0.3:points=-80/-80|-45/-45|-27/-30|0/-30,aformat=channel_layouts=stereo[sidechain];[1:a]volume=1.55[bgm_in];[bgm_in][sidechain]sidechaincompress=threshold=0.08:ratio=2.6:attack=10:release=180:level_sc=1[bgm_ducked];[narr][bgm_ducked]amix=inputs=2:duration=first[out]" \
   -map "[out]" mixed_audio.wav
 ```
 

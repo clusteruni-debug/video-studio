@@ -11,6 +11,13 @@ export const TEMPLATE_LABELS: Record<TemplateType, string> = {
   tutorial_steps: "단계별 튜토리얼",
   before_after: "비포/애프터",
   hot_take: "핫테이크/논쟁",
+  authentic_vlog: "한국형 브이로그",
+  persona_story: "캐릭터/페르소나 스토리",
+  kculture_fandom: "K-컬처 팬덤형",
+  podcast_clip: "팟캐스트/롱폼 클립",
+  longform_deep_dive: "롱폼 딥다이브",
+  interview_documentary: "인터뷰/다큐형",
+  live_recap: "라이브/현장 리캡",
 };
 
 export const TONE_LABELS: Record<TonePreset, string> = {

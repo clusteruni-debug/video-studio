@@ -20,6 +20,13 @@ export interface RenderAssetSpec {
     sourcePath?: string;
     sourceLabel?: string;
     sourceMimeType?: string;
+    sourceUrl?: string;
+    sourceExternalId?: string;
+    sourceGenerator?: string;
+    sourceGeneratorRequestPath?: string;
+    sourceGeneratorPromptPath?: string;
+    sourceGeneratorLogPath?: string;
+    sourceGeneratorCommand?: string;
 }
 
 export interface RenderSceneSpec {
@@ -32,6 +39,9 @@ export interface RenderSceneSpec {
     visualKind: VisualKind;
     audioKind: AudioKind;
     subtitleText: string;
+    layoutVariantKey?: string;
+    layoutVariantLabel?: string;
+    layoutVariantNote?: string;
     cacheDir: string;
     assetIds: string[];
     motionPreset: MotionPreset;

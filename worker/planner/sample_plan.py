@@ -21,6 +21,7 @@ class SceneSpec:
     canUseStillImage: bool
     subtitleText: str
     routeHint: RouteHint
+    narrationText: str = ""
 
 
 @dataclass(slots=True)
@@ -69,6 +70,7 @@ def _make_scene(
         canUseStillImage=can_use_still_image,
         subtitleText=subtitle_text,
         routeHint=route_hint,
+        narrationText=subtitle_text,
     )
 
 

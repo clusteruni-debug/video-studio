@@ -1,5 +1,37 @@
 # Implementation Roadmap
 
+## Current Objective — Zero-Paid Automation Pipeline
+
+Goal as of 2026-05-24: finish Video Studio as a usable video automation
+pipeline without paid APIs or paid AI providers.
+
+### Plan Inventory
+
+- `docs/plans/done/PLAN-FRONTEND-ROADMAP.md` — shipped, with historical image
+  pipeline notes now superseded by the zero-paid policy.
+- `docs/plans/done/PLAN-QUALITY-PASS-2.md` — shipped quality pass.
+- `docs/plans/done/RENDERING-TASKS.md` — shipped rendering task list.
+- No active `docs/plans/*.md` file remains outside `done/`; the active work is
+  this roadmap plus the operator checklist.
+
+### Completion Checklist
+
+- [x] Block billable image/search/video/TTS/music providers unless
+  `VIDEO_STUDIO_ALLOW_PAID_PROVIDERS=1` is explicitly set.
+- [x] Keep `/api/health` machine-readable for `zero_paid`, provider policy,
+  planner backend, and adapter diagnostics.
+- [x] Restore Python bridge automation endpoints for `/api/route-plan`,
+  `/api/save-project`, and `/api/render-smoke`.
+- [x] Make `scripts/verify-bridge.ps1` and `scripts/verify-render.ps1` verify
+  the current Python bridge instead of the retired Ollama/FLUX assumptions.
+- [x] Normalize scene clips to 30fps so downloaded free stock video and local
+  placeholder clips can render through xfade safely.
+- [ ] Wire a real local Wan command adapter on the operator machine.
+- [ ] Optionally wire a free-key Gemini Flash Image command adapter, or keep
+  uploaded visuals/Pexels/local placeholders as the default no-paid path.
+- [ ] Add a Grok UI handoff/export workflow if the operator wants Grok-created
+  clips without using the paid xAI video API.
+
 ## Phase 0 — Scaffold
 - create the project folders
 - document the architecture
@@ -59,17 +91,11 @@ Current status:
 - real FLUX/Wan/Whisper-generated media still depends on the operator wiring actual adapter commands and model runtimes behind the new skeleton (TTS is now handled by Edge TTS)
 
 ## Phase 4 — Paid Premium Routing
-- add per-scene Kling 3.0 / Veo 3 adapter (Sora 2 retired 2026-04; see `docs/VIDEO-PROVIDER-RESEARCH.md`)
-- add budget and spend-cap controls
-- show premium route approval before execution
-- keep local fallback when the provider is disabled or rate-limited
 
-Milestone gate:
-- one project renders with one premium scene and local fallback support
+Superseded by the zero-paid objective. Premium routes remain in code only as
+explicit opt-in compatibility paths behind `VIDEO_STUDIO_ALLOW_PAID_PROVIDERS=1`.
 
 ## Phase 5 — Optional Secondary Premium
-- add secondary premium provider if Kling 3.0 does not cover all use cases
-- keep behind a separate provider toggle and budget limit
 
-Milestone gate:
-- route selection works across local, Kling 3.0, and fallback without manual file edits
+Deferred indefinitely. Do not add another paid provider unless the project goal
+changes and the operator explicitly approves the dependency and billing model.

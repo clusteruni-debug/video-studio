@@ -13,7 +13,12 @@ import re
 from urllib import request as urllib_request
 from urllib.error import URLError
 
-from worker.bridge.templates import TEMPLATE_TYPES, build_template_prompt, _HOOK_EXEMPT
+from worker.bridge.templates import (
+    TEMPLATE_TYPES,
+    build_template_prompt,
+    _HOOK_EXEMPT,
+    _VISUAL_LED_TEMPLATE_TYPES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +120,17 @@ def normalize_scenes(scenes: list[dict], topic: str, template_type: str = "") ->
     (LLM generation, fallback, and potentially user-edited scenes).
     Do NOT clear image_source here — that belongs in _clear_llm_image_sources().
     """
-    for s in scenes:
+    visual_led = template_type in _VISUAL_LED_TEMPLATE_TYPES
+    for index, s in enumerate(scenes):
+        visual_action = str(s.get("visual_action") or s.get("visualAction") or "").strip()
+        viewer_caption = str(s.get("viewer_caption") or s.get("viewerCaption") or "").strip()
+        voiceover = str(s.get("voiceover") or s.get("voice_over") or s.get("voiceOver") or "").strip()
+        if viewer_caption and not str(s.get("display_text") or "").strip():
+            s["display_text"] = viewer_caption
+        if voiceover and not str(s.get("narration") or "").strip():
+            s["narration"] = voiceover
+        if visual_action and not str(s.get("image_prompt") or "").strip():
+            s["image_prompt"] = visual_action
         s.setdefault("image_prompt", s.pop("visual_description", topic))
         s.setdefault("display_text", "")
         s.setdefault("emotion", "neutral")
@@ -124,6 +139,22 @@ def normalize_scenes(scenes: list[dict], topic: str, template_type: str = "") ->
         s.setdefault("transition", "Dissolve")
         s.setdefault("is_commentary", False)
         s.setdefault("rank", None)
+        if visual_led:
+            original_narration = str(s.get("narration") or "").strip()
+            if original_narration and not visual_action and not str(s.get("visual_action") or "").strip():
+                s["visual_action"] = original_narration
+            if not str(s.get("audio_design_mode") or s.get("audioDesignMode") or "").strip():
+                s["audio_design_mode"] = "no-voice"
+                s["audioDesignMode"] = "no-voice"
+            if not str(s.get("caption_preset") or s.get("captionPreset") or "").strip():
+                if index == 0 and str(s.get("display_text") or "").strip():
+                    s["caption_preset"] = "top-hook"
+                elif str(s.get("display_text") or "").strip():
+                    s["caption_preset"] = "lower-info"
+                else:
+                    s["caption_preset"] = "none"
+            if not voiceover:
+                s["narration"] = ""
 
         # Strip stray CJK ideographs from Korean narration/display_text
         narr = s.get("narration", "")
@@ -141,6 +172,15 @@ def normalize_scenes(scenes: list[dict], topic: str, template_type: str = "") ->
 
     # Hook optimization is handled by _enforce_hook() in generate_scenes_llm
     return scenes
+
+
+def _scene_visual_summary(scene: dict, topic: str) -> str:
+    """Return the best visual seed for image/video prompt enrichment."""
+    for key in ("visual_action", "visualAction", "image_prompt", "display_text", "narration"):
+        text = str(scene.get(key) or "").strip()
+        if text:
+            return text
+    return topic
 
 
 def parse_scenes_json(text: str) -> list[dict] | None:
@@ -260,8 +300,9 @@ def _enrich_image_prompts(scenes: list[dict], topic: str) -> None:
     """Step 2: Generate concrete image search terms for each scene (in-place)."""
     scene_summaries = []
     for s in scenes:
+        visual_text = _scene_visual_summary(s, topic)
         scene_summaries.append(
-            f'scene {s.get("scene_num", 0)}: "{s.get("narration", "")[:60]}" (emotion: {s.get("emotion", "neutral")})'
+            f'scene {s.get("scene_num", 0)}: "{visual_text[:90]}" (emotion: {s.get("emotion", "neutral")})'
         )
     prompt = (
         f'Topic: "{topic}"\n\n'
@@ -328,22 +369,48 @@ _ABSTRACT_IMAGE_WORDS = re.compile(
 
 def _evaluate_script_quality(scenes: list[dict], topic: str, template_type: str) -> tuple[int, str]:
     """Score a script 0-10 via LLM. Returns (score, feedback)."""
-    scene_summary = json.dumps(
-        [{"scene_num": s.get("scene_num"), "narration": s.get("narration", "")[:80],
-          "display_text": s.get("display_text", ""), "emotion": s.get("emotion")}
-         for s in scenes[:6]], ensure_ascii=False
-    )
-    prompt = (
-        f'You are a YouTube Shorts script quality evaluator.\n'
-        f'Topic: "{topic}" / Template: {template_type}\n\n'
-        f'Score this script 0-10 on these criteria:\n'
-        f'1. Hook strength (scene 1 grabs attention?)\n'
-        f'2. Fact density (specific numbers, names, anecdotes?)\n'
-        f'3. Flow (natural progression, no repetition?)\n'
-        f'4. display_text quality (key phrases from narration?)\n\n'
-        f'Scenes:\n{scene_summary}\n\n'
-        f'Return JSON: {{"score": N, "feedback": "one-line improvement suggestion"}}'
-    )
+    if template_type in _VISUAL_LED_TEMPLATE_TYPES:
+        scene_summary = json.dumps(
+            [{
+                "scene_num": s.get("scene_num"),
+                "visual_action": _scene_visual_summary(s, topic)[:140],
+                "display_text": s.get("display_text", ""),
+                "caption_preset": s.get("caption_preset") or s.get("captionPreset"),
+                "audio_design_mode": s.get("audio_design_mode") or s.get("audioDesignMode"),
+                "narration": s.get("narration", "")[:80],
+                "emotion": s.get("emotion"),
+            } for s in scenes[:6]],
+            ensure_ascii=False,
+        )
+        prompt = (
+            f'You are a Korean YouTube Shorts visual-led production evaluator.\n'
+            f'Topic: "{topic}" / Template: {template_type}\n\n'
+            f'Score this script 0-10 on these criteria:\n'
+            f'1. Scene 1 has visible first-second motion and a hook without needing TTS.\n'
+            f'2. Each visual_action is concrete enough for Grok/local video generation.\n'
+            f'3. Captions are compact viewer-facing Korean, not production notes.\n'
+            f'4. Flow preserves subject/prop/location/palette continuity without repeated generic shots.\n'
+            f'5. audio_design_mode is no-voice unless a natural owned voiceover is clearly justified.\n\n'
+            f'Scenes:\n{scene_summary}\n\n'
+            f'Return JSON: {{"score": N, "feedback": "one-line improvement suggestion"}}'
+        )
+    else:
+        scene_summary = json.dumps(
+            [{"scene_num": s.get("scene_num"), "narration": s.get("narration", "")[:80],
+              "display_text": s.get("display_text", ""), "emotion": s.get("emotion")}
+             for s in scenes[:6]], ensure_ascii=False
+        )
+        prompt = (
+            f'You are a YouTube Shorts script quality evaluator.\n'
+            f'Topic: "{topic}" / Template: {template_type}\n\n'
+            f'Score this script 0-10 on these criteria:\n'
+            f'1. Hook strength (scene 1 grabs attention?)\n'
+            f'2. Fact density (specific numbers, names, anecdotes?)\n'
+            f'3. Flow (natural progression, no repetition?)\n'
+            f'4. display_text quality (key phrases from narration?)\n\n'
+            f'Scenes:\n{scene_summary}\n\n'
+            f'Return JSON: {{"score": N, "feedback": "one-line improvement suggestion"}}'
+        )
     text, _ = _call_llm(prompt)
     if not text:
         return 7, ""  # If LLM fails, pass by default

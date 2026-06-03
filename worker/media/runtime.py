@@ -12,6 +12,7 @@ from worker.media.adapters import (
     probe_local_media_adapters,
     run_local_media_adapter,
 )
+from worker.media.provider_policy import allowed_preference, is_paid_provider, paid_providers_allowed
 
 
 @dataclass(slots=True)
@@ -75,6 +76,46 @@ def _asset_lookup(manifest: dict, scene_id: str, role: str) -> dict:
     raise KeyError(f"Missing manifest asset for scene={scene_id} role={role}")
 
 
+def _selected_stock_cache_sidecar(output_path: Path) -> Path:
+    return output_path.with_suffix(output_path.suffix + ".source.json")
+
+
+def _selected_stock_signature(visual_asset: dict) -> dict[str, str]:
+    return {
+        "provider": str(visual_asset.get("provider") or "pexels-video"),
+        "sourceUrl": str(visual_asset.get("sourceUrl") or ""),
+        "sourceExternalId": str(visual_asset.get("sourceExternalId") or ""),
+    }
+
+
+def _selected_stock_cache_matches(output_path: Path, visual_asset: dict) -> bool:
+    sidecar = _selected_stock_cache_sidecar(output_path)
+    if not sidecar.exists():
+        return False
+    try:
+        payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    expected = _selected_stock_signature(visual_asset)
+    actual = payload.get("source") if isinstance(payload, dict) else None
+    return isinstance(actual, dict) and all(str(actual.get(key) or "") == value for key, value in expected.items())
+
+
+def _write_selected_stock_cache_sidecar(output_path: Path, visual_asset: dict) -> None:
+    sidecar = _selected_stock_cache_sidecar(output_path)
+    sidecar.write_text(
+        json.dumps(
+            {
+                "source": _selected_stock_signature(visual_asset),
+                "cachedAt": datetime.now().isoformat(timespec="seconds"),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
 def _visual_adapter_key(
     scene: dict,
     adapters: dict[str, MediaAdapterStatus] | None = None,
@@ -82,30 +123,35 @@ def _visual_adapter_key(
 ) -> str:
     """Choose the visual adapter key for a scene.
 
-    If *override* is set and is a known adapter, use it directly.
-    Otherwise prefers ready adapters: for images, tries gemini-flash → imagen.
-    For video, tries wan → veo3 (Sora 2 was retired 2026-04).
+    If *override* is set and is a known adapter, use it directly unless the
+    adapter is paid and the operator has not enabled paid providers.
+    Otherwise prefers ready adapters after applying the zero-paid gate.
     """
     if override:
         from worker.media.adapters import ADAPTER_CONFIG
         cfg = ADAPTER_CONFIG.get(override)
         if cfg and cfg["category"] in ("image", "video"):
+            if is_paid_provider(override) and not paid_providers_allowed():
+                return "gemini-flash" if cfg["category"] == "image" else "wan"
             return override
 
-    if scene.get("visualKind") == "image":
+    category = "image" if scene.get("visualKind") == "image" else "video"
+    preference = allowed_preference(category)
+
+    if category == "image":
         if adapters:
-            for candidate in ("gemini-flash", "imagen"):
+            for candidate in preference:
                 status = adapters.get(candidate)
                 if status and status.ready:
                     return candidate
         return "gemini-flash"
-    else:
-        if adapters:
-            for candidate in ("wan", "veo3"):
-                status = adapters.get(candidate)
-                if status and status.ready:
-                    return candidate
-        return "wan"
+
+    if adapters:
+        for candidate in preference:
+            status = adapters.get(candidate)
+            if status and status.ready:
+                return candidate
+    return "wan"
 
 
 def _plan_path(project_root: Path, manifest: dict) -> Path:
@@ -143,6 +189,7 @@ def build_local_media_plan(
             resolved_project_root,
             visual_asset.get("sourcePath"),
         )
+        selected_stock_visual = visual_asset.get("sourceOrigin") == "selected-stock" and visual_asset.get("sourceUrl")
         uploaded_audio_asset = audio_asset.get("sourceOrigin") == "uploaded" and _resolved_source(
             resolved_project_root,
             audio_asset.get("sourcePath"),
@@ -153,6 +200,10 @@ def build_local_media_plan(
             visual_adapter = None
             detail = str(uploaded_visual)
             uploaded_visuals += 1
+        elif selected_stock_visual:
+            visual_source = "selected-stock"
+            visual_adapter = str(visual_asset.get("provider") or "pexels-video")
+            detail = str(visual_asset.get("sourceUrl"))
         else:
             visual_adapter = _visual_adapter_key(scene, adapters)
             visual_source = "local-generator"
@@ -244,6 +295,50 @@ def generate_local_visual_asset(
             detail=f"uploaded asset will be used: {source_visual}",
             attempted=False,
             succeeded=None,
+        )
+
+    if visual_asset.get("sourceOrigin") == "selected-stock" and visual_asset.get("sourceUrl"):
+        output_path = resolved_project_root / visual_asset["outputPath"]
+        if (
+            output_path.exists()
+            and output_path.is_file()
+            and output_path.stat().st_size > 0
+            and _selected_stock_cache_matches(output_path, visual_asset)
+        ):
+            return MediaGenerationResult(
+                sceneId=scene["sceneId"],
+                sceneTitle=scene["title"],
+                adapterKey=str(visual_asset.get("provider") or "pexels-video"),
+                mode="selected-stock",
+                outputKind="video",
+                status="generated",
+                outputPath=str(output_path),
+                detail=f"selected stock video reused from cache: {output_path}",
+                attempted=False,
+                succeeded=True,
+            )
+        try:
+            from worker.bridge.image_router import download_pexels_video
+
+            ok = download_pexels_video(str(visual_asset["sourceUrl"]), str(output_path))
+        except Exception as exc:  # pragma: no cover - defensive runtime guard
+            ok = False
+            detail = f"selected stock download failed: {exc}"
+        else:
+            detail = f"selected stock video downloaded: {visual_asset.get('sourceLabel') or visual_asset.get('sourceUrl')}"
+            if ok:
+                _write_selected_stock_cache_sidecar(output_path, visual_asset)
+        return MediaGenerationResult(
+            sceneId=scene["sceneId"],
+            sceneTitle=scene["title"],
+            adapterKey=str(visual_asset.get("provider") or "pexels-video"),
+            mode="selected-stock",
+            outputKind="video",
+            status="generated" if ok else "placeholder",
+            outputPath=str(output_path),
+            detail=detail,
+            attempted=True,
+            succeeded=True if ok else False,
         )
 
     adapter_statuses = adapters or probe_local_media_adapters(resolved_project_root)

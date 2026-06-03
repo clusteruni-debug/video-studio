@@ -9,6 +9,7 @@ Spec reference: docs/RENDERING-SPEC.md §1–§3
 from __future__ import annotations
 
 import math
+import re
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
@@ -68,6 +69,71 @@ _PRESETS_WITH_HIGHLIGHT = {"news", "impact"}
 
 # Default highlight style for presets without one (yellow word swap)
 _DEFAULT_HIGHLIGHT_STYLE = "Style: Highlight,Pretendard,58,&H0000FFFF,&H0000FFFF,&H00000000,&H80000000,1,0,0,0,100,100,1,0,1,3,1.5,5,60,130,0,1"
+
+CAPTION_LAYOUT_STYLES: list[str] = [
+    "Style: CenterShort,Pretendard,70,&H00FFFFFF,&H0000FFFF,&H00000000,&H90000000,1,0,0,0,100,100,0.2,0,1,4,1.2,5,72,190,0,1",
+    "Style: TopHook,Pretendard,82,&H00FFFFFF,&H0000FFFF,&H00000000,&H90000000,1,0,0,0,100,100,0.2,0,1,4.5,1.4,8,72,190,148,1",
+    "Style: LowerInfo,Pretendard,60,&H00FFFFFF,&H0000FFFF,&H00000000,&H86000000,1,0,0,0,100,100,0,0,1,3.5,1,2,72,190,690,1",
+    "Style: RankBadge,Pretendard,108,&H0000E6FF,&H0000FFFF,&H001A1A1A,&H80000000,1,0,0,0,100,100,0,0,1,5,1.2,7,78,170,164,1",
+    "Style: RankTitle,Pretendard,58,&H00FFFFFF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,0,0,3,14,0,7,190,170,174,1",
+    "Style: FactChip,Pretendard,44,&H00FFFFFF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,0,0,3,12,0,1,74,170,430,1",
+    "Style: StoryHook,NanumMyeongjo,66,&H00F0F0F0,&H0000FFFF,&H00101010,&H90000000,0,0,0,0,100,100,1.2,0,1,3.5,1,8,92,170,188,1",
+    "Style: StoryLower,NanumMyeongjo,48,&H00F4F4F4,&H0000FFFF,&H00101010,&H88000000,0,0,0,0,100,100,0.8,0,1,3,0.8,2,94,170,690,1",
+    "Style: ChapterKicker,Pretendard,38,&H0000D4FF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,1,0,3,10,0,7,74,170,150,1",
+    "Style: ChapterTitle,Pretendard,62,&H00FFFFFF,&H0000FFFF,&H00101010,&H9A000000,1,0,0,0,100,100,0.4,0,3,12,0,7,74,170,218,1",
+    "Style: StepChip,Pretendard,42,&H00FFFFFF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,0.4,0,3,10,0,7,74,170,155,1",
+    "Style: RoutineStep,Pretendard,44,&H0000D4FF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,1,0,3,10,0,7,78,210,152,1",
+    "Style: RoutineHook,Pretendard,94,&H00FFFFFF,&H0000FFFF,&H00101010,&HA0000000,1,0,0,0,100,100,0.2,0,1,5,1.4,7,78,210,220,1",
+    "Style: RoutineLower,Pretendard,70,&H00FFFFFF,&H0000FFFF,&H00101010,&H90000000,1,0,0,0,100,100,0,0,1,4.2,1.1,1,78,210,690,1",
+    "Style: RoutineDetail,Pretendard,46,&H00EAEAEA,&H0000FFFF,&H00101010,&H7A000000,0,0,0,0,100,100,0,0,1,2.8,0.8,1,78,210,405,1",
+    "Style: GrokHook,Pretendard,84,&H00FFFFFF,&H0000FFFF,&H00101010,&H8E000000,1,0,0,0,100,100,0.2,0,1,4.8,1.2,7,78,220,220,1",
+    "Style: GrokLower,Pretendard,64,&H00FFFFFF,&H0000FFFF,&H00101010,&H86000000,1,0,0,0,100,100,0,0,1,4,1.1,1,78,220,690,1",
+    "Style: GrokContinuity,Pretendard,68,&H00FFFFFF,&H0000FFFF,&H00141414,&HA8000000,1,0,0,0,100,100,0.2,0,3,14,0,7,78,220,220,1",
+    "Style: GrokProof,Pretendard,46,&H00FFFFFF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,0.2,0,3,12,0,1,78,220,430,1",
+]
+
+_CAPTION_PRESET_TO_STYLE = {
+    "center-short": "CenterShort",
+    "top-hook": "TopHook",
+    "lower-info": "LowerInfo",
+}
+
+_CAPTION_STYLE_MAX_DURATION = {
+    "TopHook": 1.35,
+    "CenterShort": 1.6,
+    "LowerInfo": 1.8,
+}
+
+_CAPTION_STYLE_EFFECT = {
+    "TopHook": r"{\fad(55,130)\t(0,120,\fscx112\fscy112)\t(120,240,\fscx100\fscy100)}",
+    "CenterShort": r"{\fad(65,130)\t(0,120,\fscx108\fscy108)\t(120,240,\fscx100\fscy100)}",
+    "LowerInfo": r"{\fad(70,150)\t(0,150,\fscx104\fscy104)\t(150,260,\fscx100\fscy100)}",
+}
+
+_RANKING_LAYOUT_VARIANTS = {
+    "rank-countdown",
+    "rank-card",
+    "rank-proof",
+    "rank-finale",
+    "chapter-card",
+    "one-question-three-answers",
+}
+_STORY_LAYOUT_VARIANTS = {"character-continuity", "object-mystery", "pov-diary", "ambient-routine"}
+_GROK_FIRST_LAYOUT_VARIANTS = {"grok-first-hook", "grok-first-continuity", "grok-first-proof"}
+_CHAPTER_LAYOUT_VARIANTS = {"chapter-evidence", "documentary-explainer", "timeline-brief", "headline-evidence"}
+_ROUTINE_LAYOUT_VARIANTS = {"routine-top-hook", "routine-lower-info"}
+_CHIP_LAYOUT_VARIANTS = {
+    "hands-proof",
+    "screen-walkthrough",
+    "fan-process",
+    "trend-recap",
+    "speaker-first",
+    "tts-commentary",
+    "observed-interview",
+    "tts-summary-doc",
+    "route-recap",
+    "fan-atmosphere",
+}
 
 # ---------------------------------------------------------------------------
 # Backward-compatible SubtitleStyle (used by old code paths)
@@ -182,7 +248,414 @@ def _format_ass_time(seconds: float) -> str:
 
 def _ass_escape(text: str) -> str:
     """Escape special ASS characters."""
-    return text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
+    hard_newline = "\uE000"
+    text = text.replace("\\N", hard_newline)
+    escaped = text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
+    return escaped.replace(hard_newline, "\\N")
+
+
+def _normalize_layout_variant(value: object) -> str:
+    return str(value or "").strip().lower().replace("_", "-")
+
+
+_PRODUCTION_META_NOTE_RE = re.compile(
+    r"(caption|subtitle|safe\s*zone|danger\s*zone|layout|tts|production|"
+    r"review|checklist|lower\s*third|right\s*edge|uncluttered|"
+    r"cover|above|below|clean|y\s*>|피사체|가리지|검수|의도)",
+    re.IGNORECASE,
+)
+
+
+def _viewer_facing_note(value: object) -> str:
+    """Return only notes that are safe to burn into the viewer-facing video."""
+    note = str(value or "").strip()
+    if not note:
+        return ""
+    if _PRODUCTION_META_NOTE_RE.search(note):
+        return ""
+    return note
+
+
+def _same_viewer_text(left: str, right: str) -> bool:
+    normalized_left = re.sub(r"[\W_]+", "", left, flags=re.UNICODE).lower()
+    normalized_right = re.sub(r"[\W_]+", "", right, flags=re.UNICODE).lower()
+    return bool(normalized_left and normalized_left == normalized_right)
+
+
+def _clip_end(start: float, end: float, duration: float) -> float:
+    return min(end, start + duration) if end > start else end
+
+
+def _rank_parts(text: str, fallback_rank: int) -> tuple[str, str]:
+    match = re.match(r"\s*(?:#\s*)?([0-9]{1,2}|[①②③④⑤])[\.\)\:\s-]*(.*)", text)
+    if not match:
+        return str(fallback_rank), text.strip()
+    symbol = match.group(1)
+    circled = {"①": "1", "②": "2", "③": "3", "④": "4", "⑤": "5"}
+    return circled.get(symbol, symbol), (match.group(2) or text).strip()
+
+
+def _variant_dialogue(
+    dialogues: list[str],
+    *,
+    layer: int,
+    start: float,
+    end: float,
+    style: str,
+    text: str,
+    effect: str,
+    max_chars: int,
+) -> None:
+    if end <= start or not text.strip():
+        return
+    wrapped = _wrap_text(text.strip(), max_chars)
+    escaped = _ass_escape(wrapped)
+    dialogues.append(
+        f"Dialogue: {layer},{_format_ass_time(start)},{_format_ass_time(end)},{style},,0,0,0,,{effect}{escaped}"
+    )
+
+
+def _generate_layout_variant(
+    entry: dict,
+    dialogues: list[str],
+    *,
+    idx: int,
+    start: float,
+    end: float,
+    text: str,
+    max_chars: int,
+) -> bool:
+    """Generate visibly distinct template layout overlays when variant metadata exists."""
+    variant = _normalize_layout_variant(
+        entry.get("layout_variant_key")
+        or entry.get("layoutVariantKey")
+        or entry.get("layout_variant")
+        or entry.get("layoutVariant")
+    )
+    if not variant:
+        return False
+
+    label = str(entry.get("layout_variant_label") or entry.get("layoutVariantLabel") or "").strip()
+    title = str(entry.get("title") or entry.get("sceneTitle") or "").strip()
+    display_text = text.strip() or title or label
+    title_text = title or display_text
+
+    if variant in _ROUTINE_LAYOUT_VARIANTS:
+        headline = display_text or title_text
+        detail = title_text if title_text and title_text != headline else ""
+        note = _viewer_facing_note(entry.get("layout_variant_note") or entry.get("layoutVariantNote"))
+        step_label = f"{idx + 1:02d}"
+        if variant == "routine-top-hook":
+            _variant_dialogue(
+                dialogues,
+                layer=3,
+                start=start,
+                end=_clip_end(start, end, 1.1),
+                style="RoutineStep",
+                text=step_label,
+                effect=r"{\fad(35,95)\t(0,90,\fscx112\fscy112)\t(90,210,\fscx100\fscy100)}",
+                max_chars=5,
+            )
+            _variant_dialogue(
+                dialogues,
+                layer=2,
+                start=start + 0.08,
+                end=_clip_end(start + 0.08, end, 1.62),
+                style="RoutineHook",
+                text=headline,
+                effect=r"{\fad(55,140)\t(0,130,\fscx110\fscy110)\t(130,260,\fscx100\fscy100)}",
+                max_chars=10,
+            )
+            if detail:
+                _variant_dialogue(
+                    dialogues,
+                    layer=1,
+                    start=start + 1.28,
+                    end=_clip_end(start + 1.28, end, 1.22),
+                    style="RoutineDetail",
+                    text=detail,
+                    effect=r"{\fad(80,160)}",
+                    max_chars=16,
+                )
+            return True
+
+        lower_text = display_text or headline
+        _variant_dialogue(
+            dialogues,
+            layer=3,
+            start=start,
+            end=_clip_end(start, end, 1.05),
+            style="RoutineStep",
+            text=step_label,
+            effect=r"{\fad(35,95)\t(0,90,\fscx110\fscy110)\t(90,200,\fscx100\fscy100)}",
+            max_chars=5,
+        )
+        _variant_dialogue(
+            dialogues,
+            layer=2,
+            start=start + 0.12,
+            end=_clip_end(start + 0.12, end, 1.8),
+            style="RoutineLower",
+            text=lower_text,
+            effect=r"{\fad(70,150)\t(0,150,\fscx106\fscy106)\t(150,270,\fscx100\fscy100)}",
+            max_chars=15,
+        )
+        if title and title != lower_text:
+            _variant_dialogue(
+                dialogues,
+                layer=1,
+                start=start + 1.34,
+                end=_clip_end(start + 1.34, end, 1.16),
+                style="RoutineDetail",
+                text=title,
+                effect=r"{\fad(70,140)}",
+                max_chars=16,
+            )
+        if note:
+            _variant_dialogue(
+                dialogues,
+                layer=0,
+                start=start + 2.05,
+                end=_clip_end(start + 2.05, end, 1.05),
+                style="RoutineDetail",
+                text=note,
+                effect=r"{\fad(100,160)}",
+                max_chars=20,
+            )
+        return True
+
+    if variant in _RANKING_LAYOUT_VARIANTS:
+        rank_source = display_text
+        if not re.match(r"\s*(?:#\s*)?([0-9]{1,2}|[①②③④⑤])[\.\)\:\s-]+", rank_source) and title_text:
+            rank_source = title_text
+        rank_num, rank_title = _rank_parts(rank_source, idx + 1)
+        rank_title = rank_title or title_text
+        _variant_dialogue(
+            dialogues,
+            layer=3,
+            start=start,
+            end=_clip_end(start, end, 1.35),
+            style="RankBadge",
+            text=f"#{rank_num}",
+            effect=r"{\fad(50,120)\t(0,140,\fscx112\fscy112)\t(140,260,\fscx100\fscy100)}",
+            max_chars=8,
+        )
+        _variant_dialogue(
+            dialogues,
+            layer=2,
+            start=start + 0.08,
+            end=_clip_end(start + 0.08, end, 1.85),
+            style="RankTitle",
+            text=rank_title,
+            effect=r"{\fad(70,150)\t(0,180,\fscx104\fscy104)\t(180,300,\fscx100\fscy100)}",
+            max_chars=17,
+        )
+        _variant_dialogue(
+            dialogues,
+            layer=1,
+            start=start + 1.25,
+            end=_clip_end(start + 1.25, end, 1.6),
+            style="FactChip",
+            text="증거로 확인",
+            effect=r"{\fad(80,160)}",
+            max_chars=18,
+        )
+        return True
+
+    if variant in _STORY_LAYOUT_VARIANTS:
+        hook = title_text if variant == "character-continuity" else display_text
+        _variant_dialogue(
+            dialogues,
+            layer=2,
+            start=start,
+            end=_clip_end(start, end, 1.55),
+            style="StoryHook",
+            text=hook,
+            effect=r"{\fad(130,180)\t(0,220,\fscx103\fscy103)\t(220,360,\fscx100\fscy100)}",
+            max_chars=15,
+        )
+        if variant != "character-continuity":
+            return True
+        _variant_dialogue(
+            dialogues,
+            layer=1,
+            start=start + 1.45,
+            end=_clip_end(start + 1.45, end, 1.45),
+            style="StoryLower",
+            text=display_text,
+            effect=r"{\fad(120,180)}",
+            max_chars=20,
+        )
+        return True
+
+    if variant in _GROK_FIRST_LAYOUT_VARIANTS:
+        beat_label = f"{idx + 1:02d}"
+        hook = title_text or display_text
+        lower = display_text if display_text and not _same_viewer_text(display_text, hook) else ""
+        note = ""
+        _variant_dialogue(
+            dialogues,
+            layer=4,
+            start=start,
+            end=_clip_end(start, end, 1.05),
+            style="ChapterKicker",
+            text=beat_label,
+            effect=r"{\fad(35,95)\t(0,90,\fscx112\fscy112)\t(90,200,\fscx100\fscy100)}",
+            max_chars=4,
+        )
+        if variant == "grok-first-hook":
+            hook = display_text or title_text
+            _variant_dialogue(
+                dialogues,
+                layer=3,
+                start=start + 0.06,
+                end=_clip_end(start + 0.06, end, 1.35),
+                style="GrokHook",
+                text=hook,
+                effect=r"{\fad(35,115)\t(0,110,\fscx114\fscy114)\t(110,240,\fscx100\fscy100)}",
+                max_chars=12,
+            )
+            if note:
+                _variant_dialogue(
+                    dialogues,
+                    layer=1,
+                    start=start + 1.55,
+                    end=_clip_end(start + 1.55, end, 1.15),
+                    style="GrokProof",
+                    text=note,
+                    effect=r"{\fad(80,140)}",
+                    max_chars=20,
+                )
+            return True
+
+        if variant == "grok-first-proof":
+            _variant_dialogue(
+                dialogues,
+                layer=2,
+                start=start,
+                end=_clip_end(start, end, 1.25),
+                style="GrokProof",
+                text=hook,
+                effect=r"{\fad(45,120)\t(0,110,\fscx108\fscy108)\t(110,230,\fscx100\fscy100)}",
+                max_chars=18,
+            )
+            if lower:
+                _variant_dialogue(
+                    dialogues,
+                    layer=1,
+                    start=start + 0.9,
+                    end=_clip_end(start + 0.9, end, 1.55),
+                    style="GrokLower",
+                    text=lower,
+                    effect=r"{\fad(70,150)}",
+                    max_chars=18,
+                )
+            if note:
+                _variant_dialogue(
+                    dialogues,
+                    layer=0,
+                    start=start + 2.05,
+                    end=_clip_end(start + 2.05, end, 1.05),
+                    style="GrokProof",
+                    text=note,
+                    effect=r"{\fad(90,150)}",
+                    max_chars=20,
+                )
+            return True
+
+        _variant_dialogue(
+            dialogues,
+            layer=2,
+            start=start + 0.06,
+            end=_clip_end(start + 0.06, end, 1.35),
+            style="GrokContinuity",
+            text=hook,
+            effect=r"{\fad(35,120)\t(0,110,\fscx110\fscy110)\t(110,240,\fscx100\fscy100)}",
+            max_chars=13,
+        )
+        if lower:
+            _variant_dialogue(
+                dialogues,
+                layer=1,
+                start=start + 0.75,
+                end=_clip_end(start + 0.75, end, 1.7),
+                style="GrokLower",
+                text=lower,
+                effect=r"{\fad(70,150)\t(0,150,\fscx104\fscy104)\t(150,270,\fscx100\fscy100)}",
+                max_chars=18,
+            )
+        if note:
+            _variant_dialogue(
+                dialogues,
+                layer=0,
+                start=start + 1.65,
+                end=_clip_end(start + 1.65, end, 1.25),
+                style="GrokProof",
+                text=note,
+                effect=r"{\fad(90,160)}",
+                max_chars=20,
+            )
+        return True
+
+    if variant in _CHAPTER_LAYOUT_VARIANTS:
+        kicker = "챕터"
+        _variant_dialogue(
+            dialogues,
+            layer=3,
+            start=start,
+            end=_clip_end(start, end, 1.25),
+            style="ChapterKicker",
+            text=kicker,
+            effect=r"{\fad(60,130)}",
+            max_chars=18,
+        )
+        _variant_dialogue(
+            dialogues,
+            layer=2,
+            start=start + 0.12,
+            end=_clip_end(start + 0.12, end, 1.9),
+            style="ChapterTitle",
+            text=title_text,
+            effect=r"{\fad(80,160)\t(0,170,\fscx102\fscy102)\t(170,280,\fscx100\fscy100)}",
+            max_chars=17,
+        )
+        _variant_dialogue(
+            dialogues,
+            layer=1,
+            start=start + 1.65,
+            end=_clip_end(start + 1.65, end, 1.45),
+            style="FactChip",
+            text=display_text,
+            effect=r"{\fad(90,160)}",
+            max_chars=20,
+        )
+        return True
+
+    if variant in _CHIP_LAYOUT_VARIANTS:
+        chip = title_text
+        _variant_dialogue(
+            dialogues,
+            layer=2,
+            start=start,
+            end=_clip_end(start, end, 1.35),
+            style="StepChip",
+            text=chip,
+            effect=r"{\fad(60,130)\t(0,140,\fscx104\fscy104)\t(140,240,\fscx100\fscy100)}",
+            max_chars=18,
+        )
+        _variant_dialogue(
+            dialogues,
+            layer=1,
+            start=start + 0.95,
+            end=_clip_end(start + 0.95, end, 1.65),
+            style="FactChip",
+            text=display_text,
+            effect=r"{\fad(90,170)}",
+            max_chars=20,
+        )
+        return True
+
+    return False
 
 # ---------------------------------------------------------------------------
 # Main generator — RENDERING-SPEC §3.3
@@ -222,6 +695,10 @@ def generate_ass_subtitle(
     """
     preset = style_preset if style_preset in STYLE_PRESETS else "default"
     style_lines = list(STYLE_PRESETS[preset])
+    for layout_style in CAPTION_LAYOUT_STYLES:
+        style_name = layout_style.split(",", 1)[0].replace("Style: ", "")
+        if not any(line.startswith(f"Style: {style_name},") for line in style_lines):
+            style_lines.append(layout_style)
 
     # Ensure Highlight style exists for color_swap mode
     has_highlight = preset in _PRESETS_WITH_HIGHLIGHT
@@ -340,11 +817,30 @@ def _generate_scene_level(
         text = entry.get("text", entry.get("subtitleText", ""))
         if not text:
             continue
+        caption_preset = entry.get("caption_preset") or entry.get("captionPreset")
+        if caption_preset == "none":
+            continue
+        if _generate_layout_variant(
+            entry,
+            dialogues,
+            idx=idx,
+            start=start,
+            end=end,
+            text=text,
+            max_chars=max_chars,
+        ):
+            continue
+        style_name = _CAPTION_PRESET_TO_STYLE.get(str(caption_preset or ""), "Main")
+        chars = 20 if style_name == "LowerInfo" else max_chars
+        max_duration = _CAPTION_STYLE_MAX_DURATION.get(style_name)
+        if max_duration and end > start:
+            end = min(end, start + max_duration)
 
-        wrapped = _wrap_text(text, max_chars)
+        wrapped = _wrap_text(text, chars)
         escaped = _ass_escape(wrapped)
+        effect = _CAPTION_STYLE_EFFECT.get(style_name, r"{\fad(200,0)}")
         dialogues.append(
-            f"Dialogue: 0,{_format_ass_time(start)},{_format_ass_time(end)},Main,,0,0,0,,{{\\fad(200,0)}}{escaped}"
+            f"Dialogue: 0,{_format_ass_time(start)},{_format_ass_time(end)},{style_name},,0,0,0,,{effect}{escaped}"
         )
 
         # Ranking preset: show scene number using Number style (RENDERING-SPEC §2.2)

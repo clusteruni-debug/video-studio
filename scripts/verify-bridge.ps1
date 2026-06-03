@@ -45,23 +45,27 @@ try {
     }
 
     Write-Host "[verify] bridge health"
-    $health | ConvertTo-Json -Depth 4
+    $health | ConvertTo-Json -Depth 6
 
     if (-not $health.planner) {
         throw "Bridge health did not expose planner runtime metadata"
     }
 
-    if (-not $health.media.flux -or -not $health.media.wan) {
-        throw "Bridge health did not expose local media adapter metadata"
+    if (-not $health.zero_paid -or $health.zero_paid.paidProvidersAllowed -ne $false) {
+        throw "Bridge health did not confirm zero-paid mode"
+    }
+
+    if (-not $health.media.'gemini-flash' -or -not $health.media.wan) {
+        throw "Bridge health did not expose zero-paid media adapter metadata"
     }
 
     Write-Host "[verify] route plan through bridge"
     $routePayload = @{
         prompt = "30-second cafe promo reel with a warm morning mood"
-        budgetMode = "premium"
+        budgetMode = "free"
         availability = @{
-            premiumEnabled = $true
-            veo3 = $true
+            premiumEnabled = $false
+            veo3 = $false
         }
     } | ConvertTo-Json -Depth 4
     $routeResponse = Invoke-BridgeJson -Uri "$bridgeUrl/api/route-plan" -Method Post -Body $routePayload
@@ -74,11 +78,11 @@ try {
     Write-Host "[verify] save project through bridge"
     $savePayload = @{
         prompt = "30-second cafe promo reel with a warm morning mood"
-        budgetMode = "premium"
+        budgetMode = "free"
         projectId = "verify-bridge-save"
         availability = @{
-            premiumEnabled = $true
-            veo3 = $true
+            premiumEnabled = $false
+            veo3 = $false
         }
     } | ConvertTo-Json -Depth 4
     $saveResponse = Invoke-BridgeJson -Uri "$bridgeUrl/api/save-project" -Method Post -Body $savePayload

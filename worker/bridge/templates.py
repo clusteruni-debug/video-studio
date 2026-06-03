@@ -5,14 +5,149 @@ Each template includes one golden example scene to anchor quality expectations.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import date
 
 TEMPLATE_TYPES = (
     "community_read", "news_explainer", "reddit_translation", "ranking_list", "origin_story",
     "vs_comparison", "myth_buster", "tutorial_steps", "before_after", "hot_take",
+    "authentic_vlog", "persona_story", "kculture_fandom", "podcast_clip",
+    "longform_deep_dive", "interview_documentary", "live_recap",
 )
 
+LIVE_CHANNEL_OPERATING_TEMPLATES = {
+    "authentic_vlog_no_voice": {
+        "key": "authentic_vlog_no_voice",
+        "label": "A) authentic vlog / no-voice + BGM",
+        "platform": "Shorts/Reels/TikTok 9:16",
+        "templateTypes": ["authentic_vlog", "persona_story", "live_recap"],
+        "captionPreset": {
+            "scene1": "top-hook",
+            "body": "lower-info or none",
+            "maxDisplaySec": {"top-hook": 1.35, "lower-info": 1.8},
+        },
+        "safeZone": {
+            "content": "x=60-950, y=100-1440",
+            "caption": "top hook at y~150; lower info around y~1300-1420; never y>1536 or x>950",
+            "mobileReadability": "one short viewer-facing phrase, max two compact lines",
+        },
+        "hookTextPosition": "Top center safe-zone for scene 1 only; body scenes use lower-mid captions or no text.",
+        "bgmVoicePolicy": "No-voice by default. Use free/local BGM, native room tone, and subtle SFX. Add voice only when the operator explicitly asks.",
+        "cutTransition": "0.35-0.50s fade/dissolve, handheld continuity, no decorative title-card interruption.",
+        "thumbnailFirstFrameRule": "First frame must show a real action or object state, no baked-in title, watermark, UI, or generic beauty shot.",
+        "sceneCountDurationRule": "4-6 scenes, 2.8-4.0s each, total 12-22s. Every scene needs visible first-second motion.",
+        "longformExpansion": "Can expand into 16:9 episode openers by replacing top hooks with chapter titles and preserving direct footage first.",
+    },
+    "info_top_hook_lower_info": {
+        "key": "info_top_hook_lower_info",
+        "label": "B) information / top-hook + lower-info captions",
+        "platform": "Shorts/Reels/TikTok 9:16",
+        "templateTypes": ["news_explainer", "myth_buster", "tutorial_steps", "hot_take", "podcast_clip"],
+        "captionPreset": {
+            "scene1": "top-hook",
+            "body": "lower-info",
+            "maxDisplaySec": {"top-hook": 1.35, "lower-info": 1.8},
+        },
+        "safeZone": {
+            "content": "x=60-950, y=100-1440",
+            "caption": "top hook y~150, lower facts y~1300-1420, right rail clear",
+            "mobileReadability": "one fact per caption; avoid dense slide text",
+        },
+        "hookTextPosition": "Top center safe-zone with the payoff visible in the underlying clip within two seconds.",
+        "bgmVoicePolicy": "Voice-first. Use TTS/voiceover for the viewer-facing explanation; no-voice requires explicit human visual-led approval plus BGM/native-audio review.",
+        "cutTransition": "Fast hard cut or short dissolve between evidence beats; avoid slow stock montage pacing.",
+        "thumbnailFirstFrameRule": "Use the strongest first evidence frame, with a title candidate in the packet rather than baked into the video.",
+        "sceneCountDurationRule": "4-7 scenes, 2.5-4.5s each. Scene 1 states the payoff, scenes 2+ prove it visually.",
+        "longformExpansion": "Maps to 16:9 explainer chapters by replacing lower-info with chapter/evidence cards and slower cuts.",
+    },
+    "ranking_chapter_card_compact": {
+        "key": "ranking_chapter_card_compact",
+        "label": "C) ranking/list / chapter-card + compact captions",
+        "platform": "Shorts/Reels/TikTok 9:16",
+        "templateTypes": ["ranking_list", "vs_comparison", "before_after"],
+        "captionPreset": {
+            "scene1": "top-hook or RankBadge/RankTitle",
+            "body": "chapter-card + compact lower-info",
+            "maxDisplaySec": {"top-hook": 1.35, "lower-info": 1.8},
+        },
+        "safeZone": {
+            "content": "x=60-950, y=100-1440",
+            "caption": "rank badge/title left-top safe, proof chip lower-mid, right/bottom UI clear",
+            "mobileReadability": "rank number plus one proof phrase; no three-line item cards",
+        },
+        "hookTextPosition": "Scene 1 announces the list promise; each ranked scene uses a left-top badge and one lower proof chip.",
+        "bgmVoicePolicy": "Voiceover required by default for ranking/list. No-voice requires explicit human visual-led approval; BGM must be real music, not beep/click/test-tone.",
+        "cutTransition": "Crisp item-to-item cuts; repeat structure intentionally but change source clip/action every rank.",
+        "thumbnailFirstFrameRule": "First frame must communicate the list promise or #1/#3 visual, not a generic stock background.",
+        "sceneCountDurationRule": "3-6 ranked beats, 2.5-4.0s each. Repeated source IDs fail unless documented as a callback.",
+        "longformExpansion": "Can become 16:9 countdown or chapter segment with larger chapter cards and source citations.",
+    },
+    "longform_16x9_extension": {
+        "key": "longform_16x9_extension",
+        "label": "Long-form / 16:9 expansion structure",
+        "platform": "YouTube 16:9 or mixed 9:16 cutdown",
+        "templateTypes": ["longform_deep_dive", "interview_documentary"],
+        "captionPreset": {
+            "scene1": "chapter-title",
+            "body": "chapter-evidence + lower facts",
+            "maxDisplaySec": {"chapter-title": 2.4, "lower-info": 2.0},
+        },
+        "safeZone": {
+            "content": "keep essential subjects inside central 80%; avoid lower-third overload",
+            "caption": "chapter title upper-left or center-safe; source chips lower-left, not full-width slides",
+            "mobileReadability": "every chapter card must survive 9:16 crop planning",
+        },
+        "hookTextPosition": "Cold open visual first, then a chapter card; avoid Shorts-style giant captions.",
+        "bgmVoicePolicy": "Voice or owned interview audio first. BGM is a bed, not the main event.",
+        "cutTransition": "Slower chapter transitions with evidence B-roll; no slideshow as the primary visual proof.",
+        "thumbnailFirstFrameRule": "Create a separate thumbnail candidate from the chapter claim plus a real evidence frame.",
+        "sceneCountDurationRule": "6-12 scenes for a 2-5 minute segment; cutdowns reuse the strongest 4-6 evidence beats.",
+        "longformExpansion": "Primary structure for 16:9; Shorts packets should point back to the long-form chapter source.",
+    },
+}
+
+_TEMPLATE_TO_OPERATING_TEMPLATE = {
+    "authentic_vlog": "authentic_vlog_no_voice",
+    "persona_story": "authentic_vlog_no_voice",
+    "live_recap": "authentic_vlog_no_voice",
+    "news_explainer": "info_top_hook_lower_info",
+    "myth_buster": "info_top_hook_lower_info",
+    "tutorial_steps": "info_top_hook_lower_info",
+    "hot_take": "info_top_hook_lower_info",
+    "podcast_clip": "info_top_hook_lower_info",
+    "ranking_list": "ranking_chapter_card_compact",
+    "vs_comparison": "ranking_chapter_card_compact",
+    "before_after": "ranking_chapter_card_compact",
+    "longform_deep_dive": "longform_16x9_extension",
+    "interview_documentary": "longform_16x9_extension",
+}
+
+
+def get_live_channel_operating_templates() -> dict[str, dict]:
+    return deepcopy(LIVE_CHANNEL_OPERATING_TEMPLATES)
+
+
+def operating_template_for(template_type: str, layout_variant_key: str = "") -> dict:
+    normalized_template = str(template_type or "").strip()
+    normalized_layout = str(layout_variant_key or "").strip()
+    if normalized_layout.startswith(("rank-", "one-question")):
+        key = "ranking_chapter_card_compact"
+    elif normalized_layout.startswith(("chapter-", "documentary-", "timeline-", "headline-")):
+        key = "longform_16x9_extension"
+    else:
+        key = _TEMPLATE_TO_OPERATING_TEMPLATE.get(normalized_template, "info_top_hook_lower_info")
+    return deepcopy(LIVE_CHANNEL_OPERATING_TEMPLATES[key])
+
 _JSON_FORMAT = """Each element: {{ "scene_num": N, "narration": "full spoken text for TTS (60-100 Korean chars, 3-4 sentences)", "display_text": "KEY phrase extracted FROM narration (max 12 chars/line, max 2 lines)", "image_prompt": "English image search query for Google Images — be SPECIFIC (product name, brand, place name)", "emotion": "neutral|funny|serious|shock|sad", "fallback_prompt": "alt query", "transition": "Dissolve" }}"""
+
+_VISUAL_LED_TEMPLATE_TYPES = frozenset({
+    "authentic_vlog",
+    "persona_story",
+    "kculture_fandom",
+    "live_recap",
+})
+
+_VISUAL_LED_JSON_FORMAT = """Each element: {{ "scene_num": N, "narration": "", "voiceover": "", "display_text": "short Korean viewer caption, max 12 chars/line and max 2 lines", "viewer_caption": "same compact caption text", "visual_action": "concrete visible action for Grok/local video, including first-second motion", "image_prompt": "English Grok/local video prompt seed with subject, action, place, light, camera", "caption_preset": "top-hook|lower-info|none", "audio_design_mode": "no-voice", "emotion": "neutral|funny|serious|shock|sad", "fallback_prompt": "alt visual action", "transition": "Dissolve" }}"""
 
 _QUALITY_RULES = """
 NARRATION QUALITY RULES (반드시 준수):
@@ -45,6 +180,18 @@ IMAGE_PROMPT RULES:
 - BAD: "beautiful landscape with mountains" (generic)
 """
 
+_VISUAL_LED_QUALITY_RULES = """
+VISUAL-LED GROK/LOCAL VIDEO QUALITY RULES (반드시 준수):
+- Default audio_design_mode MUST be "no-voice". narration and voiceover MUST be "" unless the operator explicitly asks for spoken narration.
+- visual_action, not narration, is the source of the Grok/local video prompt. It must describe one concrete visible action, subject, place, light, camera, and first-second motion.
+- NEVER explain production intent to the viewer: no "광고처럼 안 보이게", "AI 티가 나서", "컷마다 얼굴이 바뀌면", "자막 안전", "레이아웃", "프롬프트", "체크리스트" in narration/display_text/viewer_caption.
+- display_text/viewer_caption must be a viewer-facing Korean phrase, max 2 lines and max 12 chars per line. It is not required to be extracted from narration for visual-led templates.
+- caption_preset: scene 1 uses "top-hook" for a short hook; body scenes use "lower-info" only when the caption adds meaning, otherwise "none".
+- Scene 1 must read visually in the first 2 seconds without TTS. Name the immediate motion in visual_action.
+- Scenes must preserve the same subject/prop/location/palette/camera language when the format is Grok-first/persona/story.
+- image_prompt must be a concrete video prompt seed for Grok/local video, not a generic stock search phrase.
+"""
+
 _HOOK_INSTRUCTION = """★★★ 씬 1은 반드시 시청자를 잡는 훅(Hook)이어야 합니다:
 - narration: 말했을 때 3초 이내 (한국어 max 30자). 질문이나 충격적 사실로 시작
 - emotion: 반드시 "shock" 또는 "funny" (절대 "neutral" 사용 금지)
@@ -53,6 +200,15 @@ _HOOK_INSTRUCTION = """★★★ 씬 1은 반드시 시청자를 잡는 훅(Hook
 - transition: "Fade_In"
 - GOOD hooks: "이거 실화임?" / "진짜 500만원짜리 신발이래요" / "아직도 이렇게 먹어요?"
 - BAD hooks: "오늘은 ~에 대해 알아볼게요" / "안녕하세요 여러분" (지루한 인사)
+"""
+
+_VISUAL_LED_HOOK_INSTRUCTION = """★★★ visual-led 씬 1은 TTS 없이도 보이는 훅이어야 합니다:
+- narration/voiceover: 기본값은 빈 문자열. 제작 의도나 영상 설명을 말하지 마세요.
+- visual_action: 첫 1초 안에 움직임이 시작되는 구체적인 행동을 쓰세요.
+- display_text/viewer_caption: 짧은 한국어 훅 한 줄 또는 두 줄, max 12 chars/line.
+- caption_preset: "top-hook". 이후 씬은 lower-info 또는 none 위주.
+- emotion: "shock" 또는 "funny"가 가능하지만, 실제 브이로그/루틴이면 과장보다 관찰감이 우선입니다.
+- BAD: "오늘은 이 영상을 만들었습니다" / "AI 티가 안 나게 구성합니다" / "자막 안전 영역을 남깁니다"
 """
 
 
@@ -152,6 +308,65 @@ Example (topic: "대학교 안 가도 된다"):
 ]
 (continue — 60-100 chars, mix strong opinions with counter-data)
 ''',
+    "authentic_vlog": '''
+Example (topic: "성수동 혼밥 브이로그"):
+[
+  {"scene_num":1,"narration":"","voiceover":"","display_text":"12분 안에\\n들어간 집","viewer_caption":"12분 안에\\n들어간 집","visual_action":"A Korean office worker in a navy coat slows down outside a small Seongsu noodle shop; steam moves from the door in the first second, handheld phone camera, warm evening light.","image_prompt":"vertical handheld phone video of Korean office worker outside small Seongsu noodle shop, steam in first second, warm evening light","caption_preset":"top-hook","audio_design_mode":"no-voice","emotion":"neutral","transition":"Fade_In"},
+  {"scene_num":2,"narration":"","voiceover":"","display_text":"손 씻고\\n주문 기다림","viewer_caption":"손 씻고\\n주문 기다림","visual_action":"Same worker washes hands at a tiny sink and checks the paper order slip; water and hand motion start immediately, low warm restaurant light, close handheld framing.","image_prompt":"vertical realistic handheld video, same Korean office worker washing hands beside paper order slip, warm restaurant light","caption_preset":"lower-info","audio_design_mode":"no-voice","emotion":"neutral","transition":"Dissolve"}
+]
+(continue — no-voice, real hand/space actions, compact lower captions only when useful)
+''',
+    "persona_story": '''
+Example (topic: "AI 햄찌 직장 생존기"):
+[
+  {"scene_num":1,"narration":"","voiceover":"","display_text":"잠깐만\\n보자","viewer_caption":"잠깐만\\n보자","visual_action":"Recurring office persona pauses at a meeting-room door, one hand hovering over the handle while fluorescent light flickers in the first second; same gray laptop tucked under arm, documentary handheld camera.","image_prompt":"vertical photorealistic handheld video of recurring Korean office persona pausing at meeting room door with gray laptop, first second hand motion","caption_preset":"top-hook","audio_design_mode":"no-voice","emotion":"shock","transition":"Fade_In"},
+  {"scene_num":2,"narration":"","voiceover":"","display_text":"노트북만\\n먼저 내려놓음","viewer_caption":"노트북만\\n먼저 내려놓음","visual_action":"Same persona enters the same office corner and quietly places the gray laptop on the desk before sitting; hand and laptop motion start immediately, muted office palette, same camera height.","image_prompt":"vertical photorealistic video, same Korean office persona placing gray laptop on desk, muted office palette, handheld continuity","caption_preset":"lower-info","audio_design_mode":"no-voice","emotion":"serious","transition":"Dissolve"}
+]
+(continue — same character/place/prop continuity, no explanatory TTS, visual action carries the story)
+''',
+    "kculture_fandom": '''
+Example (topic: "케이팝 데몬 헌터스 팬덤 포인트"):
+[
+  {"scene_num":1,"narration":"이 장면이 팬들 사이에서 계속 돌았던 이유가 있어요. 안무보다 표정 타이밍이 먼저 터졌거든요.","display_text":"표정 타이밍","emotion":"shock","transition":"Fade_In"},
+  {"scene_num":2,"narration":"직접 음원이나 원본 영상을 쓰지 말고, 커버 동작이나 팬아트 제작 과정처럼 대체 가능한 컷으로 가야 해요. 그래야 저작권 리스크가 줄어요.","display_text":"원본 대신\\n대체 컷","emotion":"serious","transition":"Dissolve"}
+]
+(continue — fandom context, copyright-safe substitute visuals, dance/cosplay/POV structure)
+''',
+    "podcast_clip": '''
+Example (topic: "롱폼 인터뷰 핵심 30초"):
+[
+  {"scene_num":1,"narration":"이 인터뷰에서 제일 센 문장은 마지막이 아니라 18분 42초에 나왔어요. 여기만 잘라야 쇼츠가 됩니다.","display_text":"18분 42초","emotion":"shock","transition":"Fade_In"},
+  {"scene_num":2,"narration":"원본 오디오는 직접 업로드하거나 사용 권한이 있을 때만 쓰세요. 없으면 핵심 문장을 TTS로 요약하고, 화면은 관련 B롤과 챕터 자막으로 구성합니다.","display_text":"권한 없으면\\n요약 TTS","emotion":"serious","transition":"Dissolve"}
+]
+(continue — long-form chapter hook, quote-to-context, lower-info captions)
+''',
+    "longform_deep_dive": '''
+Example (topic: "한국 자영업 폐업률이 높아진 이유"):
+[
+  {"scene_num":1,"narration":"이 문제는 한 줄 요약으로 끝낼 수 없어요. 임대료, 인건비, 배달 수수료가 동시에 움직였거든요.","display_text":"세 비용이\\n동시에 상승","emotion":"serious","transition":"Fade_In"},
+  {"scene_num":2,"narration":"첫 챕터는 숫자부터 봐야 합니다. 2025년 기준으로 음식점 운영비에서 인건비와 임대료 비중이 절반을 넘는 경우가 많았어요. 여기에 광고비까지 붙으면 손익분기점이 훨씬 높아집니다.","display_text":"Chapter 1\\n비용 구조","emotion":"serious","transition":"Dissolve"},
+  {"scene_num":3,"narration":"두 번째 챕터는 소비 패턴이에요. 손님 수가 줄어든 것보다 더 큰 문제는 객단가와 재방문 주기가 흔들렸다는 점입니다. 그래서 매출은 비슷해 보여도 남는 돈이 줄어드는 구조가 됩니다.","display_text":"Chapter 2\\n소비 패턴","emotion":"neutral","transition":"Dissolve"}
+]
+(continue — chapter cards, source-backed numbers, slower pacing, lower-info captions)
+''',
+    "interview_documentary": '''
+Example (topic: "동네 서점이 살아남는 방식"):
+[
+  {"scene_num":1,"narration":"이 이야기는 매출 그래프보다 한 사람의 반복되는 하루를 따라가야 보여요. 그래서 첫 컷은 문 여는 손동작으로 시작합니다.","display_text":"문 여는\\n첫 장면","emotion":"neutral","transition":"Fade_In"},
+  {"scene_num":2,"narration":"인터뷰 핵심 문장은 짧게 보여주고, 바로 현장 B롤로 증명해야 합니다. 책을 정리하는 손, 계산대 위 영수증, 단골이 머무는 시간을 같이 보여주면 말이 화면에 붙습니다.","display_text":"말을\\n화면으로 증명","emotion":"serious","transition":"Dissolve"},
+  {"scene_num":3,"narration":"권리 있는 원본 인터뷰가 있으면 그 음성을 살리고, 없으면 요약 TTS로 처리하세요. 중요한 건 실제 화자를 흉내 내지 않는 겁니다. 화면은 직접 촬영 컷과 공개 라이선스 자료만 씁니다.","display_text":"권리 없는\\n음성 금지","emotion":"serious","transition":"Dissolve"}
+]
+(continue — interview quote, observed evidence, restrained chapter captions)
+''',
+    "live_recap": '''
+Example (topic: "성수 팝업 현장 5분 요약"):
+[
+  {"scene_num":1,"narration":"현장 영상은 화려한 무대보다 줄 선 사람들의 표정에서 시작하는 게 더 좋아요. 오늘 분위기를 5분 안에 정리해볼게요.","display_text":"현장 분위기\\n5분 요약","emotion":"neutral","transition":"Fade_In"},
+  {"scene_num":2,"narration":"첫 번째 포인트는 동선이에요. 입장 줄, 포토존, 굿즈 테이블 순서가 보이면 시청자가 실제로 간 것처럼 이해합니다. 지도 카드 하나만 있어도 장면이 훨씬 정리돼요.","display_text":"Point 1\\n동선","emotion":"serious","transition":"Dissolve"},
+  {"scene_num":3,"narration":"두 번째는 권리 확인입니다. 공연 음원이나 방송 화면은 넣지 말고, 직접 촬영한 외부 풍경과 저작권 안전한 BGM으로 분위기를 대신 만들어야 합니다.","display_text":"Point 2\\n권리 확인","emotion":"serious","transition":"Dissolve"}
+]
+(continue — event route, crowd/context, rights-safe ambience, chapter labels)
+''',
 }
 
 
@@ -173,7 +388,23 @@ def build_template_prompt(
     today = date.today().isoformat()
     body = f"★ 오늘 날짜: {today}. 과거 사건은 과거형으로, 미래 사건만 미래형으로 서술하세요.\n\n"
     body += _build_template_body(topic, lang_name, template_type)
-    body += _QUALITY_RULES
+    body += (
+        _VISUAL_LED_QUALITY_RULES
+        if template_type in _VISUAL_LED_TEMPLATE_TYPES
+        else _QUALITY_RULES
+    )
+    operating_template = operating_template_for(template_type)
+    body += (
+        "\nLIVE CHANNEL OPERATING TEMPLATE (반드시 준수):"
+        f"\n- template: {operating_template['label']}"
+        f"\n- caption preset: scene 1 {operating_template['captionPreset']['scene1']}; body {operating_template['captionPreset']['body']}"
+        f"\n- safe zone: {operating_template['safeZone']['caption']}"
+        f"\n- hook text position: {operating_template['hookTextPosition']}"
+        f"\n- BGM/voice policy: {operating_template['bgmVoicePolicy']}"
+        f"\n- cuts/transitions: {operating_template['cutTransition']}"
+        f"\n- thumbnail/first-frame rule: {operating_template['thumbnailFirstFrameRule']}"
+        f"\n- scene count/duration rule: {operating_template['sceneCountDurationRule']}"
+    )
     per_scene_sec = round({"30s": 30, "1min": 60}.get(target_duration, 30) / scene_count, 1) if scene_count else 4
     body += f"\n★ 총 씬 수: 정확히 {scene_count}개 씬으로 구성하세요."
     body += f"\n★ 목표 영상 길이: {target_duration}. 씬당 약 {per_scene_sec}초 분량으로 작성하세요."
@@ -187,7 +418,12 @@ def build_template_prompt(
         body += f"\n★ 추가 지시: {safe_instruction}"
     if template_type in _HOOK_EXEMPT:
         return body
-    return f"{_HOOK_INSTRUCTION}\n{body}"
+    hook_instruction = (
+        _VISUAL_LED_HOOK_INSTRUCTION
+        if template_type in _VISUAL_LED_TEMPLATE_TYPES
+        else _HOOK_INSTRUCTION
+    )
+    return f"{hook_instruction}\n{body}"
 
 
 def _build_template_body(topic: str, lang_name: str, template_type: str) -> str:
@@ -290,6 +526,88 @@ Structure in {lang_name}: Bold statement(1) → Context(2-3) → Supporting argu
 - CTA: ask viewers to comment their opinion
 
 Return ONLY a JSON array about "{topic}". {_JSON_FORMAT}"""
+
+    if template_type == "authentic_vlog":
+        return f"""Write an authentic Korean YouTube vlog/food/travel Shorts script about: "{topic}"
+
+Structure in {lang_name}: quiet human hook(1) -> place/action details(2-4) -> small tension or discovery(5-6) -> personal takeaway(7-8)
+- no-voice by default: leave narration and voiceover empty; use BGM/native ambience instead of explanatory TTS
+- visual_action: describe direct upload/Grok/local video shots with immediate motion, hands, walking, ordering, receipts, ambient sound
+- visuals: direct upload/Grok/local video preferred; Pexels only as support B-roll, never random lifestyle filler
+- captions: scene 1 top-hook only if needed, then lower-info or none; avoid giant center captions
+- display_text/viewer_caption: viewer-facing Korean only, not production notes
+
+Return ONLY a JSON array about "{topic}". {_VISUAL_LED_JSON_FORMAT}"""
+
+    if template_type == "persona_story":
+        return f"""Write a Korean persona/narrative Shorts script about: "{topic}"
+
+Structure in {lang_name}: character hook(1) -> repeated setting/prop(2) -> conflict(3-5) -> small payoff(6-8)
+- no-voice by default: leave narration and voiceover empty unless a human-owned voice track is provided
+- visual_action: same character, outfit, place, and prop continuity across scenes, with a visible action in the first second
+- image_prompt: describe the fixed character bible and camera move for Grok/local video
+- captions: top-hook only on scene 1, then lower-info or none
+- display_text/viewer_caption: short viewer-facing Korean story beats, never continuity/checklist instructions
+
+Return ONLY a JSON array about "{topic}". {_VISUAL_LED_JSON_FORMAT}"""
+
+    if template_type == "kculture_fandom":
+        return f"""Write a Korean K-culture/fandom Shorts script about: "{topic}"
+
+Structure in {lang_name}: fan insight hook(1) -> why it spread(2-3) -> safe substitute visuals(4-6) -> fan CTA(7-8)
+- no-voice by default unless the operator asks for commentary; let visuals, safe BGM, and compact captions carry the edit
+- visual_action: cover move, cosplay detail, fan-art process, public location, or generated/direct safe substitute with first-second motion
+- do not ask to reuse copyrighted music/MV/anime/drama footage directly
+- visuals: cover move, cosplay detail, fan-art process, public location, or generated/direct safe substitute
+- mention what source must be manually verified for copyright/attribution
+- captions: top hook + small lower context, not screen-covering lyrics
+
+Return ONLY a JSON array about "{topic}". {_VISUAL_LED_JSON_FORMAT}"""
+
+    if template_type == "podcast_clip":
+        return f"""Write a Korean long-form-to-Shorts clip script about: "{topic}"
+
+Structure in {lang_name}: timestamp/quote hook(1) -> context(2) -> 핵심 주장(3-5) -> why it matters(6-7) -> long-form bridge(8)
+- if original audio rights are unavailable, summarize with free TTS instead of pretending it is the speaker
+- visuals: speaker/direct clip when owned, otherwise relevant B-roll, waveform, chapter card, and lower-info captions
+- keep captions compact and chapter-like, not karaoke-style giant text
+
+Return ONLY a JSON array about "{topic}". {_JSON_FORMAT}"""
+
+    if template_type == "longform_deep_dive":
+        return f"""Write a Korean long-form deep-dive video outline about: "{topic}"
+
+Structure in {lang_name}: cold open(1) -> chapter 1 context(2-3) -> chapter 2 evidence(4-5) -> chapter 3 implication(6-7) -> recap/next video bridge(8)
+- narration: slower, trustworthy long-form commentary, not Shorts hype
+- visuals: chapter cards, sourced B-roll, data/source cards, and calm motion clips
+- captions: chapter/title cards and lower-info captions only when they clarify the argument
+- every scene must name what visual evidence or free asset slot is needed
+
+Return ONLY a JSON array about "{topic}". {_JSON_FORMAT}"""
+
+    if template_type == "interview_documentary":
+        return f"""Write a Korean interview/documentary video outline about: "{topic}"
+
+Structure in {lang_name}: observed opening(1) -> interview quote/context(2-3) -> evidence B-roll(4-5) -> conflict/tension(6) -> takeaway(7-8)
+- use owned interview audio/video when available; otherwise summarize with free TTS and do not impersonate the speaker
+- visuals: direct interview clip, hands/location details, documents/photos only with rights, and restrained lower captions
+- include interview timestamp or ownership note in narration whenever source audio/video is mentioned
+- avoid generic stock people pretending to be the subject
+
+Return ONLY a JSON array about "{topic}". {_JSON_FORMAT}"""
+
+    if template_type == "live_recap":
+        return f"""Write a Korean live/event recap video outline about: "{topic}"
+
+Structure in {lang_name}: arrival hook(1) -> route/context(2) -> three key moments(3-6) -> crowd/atmosphere proof(7) -> practical takeaway(8)
+- no-voice by default when direct event footage/ambience is available; use lower-info captions and BGM instead of explaining the edit
+- visual_action: direct event footage or rights-safe context clip with immediate movement and a concrete place/action
+- visuals: direct event footage first, then rights-safe venue/city/crowd context
+- do not use copyrighted performance clips, broadcast footage, drama/anime clips, or commercial music without rights
+- captions: small chapter labels and location/context notes; no lyric-like center captions
+- audio: ambient sound or YouTube Audio Library/Mixkit BGM under native ambience or optional voiceover
+
+Return ONLY a JSON array about "{topic}". {_VISUAL_LED_JSON_FORMAT}"""
 
     # origin_story (default fallback)
     return f"""Write a history/origin storytelling YouTube Shorts about: "{topic}"

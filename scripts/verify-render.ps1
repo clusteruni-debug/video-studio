@@ -10,58 +10,10 @@ $stdoutPath = Join-Path $projectRoot "storage\cache\verify-render.stdout.log"
 $stderrPath = Join-Path $projectRoot "storage\cache\verify-render.stderr.log"
 $python = Join-Path $projectRoot ".venv\Scripts\python.exe"
 $bridgeProcess = $null
-$bodyTimeoutSec = if ($UsePollinationsFlux) { 720 } else { 60 }
+$bodyTimeoutSec = 180
 
 function Enable-PollinationsFluxCommand {
-    $wrapperPath = Join-Path $projectRoot "scripts\pollinations_flux.py"
-    if (-not (Test-Path $wrapperPath)) {
-        throw "Pollinations wrapper script was not found at $wrapperPath"
-    }
-
-    $authMode = "anonymous"
-    if ($env:VIDEO_STUDIO_POLLINATIONS_API_KEY) {
-        if ($env:VIDEO_STUDIO_POLLINATIONS_API_KEY.StartsWith("sk_")) {
-            $authMode = "secret-key"
-        }
-        elseif ($env:VIDEO_STUDIO_POLLINATIONS_API_KEY.StartsWith("pk_")) {
-            $authMode = "publishable-key"
-        }
-        else {
-            $authMode = "custom-key"
-        }
-    }
-
-    $env:VIDEO_STUDIO_FLUX_MODE = "command"
-    $env:VIDEO_STUDIO_FLUX_COMMAND = (@(
-        $python,
-        $wrapperPath,
-        "--prompt-path",
-        "{prompt_path}",
-        "--output-path",
-        "{output_path}",
-        "--timeout-sec",
-        "45",
-        "--max-attempts",
-        "4",
-        "--endpoint-mode",
-        "auto",
-        "--min-request-gap-sec",
-        "90",
-        "--initial-backoff-sec",
-        "8",
-        "--backoff-jitter-sec",
-        "4",
-        "--max-backoff-sec",
-        "45"
-    ) | ConvertTo-Json -Compress)
-
-    if (-not $env:VIDEO_STUDIO_MEDIA_TIMEOUT_SEC) {
-        $env:VIDEO_STUDIO_MEDIA_TIMEOUT_SEC = "360"
-    }
-
-    Write-Host "[verify] enabled Pollinations FLUX command adapter"
-    Write-Host "[verify] Pollinations auth mode: $authMode"
-    Write-Host $env:VIDEO_STUDIO_FLUX_COMMAND
+    Write-Warning "-UsePollinationsFlux is deprecated. Pollinations/FLUX is no longer part of the zero-paid verify path."
 }
 
 function Invoke-BridgeJson {
@@ -141,25 +93,23 @@ try {
     Write-Host "[verify] bridge health"
     $health | ConvertTo-Json -Depth 6
 
-    if ($health.planner.backend -ne "ollama") {
-        throw "Expected Ollama planner backend, got $($health.planner.backend)"
+    if ($health.planner.backend -notin @("gemini", "sample")) {
+        throw "Expected Gemini or sample planner backend, got $($health.planner.backend)"
     }
 
-    if (-not $health.media.flux -or -not $health.media.wan) {
-        throw "Expected local media adapter diagnostics for flux and wan in bridge health"
+    if (-not $health.zero_paid -or $health.zero_paid.paidProvidersAllowed -ne $false) {
+        throw "Bridge health did not confirm zero-paid mode"
+    }
+
+    if (-not $health.media.'gemini-flash' -or -not $health.media.wan) {
+        throw "Expected local media adapter diagnostics for gemini-flash and wan in bridge health"
     }
 
     Write-Host "[verify] local media adapters"
     $health.media | ConvertTo-Json -Depth 6
 
     if ($UsePollinationsFlux) {
-        if ($health.media.flux.mode -ne "command") {
-            throw "Expected FLUX adapter mode=command when -UsePollinationsFlux is set, got $($health.media.flux.mode)"
-        }
-
-        if (-not $health.media.flux.ready) {
-            throw "Expected FLUX adapter to be ready when -UsePollinationsFlux is set"
-        }
+        Write-Warning "Skipping FLUX readiness assertions because FLUX is no longer registered as an adapter."
     }
 
     $sampleImageBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ1QAAAAASUVORK5CYII="
@@ -167,11 +117,11 @@ try {
 
     $renderPayloadObject = @{
         prompt = "30-second cafe promo reel with a warm morning mood"
-        budgetMode = "standard"
+        budgetMode = "free"
         projectId = "verify-render-draft"
         availability = @{
-            premiumEnabled = $true
-            veo3 = $true
+            premiumEnabled = $false
+            veo3 = $false
         }
         sceneAssets = @(
             @{
@@ -243,19 +193,7 @@ try {
     $localMediaSummary | ConvertTo-Json -Depth 4
 
     if ($UsePollinationsFlux) {
-        $fluxResults = @($renderResponse.renderResult.localMedia | Where-Object { $_.adapterKey -eq "flux" })
-        if (-not $fluxResults.Count) {
-            throw "Expected at least one FLUX-backed local media result when -UsePollinationsFlux is set"
-        }
-
-        $attemptedFluxResults = @($fluxResults | Where-Object { $_.attempted -eq $true })
-        if (-not $attemptedFluxResults.Count) {
-            throw "Expected the Pollinations FLUX command path to be attempted at least once"
-        }
-
-        if ([int]$localMediaSummary.generated -lt 1) {
-            Write-Warning "Pollinations FLUX command path was attempted but did not generate an image; render fallback remained active"
-        }
+        Write-Warning "Skipped Pollinations/FLUX result assertions in zero-paid mode."
     }
 
     Write-Host "[verify] render output path"

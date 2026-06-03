@@ -8,7 +8,7 @@ import re
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from worker.media.model_router import ProviderAvailability, RouteDecision, route_project_plan, summarize_cost
 from worker.planner.ollama_planner import build_project_plan
@@ -33,6 +33,29 @@ class RenderAssetSpec:
     sourcePath: str | None = None
     sourceLabel: str | None = None
     sourceMimeType: str | None = None
+    sourceProvider: str | None = None
+    sourceUrl: str | None = None
+    sourceExternalId: str | None = None
+    sourceLicense: str | None = None
+    license: str | None = None
+    licenseUrl: str | None = None
+    attribution: str | None = None
+    sourceAttribution: str | None = None
+    artist: str | None = None
+    creator: str | None = None
+    sourcePageUrl: str | None = None
+    candidateCount: int | None = None
+    selectionMethod: str | None = None
+    selectionKey: str | None = None
+    selectedCandidateSummary: str | None = None
+    downloadDate: str | None = None
+    attributionRequired: bool | None = None
+    sourceGenerator: str | None = None
+    sourceGeneratorRequestPath: str | None = None
+    sourceGeneratorPromptPath: str | None = None
+    sourceGeneratorLogPath: str | None = None
+    sourceGeneratorCommand: str | None = None
+    sourceProvenance: dict[str, Any] | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -49,9 +72,32 @@ class RenderSceneSpec:
     visualKind: VisualKind
     audioKind: AudioKind
     subtitleText: str
+    narrationText: str
     cacheDir: str
     assetIds: list[str]
     motionPreset: str = "none"
+    captionPreset: str = "lower-info"
+    captionDisplayDurationSec: float = 0.0
+    audioDesignMode: str = ""
+    sourceRationale: str = ""
+    continuityNote: str = ""
+    hookNote: str = ""
+    originalityEvidence: str = ""
+    qualityReviewNote: str = ""
+    visualQualityVerdict: str = ""
+    thumbnailReviewNote: str = ""
+    audioMixReviewNote: str = ""
+    platformComparisonNote: str = ""
+    layoutVariantKey: str = ""
+    layoutVariantLabel: str = ""
+    layoutVariantNote: str = ""
+    visualSourceIntent: str = ""
+    grokPrompt: str = ""
+    selectedFileName: str = ""
+    selectedCandidateSummary: str = ""
+    selectedCandidate: dict[str, Any] | None = None
+    sourceProvenanceConfirmed: bool | None = None
+    sourceProvenanceNote: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -77,6 +123,10 @@ class RenderManifest:
     composeCommandPreview: str
     transitionType: str = "fade"
     transitionDuration: float = 0.5
+    subtitleStyle: str = ""
+    bgmEnabled: bool = True
+    bgmAsset: dict | None = None
+    templateType: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -110,6 +160,11 @@ def build_render_manifest(
     estimated_cost_usd: float,
     storage_root: str = "storage",
     provider_overrides: dict[str, str] | None = None,
+    scene_caption_presets: dict[str, str] | None = None,
+    subtitle_style: str = "",
+    bgm_enabled: bool = True,
+    bgm_asset: dict | None = None,
+    template_type: str = "",
 ) -> RenderManifest:
     title_slug = slugify(plan.title)
     input_dir = f"{storage_root}/inputs/{project_id}"
@@ -138,6 +193,8 @@ def build_render_manifest(
 
         visual_kind = _visual_kind_for_scene(scene.canUseStillImage, visual_provider)
 
+        narration_text = str(getattr(scene, "narrationText", "") or scene.subtitleText)
+
         visual_asset_id = f"{scene.id}-visual"
         assets.append(
             RenderAssetSpec(
@@ -161,7 +218,7 @@ def build_render_manifest(
                 role="audio",
                 provider=route if audio_kind == "native" else "edge-tts",
                 kind=audio_kind,
-                prompt=scene.subtitleText,
+                prompt=narration_text,
                 durationSec=round(scene.durationSec, 2),
                 outputPath=f"{scene_cache_dir}/{scene.id}.wav",
             )
@@ -212,9 +269,13 @@ def build_render_manifest(
                 visualKind=visual_kind,
                 audioKind=audio_kind,
                 subtitleText=scene.subtitleText,
+                narrationText=narration_text,
                 cacheDir=scene_cache_dir,
                 assetIds=asset_ids,
                 motionPreset="none",
+                captionPreset=(scene_caption_presets or {}).get(scene.id, "lower-info"),
+                captionDisplayDurationSec=0.0,
+                audioDesignMode="",
             )
         )
 
@@ -240,6 +301,10 @@ def build_render_manifest(
         scenes=scenes,
         assets=assets,
         composeCommandPreview=compose_command_preview,
+        subtitleStyle=subtitle_style,
+        bgmEnabled=bgm_enabled,
+        bgmAsset=bgm_asset,
+        templateType=template_type,
     )
 
 

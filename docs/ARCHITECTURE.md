@@ -3,14 +3,14 @@
 ## Objective
 Build a Windows-first short-form video content automation tool that accepts a user prompt and produces a rendered 9:16 video by combining:
 - planning and scene decomposition
-- local and cloud image/video generation with multi-provider support
-- TTS narration (free Edge TTS or premium providers)
-- background music (local library or AI-generated)
+- local/free image and video sources with opt-in provider support
+- TTS narration (Edge TTS or Windows Speech by default)
+- background music from a local library
 - Ken Burns motion effects, scene transitions, and FFmpeg composition
 
 ## Core Principle
 Separate planning from media generation and separate media generation from final rendering.
-Free-first provider selection with manual approval for paid APIs.
+Zero-paid provider selection by default. Paid providers require explicit operator opt-in.
 
 ## System Layers
 
@@ -22,14 +22,14 @@ Free-first provider selection with manual approval for paid APIs.
 - `components/shared.ts` — shared types and utility functions
 
 ### 2. Planner Layer (`worker/planner/`)
-- powered by Ollama (local) or browser-sample fallback
+- powered by Gemini when configured, otherwise deterministic sample fallback
 - converts the prompt into a structured `ProjectPlan`
 - assigns scene priorities and generation requirements
 - emits model routing hints instead of generating pixels directly
 
 ### 3. Routing Layer (`worker/media/`)
 - reads scene requirements and budget mode
-- **provider policy** (`provider_policy.py`) — free-first selection with manual approval for paid
+- **provider policy** (`provider_policy.py`) — zero-paid selection with explicit paid opt-in
 - **adapter registry** (`adapters.py`) — 18 providers across 5 categories
 - **cost estimator** (`model_router.py`) — per-scene and per-project cost breakdown
 - decides provider per category: image, video, tts, bgm, sfx
@@ -38,8 +38,8 @@ Free-first provider selection with manual approval for paid APIs.
 
 | Category | Free Providers | Premium Providers |
 |----------|---------------|-------------------|
-| Image | Pollinations FLUX, local FLUX | DALL-E 3, Imagen 3 |
-| Video | local Wan | Sora 2, Veo 3, Runway |
+| Image | Gemini Flash, Pexels/Klipy stock, uploaded assets | Serper, DALL-E 3, Imagen 4 |
+| Video | Local Wan, Pexels stock video, uploaded assets | Veo 3, Runway |
 | TTS | Edge TTS, Windows TTS | ElevenLabs, OpenAI TTS |
 | BGM | Local library | Suno |
 | SFX | Local library, Freesound | — |

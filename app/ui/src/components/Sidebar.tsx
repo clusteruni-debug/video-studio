@@ -5,6 +5,85 @@ import { TEMPLATE_LABELS, TONE_LABELS, TTS_LABELS, SUBTITLE_STYLE_LABELS } from 
 import type { TemplateType, TonePreset } from "../lib/bridge";
 import UsageCard from "./UsageCard";
 
+const TEMPLATE_GUIDANCE: Partial<Record<TemplateType, {
+  pattern: string;
+  sourceMix: string;
+  layout: string;
+  assets: string;
+  avoid: string;
+}>> = {
+  news_explainer: {
+    pattern: "뉴스/해설형",
+    sourceMix: "Pexels/Pixabay/Wikimedia는 맥락 컷, 1번 컷은 강한 움직임",
+    layout: "상단 hook 이후 작은 lower fact 중심",
+    assets: "Pexels Video, Pixabay Video, Wikimedia Commons, YouTube Audio Library",
+    avoid: "관련 있어 보이는 stock top-1 자동 채택",
+  },
+  ranking_list: {
+    pattern: "랭킹/리스트형",
+    sourceMix: "순위마다 다른 영상 후보를 직접 선택",
+    layout: "고정 rank label + 빠르지만 규칙적인 컷",
+    assets: "Pexels/Pixabay 후보 5개 이상, 직접 캡처는 권리 확인",
+    avoid: "같은 B-roll 반복 루프",
+  },
+  tutorial_steps: {
+    pattern: "튜토리얼형",
+    sourceMix: "직접 화면/손 동작 촬영이 1순위",
+    layout: "상단 step label, 세부 설명은 lower-info",
+    assets: "직접 녹화, CC0 아이콘, Pexels 보조 컷",
+    avoid: "실제 조작 없이 이미지 설명만 나열",
+  },
+  authentic_vlog: {
+    pattern: "한국형 브이로그",
+    sourceMix: "직접 촬영 MP4 + 필요한 보조 B-roll",
+    layout: "전체 화면 움직임, caption은 none/lower-info",
+    assets: "직접 업로드, Pexels/Pixabay, YouTube Audio Library/Mixkit BGM",
+    avoid: "광고처럼 보이는 과장 자막과 반복 stock",
+  },
+  persona_story: {
+    pattern: "페르소나/AI 스토리",
+    sourceMix: "Grok/SuperGrok 또는 로컬 Wan/LTX/Hunyuan hero",
+    layout: "동일 캐릭터/장소/소품, 첫 컷 top hook",
+    assets: "Grok MP4 handoff, 로컬 모델 MP4, Pexels texture insert",
+    avoid: "컷마다 얼굴·의상·소품이 바뀌는 AI slop",
+  },
+  kculture_fandom: {
+    pattern: "K-컬처 팬덤형",
+    sourceMix: "저작권 안전 대체 컷 + 직접/생성 fan process",
+    layout: "비트 친화 컷, safe-zone callout만 작게",
+    assets: "직접 이벤트 footage, CC/stock city-stage B-roll, YouTube Audio Library",
+    avoid: "원본 MV/드라마/음원 무단 삽입",
+  },
+  podcast_clip: {
+    pattern: "롱폼/팟캐스트 클립",
+    sourceMix: "소유한 원본 클립 또는 TTS 요약 + B-roll",
+    layout: "speaker crop, waveform/chapter card, lower caption",
+    assets: "소유 원본, Freesound SFX, YouTube Audio Library bed",
+    avoid: "권리 없는 발화를 실제 화자처럼 재현",
+  },
+  longform_deep_dive: {
+    pattern: "롱폼 딥다이브",
+    sourceMix: "챕터 카드 + 직접 만든 데이터 카드 + 무료 B-roll",
+    layout: "느린 컷, chapter/title card, lower fact 중심",
+    assets: "직접 제작 그래픽, Pexels/Pixabay/Wikimedia, YouTube Audio Library",
+    avoid: "쇼츠식 과한 중앙 자막과 반복 stock 컷",
+  },
+  interview_documentary: {
+    pattern: "인터뷰/다큐형",
+    sourceMix: "소유 인터뷰/현장 MP4가 1순위, 없으면 TTS 요약",
+    layout: "speaker/손동작/장소 중심, 작은 lower caption",
+    assets: "직접 인터뷰, 현장 B-roll, Freesound ambience, Wikimedia 증빙 컷",
+    avoid: "권리 없는 화자를 AI 음성으로 흉내내기",
+  },
+  live_recap: {
+    pattern: "라이브/현장 리캡",
+    sourceMix: "직접 촬영 현장 컷 + 권리 안전한 분위기 컷",
+    layout: "동선/포인트별 chapter chip, 비트는 유지하되 자막은 작게",
+    assets: "직접 촬영, Mixkit/Pexels city-stage B-roll, YouTube Audio Library",
+    avoid: "공연 음원/MV/방송 화면 무단 삽입",
+  },
+};
+
 export default function Sidebar() {
   const state = useStudioState();
   const actions = useStudioActions();
@@ -28,6 +107,7 @@ export default function Sidebar() {
     bridgeStatus, availableProviders, availableTemplates, creating, error,
     projects, activeProjectId, usageStats,
   } = state;
+  const templateGuidance = TEMPLATE_GUIDANCE[templateType];
 
   return (
     <aside className="sidebar">
@@ -57,6 +137,28 @@ export default function Sidebar() {
             ))}
           </select>
         </div>
+        {templateGuidance && (
+          <div className="template-guidance-card">
+            <div className="template-guidance-head">
+              <strong>{templateGuidance.pattern}</strong>
+              <span>{templateGuidance.sourceMix}</span>
+            </div>
+            <dl className="template-guidance-list">
+              <div>
+                <dt>layout</dt>
+                <dd>{templateGuidance.layout}</dd>
+              </div>
+              <div>
+                <dt>free assets</dt>
+                <dd>{templateGuidance.assets}</dd>
+              </div>
+              <div>
+                <dt>avoid</dt>
+                <dd>{templateGuidance.avoid}</dd>
+              </div>
+            </dl>
+          </div>
+        )}
         <div className="sidebar-field compact">
           <span>어조</span>
           <select

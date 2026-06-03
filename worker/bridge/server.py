@@ -23,12 +23,16 @@ from flask import Flask, jsonify, request as flask_request, send_from_directory
 from flask_cors import CORS
 
 from worker.tts.providers import available_providers
+from worker.media.adapters import probe_local_media_adapters
+from worker.media.provider_policy import allowed_preference
+from worker.bridge.image_router import zero_paid_policy_status
 from worker.bridge.templates import TEMPLATE_TYPES
 from worker.bridge.scene_generator import TONE_PRESETS
 from worker.bridge.batch import BatchManager
 from worker.bridge.job_queue import JobQueue
 from worker.bridge.cleanup import cleanup_storage, format_size
 from worker.bridge.routes_media import media_bp, init_media_routes
+from worker.bridge.routes_grok import grok_bp, init_grok_routes
 from worker.bridge.routes_sources import sources_bp, init_source_routes
 from worker.bridge.routes_admin import admin_bp, init_admin_routes
 from worker.bridge.draft_executor import (
@@ -54,8 +58,17 @@ from worker.bridge.vectcut_bridge import VECTCUT_DIR
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 
+UI_DEV_CORS_ORIGINS = [
+    "http://127.0.0.1:5160",
+    "http://localhost:5160",
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+    "http://127.0.0.1:4160",
+    "http://localhost:4160",
+]
+
 app = Flask(__name__)
-CORS(app, origins=["http://127.0.0.1:5160", "http://localhost:5160"])
+CORS(app, origins=UI_DEV_CORS_ORIGINS)
 
 batch_manager = BatchManager()
 job_queue = JobQueue()
@@ -64,6 +77,18 @@ job_queue = JobQueue()
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+def _bridge_availability(data: dict):
+    from worker.media.model_router import ProviderAvailability
+
+    availability_data = data.get("availability") or {}
+    return ProviderAvailability(
+        veo3=bool(availability_data.get("veo3", False)),
+        premium_enabled=bool(
+            availability_data.get("premiumEnabled", availability_data.get("premium_enabled", False))
+        ),
+    )
+
+
 @app.route("/api/health", methods=["GET"])
 def health():
     vectcut_ok = False
@@ -74,9 +99,26 @@ def health():
     except (ImportError, RuntimeError) as vc_err:
         # Health endpoint should report missing-but-not-crashed state.
         logger.debug("vectcut health check failed: %s", vc_err)
+    adapters = probe_local_media_adapters(PROJECT_ROOT)
+    zero_paid = zero_paid_policy_status()
+    planner_backend = "gemini" if GEMINI_API_KEY else "sample"
     return jsonify({
         "bridge": "ok",
         "vectcut": "library" if vectcut_ok else "missing",
+        "planner": {
+            "backend": planner_backend,
+            "model": "gemini-2.5-flash" if GEMINI_API_KEY else "sample-local",
+            "fallbackUsed": not bool(GEMINI_API_KEY),
+        },
+        "zero_paid": zero_paid,
+        "provider_policy": {
+            "image": allowed_preference("image"),
+            "video": allowed_preference("video"),
+            "tts": allowed_preference("tts"),
+            "bgm": allowed_preference("bgm"),
+            "sfx": allowed_preference("sfx"),
+        },
+        "media": {key: status.to_dict() for key, status in adapters.items()},
         "tts_providers": available_providers(),
         "pexels": "ready" if os.environ.get("PEXELS_API_KEY", "") else "no_key",
         "klipy": "ready" if os.environ.get("KLIPY_API_KEY", "") else "no_key",
@@ -87,6 +129,72 @@ def health():
         "capcut_draft_dir": str(CAPCUT_DRAFT_DIR),
         "capcut_draft_dir_exists": CAPCUT_DRAFT_DIR.exists(),
     })
+
+
+@app.route("/api/route-plan", methods=["POST"])
+def route_plan_route():
+    """Compatibility route for planner verification and local automation."""
+    data = flask_request.get_json(silent=True) or {}
+    prompt = str(data.get("prompt", "")).strip()
+    if not prompt:
+        return jsonify({"ok": False, "error": "prompt is required"}), 400
+
+    try:
+        from worker.media.model_router import route_project_plan, summarize_cost
+        from worker.planner.ollama_planner import build_project_plan
+
+        plan, planner = build_project_plan(
+            prompt,
+            budget_mode=data.get("budgetMode", "free"),
+            planner_mode=data.get("plannerMode", "auto"),
+        )
+        decisions = route_project_plan(plan, _bridge_availability(data))
+    except Exception as exc:
+        logger.warning("route_plan_route failed: %s", exc)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+    return jsonify({
+        "ok": True,
+        "plan": plan.to_dict(),
+        "planner": planner.to_dict(),
+        "routes": [decision.to_dict() for decision in decisions],
+        "estimatedTotalCostUsd": summarize_cost(decisions),
+    })
+
+
+@app.route("/api/save-project", methods=["POST"])
+def save_project_route():
+    """Compatibility route for saving a planned project bundle under storage/."""
+    data = flask_request.get_json(silent=True) or {}
+    prompt = str(data.get("prompt", "")).strip()
+    if not prompt:
+        return jsonify({"ok": False, "error": "prompt is required"}), 400
+
+    try:
+        from worker.planner.save_plan import save_project_bundle
+
+        payload = save_project_bundle(
+            prompt=prompt,
+            budget_mode=data.get("budgetMode", "free"),
+            availability=_bridge_availability(data),
+            planner_mode=data.get("plannerMode", "auto"),
+            project_id=data.get("projectId"),
+            project_root=PROJECT_ROOT,
+            scene_assets=data.get("sceneAssets"),
+            provider_overrides=data.get("providerOverrides"),
+            draft_scenes=data.get("draftScenes"),
+            selected_pexels_videos=data.get("selectedPexelsVideos"),
+            subtitle_style=data.get("subtitleStyle", ""),
+            bgm_enabled=bool(data.get("bgmEnabled", True)),
+            bgm_asset=data.get("bgmAsset") or data.get("selectedBgmAsset"),
+            template_type=str(data.get("templateType") or data.get("template_type") or ""),
+        )
+    except Exception as exc:
+        logger.warning("save_project_route failed: %s", exc)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+    payload["ok"] = True
+    return jsonify(payload)
 
 
 @app.route("/api/tts/<path:filename>", methods=["GET"])
@@ -229,6 +337,48 @@ def render_mp4_route():
     return jsonify(render_result)
 
 
+@app.route("/api/render-smoke", methods=["POST"])
+def render_smoke_route():
+    """Save a zero-paid project bundle and render it through the FFmpeg smoke path."""
+    data = flask_request.get_json(silent=True) or {}
+    prompt = str(data.get("prompt", "")).strip()
+    if not prompt:
+        return jsonify({"ok": False, "error": "prompt is required"}), 400
+
+    try:
+        from worker.planner.save_plan import save_project_bundle
+        from worker.render.compose import compose_smoke_render
+
+        payload = save_project_bundle(
+            prompt=prompt,
+            budget_mode=data.get("budgetMode", "free"),
+            availability=_bridge_availability(data),
+            planner_mode=data.get("plannerMode", "auto"),
+            project_id=data.get("projectId"),
+            project_root=PROJECT_ROOT,
+            scene_assets=data.get("sceneAssets"),
+            provider_overrides=data.get("providerOverrides"),
+            draft_scenes=data.get("draftScenes"),
+            selected_pexels_videos=data.get("selectedPexelsVideos"),
+            subtitle_style=data.get("subtitleStyle", ""),
+            bgm_enabled=bool(data.get("bgmEnabled", True)),
+            bgm_asset=data.get("bgmAsset") or data.get("selectedBgmAsset"),
+            template_type=str(data.get("templateType") or data.get("template_type") or ""),
+        )
+        render_result = compose_smoke_render(
+            payload["saveResult"]["manifestPath"],
+            project_root=PROJECT_ROOT,
+        )
+    except Exception as exc:
+        logger.warning("render_smoke_route failed: %s", exc)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+    payload["ok"] = bool(render_result.ok)
+    payload["renderResult"] = render_result.to_dict()
+    status = 200 if render_result.ok else 500
+    return jsonify(payload), status
+
+
 # ---------------------------------------------------------------------------
 # Blueprint registration + helpers shared with route modules
 # ---------------------------------------------------------------------------
@@ -237,6 +387,7 @@ init_media_routes(
     BRIDGE_HOST, BRIDGE_PORT, TTS_DIR, PROJECT_ROOT,
     get_audio_duration, image_url_for_client, safe_resolve,
 )
+init_grok_routes(BRIDGE_HOST, BRIDGE_PORT, PROJECT_ROOT, safe_resolve)
 init_source_routes(execute_draft_core)
 init_admin_routes(
     PROJECT_ROOT, CAPCUT_DRAFT_DIR, batch_manager, job_queue,
@@ -244,6 +395,7 @@ init_admin_routes(
 )
 
 app.register_blueprint(media_bp)
+app.register_blueprint(grok_bp)
 app.register_blueprint(sources_bp)
 app.register_blueprint(admin_bp)
 

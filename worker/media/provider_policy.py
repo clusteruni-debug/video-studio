@@ -1,17 +1,50 @@
-"""Provider selection policy — free-first with manual approval for paid providers."""
+"""Provider selection policy: zero-paid by default, opt-in for paid providers."""
 
 from __future__ import annotations
+
+import os
 
 from worker.media.adapters import ADAPTER_CONFIG
 
 # Default provider preference per category (first match wins)
 DEFAULT_PREFERENCE = {
-    "image": ["gemini-flash"],  # free-only: Gemini Flash (free AI gen). Pexels/Serper handled separately in bridge image_router
-    "video": ["wan", "veo3", "runway"],  # Sora 2 retired 2026-04; removed from adapters.py registry.
+    "image": ["gemini-flash", "imagen"],  # Pexels/Klipy are handled separately in bridge image_router.
+    "video": ["wan", "ltx-video", "hunyuan-video", "pexels-video", "veo3", "runway"],
     "tts": ["edge-tts", "windows-tts", "elevenlabs", "openai-tts"],
     "bgm": ["local-bgm", "suno"],
     "sfx": ["local-sfx", "freesound"],
 }
+
+_TRUTHY = {"1", "true", "yes", "y", "on"}
+PAID_COST_TIERS = {"cheap", "premium"}
+
+
+def paid_providers_allowed() -> bool:
+    """Return True only when the operator explicitly enables paid providers."""
+    raw = (
+        os.environ.get("VIDEO_STUDIO_ALLOW_PAID_PROVIDERS")
+        or os.environ.get("VIDEO_STUDIO_ALLOW_PAID")
+        or ""
+    )
+    return raw.strip().lower() in _TRUTHY
+
+
+def is_paid_provider(provider_key: str) -> bool:
+    """Return whether an adapter can create billable usage."""
+    config = ADAPTER_CONFIG.get(provider_key, {})
+    return (
+        config.get("costTier") in PAID_COST_TIERS
+        or float(config.get("costPerUnit", 0.0) or 0.0) > 0
+    )
+
+
+def allowed_preference(category: str) -> list[str]:
+    """Return provider preference after applying the zero-paid gate."""
+    preference = DEFAULT_PREFERENCE.get(category, [])
+    if paid_providers_allowed():
+        return list(preference)
+    return [provider for provider in preference if not is_paid_provider(provider)]
+
 
 def estimate_scene_cost(
     category: str,

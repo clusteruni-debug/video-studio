@@ -1,6 +1,7 @@
 """
-Image routing — Serper (Google Images) primary, with Gemini Flash (free AI), Imagen 4 (paid AI),
-Pexels (stock), and Klipy (GIF) fallbacks.
+Image routing — zero-paid by default, with Gemini Flash/free stock providers first.
+Serper and Imagen 4 are billable routes and only run when paid providers are
+explicitly enabled by the operator.
 Klipy is a Tenor v2-compatible API (same endpoint structure, different base URL).
 Gemini prompts emit "tenor" as image_source — this is a routing token that maps to Klipy.
 """
@@ -16,6 +17,8 @@ import os
 from pathlib import Path
 from urllib import request as urllib_request
 from urllib.error import URLError
+
+from worker.media.provider_policy import paid_providers_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +37,17 @@ _HTTP_ERRORS: tuple[type[BaseException], ...] = (
 def _get_key(name: str) -> str:
     """Read API key from env at call time (not import time) so load_dotenv works."""
     return os.environ.get(name, "")
+
+
+def zero_paid_policy_status() -> dict:
+    """Machine-readable policy status for health checks and operator tooling."""
+    allow_paid = paid_providers_allowed()
+    return {
+        "mode": "paid-enabled" if allow_paid else "zero-paid",
+        "paidProvidersAllowed": allow_paid,
+        "paidProviderEnv": "VIDEO_STUDIO_ALLOW_PAID_PROVIDERS",
+        "blockedByDefault": ["serper", "imagen", "veo3", "runway", "elevenlabs", "openai-tts", "suno"],
+    }
 
 
 # Emotions that route to Klipy (reaction GIFs) vs web search (product photos)
@@ -73,6 +87,13 @@ def search_serper(query: str) -> str | None:
     return None
 
 
+def search_serper_if_allowed(query: str) -> str | None:
+    if not paid_providers_allowed():
+        logger.info("serper skipped because paid providers are disabled")
+        return None
+    return search_serper(query)
+
+
 def generate_imagen(prompt: str, output_dir: str | None = None, aspect_ratio: str = "9:16") -> str | None:
     """Generate image via Google Imagen 4 API. Returns local file path or None."""
     api_key = _get_key("GEMINI_API_KEY") or _get_key("GOOGLE_API_KEY")
@@ -102,6 +123,17 @@ def generate_imagen(prompt: str, output_dir: str | None = None, aspect_ratio: st
     except _HTTP_ERRORS as e:
         logger.warning("imagen failed: %s", type(e).__name__)
         return None
+
+
+def generate_imagen_if_allowed(
+    prompt: str,
+    output_dir: str | None = None,
+    aspect_ratio: str = "9:16",
+) -> str | None:
+    if not paid_providers_allowed():
+        logger.info("imagen skipped because paid providers are disabled")
+        return None
+    return generate_imagen(prompt, output_dir=output_dir, aspect_ratio=aspect_ratio)
 
 
 def generate_gemini_flash(prompt: str, output_dir: str | None = None) -> str | None:
@@ -182,7 +214,7 @@ def search_pexels_video(
     min_duration: float = 0,
     per_page: int = 3,
 ) -> dict | None:
-    """Search Pexels for a stock video. Returns info dict or None.
+    """Search Pexels for a stock video. Returns the first candidate or None.
 
     RENDERING-SPEC §5.2:
     - orientation: "portrait" (9:16 preferred)
@@ -191,11 +223,28 @@ def search_pexels_video(
 
     Returns: {"url": str, "width": int, "height": int, "duration": float} or None.
     """
+    candidates = search_pexels_video_candidates(
+        query=query,
+        orientation=orientation,
+        min_duration=min_duration,
+        per_page=per_page,
+    )
+    return candidates[0] if candidates else None
+
+
+def search_pexels_video_candidates(
+    query: str,
+    orientation: str = "portrait",
+    min_duration: float = 0,
+    per_page: int = 8,
+) -> list[dict]:
+    """Search Pexels for multiple operator-curatable video candidates."""
     api_key = _get_key("PEXELS_API_KEY")
     if not api_key:
-        return None
+        return []
     if orientation not in _VALID_ORIENTATIONS:
         orientation = "portrait"
+    per_page = max(1, min(int(per_page or 8), 20))
     try:
         from urllib.parse import quote_plus
         safe_query = quote_plus(query)
@@ -212,6 +261,7 @@ def search_pexels_video(
             data = json.loads(resp.read(524288))
             videos = data.get("videos", [])
             skipped_duration = 0
+            candidates: list[dict] = []
             for video in videos:
                 duration = video.get("duration", 0)
                 if min_duration > 0 and duration < min_duration:
@@ -222,14 +272,20 @@ def search_pexels_video(
                     file_url = best_file.get("link")
                     if not file_url:
                         continue
-                    _log_image_usage("pexels", query)
-                    return {
+                    candidates.append({
+                        "id": str(video.get("id") or file_url),
                         "url": file_url,
                         "width": best_file.get("width", 0),
                         "height": best_file.get("height", 0),
                         "duration": duration,
                         "pexels_id": video.get("id"),
-                    }
+                        "sourceUrl": video.get("url"),
+                        "thumbnailUrl": video.get("image"),
+                        "author": (video.get("user") or {}).get("name"),
+                    })
+            if candidates:
+                _log_image_usage("pexels", query)
+                return candidates
             if skipped_duration and skipped_duration == len(videos):
                 logger.info(
                     "pexels-video %d results for %r all shorter than %ss",
@@ -239,7 +295,7 @@ def search_pexels_video(
                 logger.info("pexels-video no results for %r", query)
     except _HTTP_ERRORS as e:
         logger.warning("pexels-video search failed for %r: %s", query, e)
-    return None
+    return []
 
 
 def _select_best_video_file(video_files: list[dict]) -> dict | None:
@@ -354,7 +410,8 @@ def route_image(scene: dict) -> tuple[str | None, str | None]:
     """Route image search based on emotion and image_source fields.
     Returns (resolved_image_url, source_name) tuple.
     source_name is "serper", "gemini-flash", "imagen", "pexels", or "klipy".
-    Auto-route: Serper → Gemini Flash (free) → Imagen 4 (paid) → Pexels fallback.
+    Auto-route in zero-paid mode: Gemini Flash → Pexels/Klipy.
+    Paid opt-in mode may add Serper and Imagen 4 fallbacks.
     Note: Gemini emits "tenor" as image_source — this maps to Klipy."""
     image_prompt = scene.get("image_prompt")
     if not image_prompt:
@@ -385,13 +442,14 @@ def route_image(scene: dict) -> tuple[str | None, str | None]:
             _log_image_usage("pexels", image_prompt)
             return url, "pexels"
         return None, None
-    # FLUX / Pollinations — dead (401, paid-only since 2026-03). Route to Gemini Flash (free) → Imagen 4 (paid).
+    # FLUX / Pollinations — dead (401, paid-only since 2026-03). Route to
+    # Gemini Flash first and only call Imagen when paid providers are enabled.
     if source in ("flux", "pollinations", "imagen"):
         ai_path = generate_gemini_flash(image_prompt)
         if ai_path:
             _log_image_usage("gemini-flash", image_prompt)
             return str(Path(ai_path).resolve()), "gemini-flash"
-        ai_path = generate_imagen(image_prompt)
+        ai_path = generate_imagen_if_allowed(image_prompt)
         if ai_path:
             _log_image_usage("imagen", image_prompt)
             return str(Path(ai_path).resolve()), "imagen"
@@ -419,8 +477,8 @@ def route_image(scene: dict) -> tuple[str | None, str | None]:
                 _log_image_usage("klipy", fallback)
                 return url, "klipy"
 
-    # Default: Serper (Google Images) — finds specific products/topics
-    url = search_serper(image_prompt)
+    # Default: Gemini Flash/free stock. Serper is billable and opt-in only.
+    url = search_serper_if_allowed(image_prompt)
     if url:
         _log_image_usage("serper", image_prompt)
         return url, "serper"
@@ -431,8 +489,8 @@ def route_image(scene: dict) -> tuple[str | None, str | None]:
         _log_image_usage("gemini-flash", image_prompt)
         return str(Path(ai_path).resolve()), "gemini-flash"
 
-    # Fallback 2: Imagen 4 (paid AI generation, $0.02/img)
-    ai_path = generate_imagen(image_prompt)
+    # Fallback 2: Imagen 4 when paid providers are explicitly enabled.
+    ai_path = generate_imagen_if_allowed(image_prompt)
     if ai_path:
         _log_image_usage("imagen", image_prompt)
         return str(Path(ai_path).resolve()), "imagen"
@@ -448,9 +506,9 @@ def route_image(scene: dict) -> tuple[str | None, str | None]:
 
 
 def search_sub_image(query: str) -> tuple[str | None, str | None]:
-    """Fast sub-scene image search (Serper → Pexels only, no AI gen).
+    """Fast sub-scene image search (paid-enabled Serper → Pexels, no AI gen).
     Used to add visual variety within long scenes."""
-    url = search_serper(query)
+    url = search_serper_if_allowed(query)
     if url:
         return url, "serper"
     url = search_pexels(query)

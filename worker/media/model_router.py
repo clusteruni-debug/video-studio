@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Literal
 
+from worker.media.provider_policy import paid_providers_allowed
 from worker.planner.sample_plan import ProjectPlan, SceneSpec
 
 # Sora 2 retired 2026-04 (see memory/project-video-studio-ollama.md).
@@ -30,6 +31,9 @@ class RouteDecision:
 
 
 def choose_route(scene: SceneSpec, budget_mode: str, availability: ProviderAvailability) -> RouteDecision:
+    if not paid_providers_allowed() and availability.premium_enabled:
+        return RouteDecision(scene.id, "local", 0.0, "paid providers disabled by zero-paid policy")
+
     if budget_mode == "free" or not availability.premium_enabled:
         return RouteDecision(scene.id, "local", 0.0, "free-mode or premium disabled")
 

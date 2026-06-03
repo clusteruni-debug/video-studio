@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Film, Plus, Trash2, ChevronUp, ChevronDown, Play, Square, RotateCcw } from "lucide-react";
 import { useStudioState, useStudioActions } from "../context/StudioContext";
 import SceneDetailPanel from "./SceneDetailPanel";
+import RenderReviewPanel, { FinalVideoLibraryPanel } from "./RenderReviewPanel";
 
 function EditableText({
   value,
@@ -68,7 +69,7 @@ function EditableText({
 }
 
 export default function StoryboardPanel() {
-  const { draftResult, selectedSceneIndex } = useStudioState();
+  const { draftResult, selectedSceneIndex, renderResult } = useStudioState();
   const actions = useStudioActions();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -96,10 +97,13 @@ export default function StoryboardPanel() {
 
   if (!draftResult) {
     return (
-      <div className="canvas-empty">
-        <div className="canvas-empty-icon"><Film size={28} /></div>
-        <h2>스토리보드</h2>
-        <p>왼쪽에서 주제를 입력하고 초안을 생성하세요</p>
+      <div className="storyboard-dashboard">
+        <div className="canvas-empty">
+          <div className="canvas-empty-icon"><Film size={28} /></div>
+          <h2>스토리보드</h2>
+          <p>왼쪽에서 주제를 입력하고 초안을 생성하세요</p>
+        </div>
+        <FinalVideoLibraryPanel autoLoad />
       </div>
     );
   }
@@ -125,9 +129,17 @@ export default function StoryboardPanel() {
         </div>
       </div>
 
+      {renderResult?.renderResult?.outputPath ? <RenderReviewPanel /> : <FinalVideoLibraryPanel autoLoad />}
+
       {/* Scene list (vertical) */}
       <div className="scene-list" style={{ marginTop: 16 }}>
         {scenes.map((scene, i) => (
+          (() => {
+            const videoThumb = scene._upload_kind === "video"
+              ? scene._upload_preview
+              : (scene._video_url || scene._selected_pexels_video?.url || null);
+            const imageThumb = videoThumb ? null : (scene._upload_preview || scene._image_url || null);
+            return (
           <div
             key={`scene-${i}`}
             className={`scene-row ${selectedSceneIndex === i ? "selected" : ""}`}
@@ -135,9 +147,16 @@ export default function StoryboardPanel() {
           >
             {/* Left: scene number + thumbnail + emotion badge */}
             <div className="scene-row-num">
-              {(scene._upload_preview || scene._image_url) ? (
+              {videoThumb ? (
+                <video
+                  src={videoThumb}
+                  muted
+                  playsInline
+                  style={{ width: 36, height: 48, objectFit: "cover", borderRadius: 4 }}
+                />
+              ) : imageThumb ? (
                 <img
-                  src={scene._upload_preview || scene._image_url!}
+                  src={imageThumb}
                   alt={`씬 ${scene.scene_num}`}
                   style={{ width: 36, height: 48, objectFit: "cover", borderRadius: 4 }}
                   onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
@@ -222,6 +241,8 @@ export default function StoryboardPanel() {
               </button>
             </div>
           </div>
+            );
+          })()
         ))}
       </div>
 

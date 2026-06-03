@@ -6,16 +6,32 @@ function fileUrlToWindowsPath(value: string): string {
     return decoded.replace(/^\/([A-Za-z]:)/, "$1");
 }
 
-const uiRoot = fileUrlToWindowsPath("./app/ui");
-const distRoot = fileUrlToWindowsPath("./dist");
+const realUiRoot = fileUrlToWindowsPath("./app/ui");
+const realDistRoot = fileUrlToWindowsPath("./dist");
+const devProjectRoot = "C:/vibe/projects/video-studio";
+const devUiRoot = `${devProjectRoot}/app/ui`;
+const devCacheRoot = `${devProjectRoot}/node_modules/.vite`;
+const requiredDevOptimizedDeps = [
+    "react",
+    "react-dom",
+    "react-dom/client",
+    "react/jsx-dev-runtime",
+    "react/jsx-runtime",
+    "lucide-react",
+];
 
-export default defineConfig({
-    root: uiRoot,
+export default defineConfig(({ command }) => ({
+    root: realUiRoot,
     plugins: [react()],
+    cacheDir: command === "serve" ? devCacheRoot : undefined,
     server: {
         host: "127.0.0.1",
         port: 5160,
         strictPort: true,
+    },
+    optimizeDeps: {
+        noDiscovery: true,
+        include: requiredDevOptimizedDeps,
     },
     preview: {
         host: "127.0.0.1",
@@ -23,7 +39,7 @@ export default defineConfig({
         strictPort: true,
     },
     build: {
-        outDir: distRoot,
+        outDir: realDistRoot,
         emptyOutDir: true,
     },
-});
+}));

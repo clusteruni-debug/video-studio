@@ -26,6 +26,13 @@ TEMPLATE_BGM_MOOD: dict[str, str] = {
     "myth_buster": "cinematic",
     "tutorial_steps": "calm",
     "before_after": "cinematic",
+    "authentic_vlog": "calm",
+    "persona_story": "cinematic",
+    "kculture_fandom": "upbeat",
+    "podcast_clip": "calm",
+    "longform_deep_dive": "cinematic",
+    "interview_documentary": "calm",
+    "live_recap": "upbeat",
 }
 
 # ---------------------------------------------------------------------------
@@ -223,6 +230,96 @@ TEMPLATE_LAYOUTS: dict[str, dict] = {
                       "background_color": "#1A1A1A", "background_alpha": 0.70},
             "funny": {"label": "After", "font_color": "#4ECDC4",
                       "background_color": "#1A1A1A", "background_alpha": 0.70},
+        },
+    },
+    "authentic_vlog": {
+        # Korean vlog/food/travel: natural full-frame motion, tiny lower context
+        "default_transition": "Dissolve",
+        "img": {"scale_x": 1.08, "scale_y": 1.08},
+        "text": {
+            "font_color": "#FFFFFF", "font_size": 6.6, "transform_y": -0.46,
+            "background_color": "#111111", "background_alpha": 0.35,
+            "intro_animation": "Fade_In", "shadow_distance": 2.0,
+        },
+        "hook": {
+            "text": {"font_size": 9.0, "transform_y": -0.22, "background_color": "#111111", "background_alpha": 0.42},
+        },
+    },
+    "persona_story": {
+        # Character narrative: centered subject, top hook, restrained lower captions
+        "default_transition": "Dissolve",
+        "img": {"scale_x": 1.18, "scale_y": 1.18, "background_blur": 1},
+        "text": {
+            "font_color": "#F7F3EA", "font_size": 7.6, "transform_y": -0.42,
+            "intro_animation": "Fade_In", "shadow_distance": 4.0,
+        },
+        "hook": {
+            "text": {"font_size": 11.0, "transform_y": -0.12, "intro_animation": "Zoom_In"},
+        },
+    },
+    "kculture_fandom": {
+        # Fan edit substitute: beat-friendly motion with small safe-zone callouts
+        "default_transition": "Slide_Left",
+        "img": {"scale_x": 1.22, "scale_y": 1.22},
+        "text": {
+            "font_color": "#FFFFFF", "font_size": 7.2, "transform_y": -0.40,
+            "background_color": "#251B4A", "background_alpha": 0.45,
+            "intro_animation": "Fade_In", "shadow_distance": 4.0,
+        },
+        "hook": {
+            "text": {"font_size": 10.5, "transform_y": -0.15, "font_color": "#FFE66D"},
+        },
+    },
+    "podcast_clip": {
+        # Longform clip: chapter-card feel, lower caption, room for speaker/waveform
+        "default_transition": "Fade_In",
+        "img": {"scale_x": 1.05, "scale_y": 1.05, "transform_y": 0.08},
+        "text": {
+            "font_color": "#FFFFFF", "font_size": 7.0, "transform_y": -0.44,
+            "background_color": "#000000", "background_alpha": 0.50,
+            "intro_animation": "Fade_In", "shadow_distance": 3.0,
+        },
+        "hook": {
+            "text": {"font_size": 10.0, "transform_y": -0.18, "background_color": "#0B3D91", "background_alpha": 0.55},
+        },
+    },
+    "longform_deep_dive": {
+        # Long-form explainer: chaptered, evidence-first, restrained lower facts
+        "default_transition": "Dissolve",
+        "img": {"scale_x": 1.08, "scale_y": 1.08, "background_blur": 1},
+        "text": {
+            "font_color": "#F6F1E7", "font_size": 6.8, "transform_y": -0.45,
+            "background_color": "#0E1116", "background_alpha": 0.46,
+            "intro_animation": "Fade_In", "shadow_distance": 2.0,
+        },
+        "hook": {
+            "text": {"font_size": 9.2, "transform_y": -0.20, "background_color": "#0E1116", "background_alpha": 0.62},
+        },
+    },
+    "interview_documentary": {
+        # Documentary/interview: speaker or hands stay visible; captions sit low and narrow
+        "default_transition": "Dissolve",
+        "img": {"scale_x": 1.02, "scale_y": 1.02, "transform_y": 0.04},
+        "text": {
+            "font_color": "#FFFFFF", "font_size": 6.5, "transform_y": -0.47,
+            "background_color": "#050505", "background_alpha": 0.42,
+            "intro_animation": "Fade_In", "shadow_distance": 2.0,
+        },
+        "hook": {
+            "text": {"font_size": 8.8, "transform_y": -0.24, "background_color": "#1F2933", "background_alpha": 0.50},
+        },
+    },
+    "live_recap": {
+        # Event recap: chapter callouts with motion-led context and rights-safe ambience
+        "default_transition": "Slide_Left",
+        "img": {"scale_x": 1.12, "scale_y": 1.12},
+        "text": {
+            "font_color": "#FFFFFF", "font_size": 6.9, "transform_y": -0.43,
+            "background_color": "#102A43", "background_alpha": 0.44,
+            "intro_animation": "Fade_In", "shadow_distance": 3.0,
+        },
+        "hook": {
+            "text": {"font_size": 9.4, "transform_y": -0.18, "font_color": "#FFE082"},
         },
     },
 }

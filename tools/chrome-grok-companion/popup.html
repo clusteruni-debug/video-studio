@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Video Studio Grok Companion</title>
+  <style>
+    body { width: 360px; margin: 0; padding: 14px; font-family: system-ui, sans-serif; color: #141414; }
+    h1 { font-size: 15px; margin: 0 0 10px; }
+    label { display: block; font-size: 12px; font-weight: 650; margin: 10px 0 4px; }
+    input, textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 12px; padding: 7px; border: 1px solid #cfd4dc; border-radius: 6px; }
+    textarea { min-height: 74px; }
+    .row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    button { border: 1px solid #cfd4dc; background: #fff; border-radius: 6px; padding: 7px 9px; font: inherit; font-size: 12px; cursor: pointer; }
+    button.primary { background: #111827; border-color: #111827; color: #fff; }
+    .check-row { display: flex; align-items: flex-start; gap: 7px; margin-top: 9px; font-size: 12px; line-height: 1.35; }
+    .check-row input { width: auto; margin-top: 2px; }
+    pre { white-space: pre-wrap; background: #f3f4f6; border-radius: 6px; padding: 8px; font-size: 11px; max-height: 120px; overflow: auto; }
+    .guard { font-size: 11px; color: #4b5563; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Video Studio Grok Companion</h1>
+  <label for="commandUrl">Command URL</label>
+  <textarea id="commandUrl" placeholder="Paste the /extension-command URL copied from Video Studio"></textarea>
+  <div class="row">
+    <button id="pasteCommand">Paste</button>
+    <button id="loadCommand" class="primary">Load</button>
+    <button id="loadNextScene">Next scene</button>
+    <button id="openGrok">Open Grok</button>
+  </div>
+  <label for="promptPreview">Prompt</label>
+  <textarea id="promptPreview" readonly></textarea>
+  <div class="row">
+    <button id="fillPrompt" class="primary">Fill prompt</button>
+    <button id="prepGenerate">Prep + Generate</button>
+    <button id="clickGenerate">Generate</button>
+    <button id="clickDownload">Import MP4</button>
+    <button id="probePage">Probe</button>
+  </div>
+  <label class="check-row">
+    <input id="autoQueue" type="checkbox" />
+    <span>Auto-prep next scene after MP4 import</span>
+  </label>
+  <div class="guard">No xAI API, no CDP, no stored credentials. Login, captcha, safety, payment, and final clip choice stay operator-owned.</div>
+  <pre id="status">Load a Video Studio command URL.</pre>
+  <script src="popup.js"></script>
+</body>
+</html>

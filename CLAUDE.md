@@ -4,7 +4,7 @@
 - Content automation tool with multi-provider media pipeline
 - React + Vite + TypeScript UI using a shell + sidebar/canvas/bottom-bar flow with debug drawer and per-scene detail panel
 - 17 provider adapters across 5 categories (image, video, tts, bgm, sfx) — Sora 2 retired 2026-04
-- Free-first provider policy — zero-cost path works with Pexels (stock) + Edge TTS + local BGM; Imagen 4 ($0.02/img) for AI generation
+- Zero-paid provider policy — billable providers are blocked unless `VIDEO_STUDIO_ALLOW_PAID_PROVIDERS=1`
 - FFmpeg composition with Ken Burns motion, xfade transitions, gradient backgrounds, BGM mixing
 - Local Python bridge with runtime tool probing, Gemini/sample planning, scene-asset upload handling
 - No DB or remote storage yet
@@ -14,9 +14,9 @@
 - UI: React + Vite (App shell + Sidebar/ImageCanvas/StoryboardPanel/BottomBar/DebugDrawer/SceneDetailPanel + shared utils)
 - Desktop shell: Tauri 2 after the web UI stabilizes
 - Planner: Gemini 2.5 Flash (primary) → hardcoded sample fallback. Ollama local LLM retired 2026-04.
-- Image: Serper/Google Images (primary, $0.001/query), Gemini Flash (free AI, 500/day), Imagen 4 (AI fallback, $0.02/img), Pexels (free stock fallback), Klipy (free GIF/reaction)
-- Video: local Wan (free), Veo 3 (Sora 2 retired 2026-04)
-- TTS: Edge TTS (free default, +35% rate), ElevenLabs, OpenAI TTS
+- Image: Gemini Flash / Pexels / Klipy by default; Serper and Imagen are paid opt-in only
+- Video: local Wan / Pexels video by default; Veo 3 and Runway are paid opt-in
+- TTS: Edge TTS / Windows TTS by default; ElevenLabs and OpenAI TTS are paid opt-in
 - BGM: Local mood-matched library (upbeat/tense/calm/cinematic, 16 tracks, MIT license)
 - Composition: FFmpeg with motion presets + xfade transitions
 
@@ -40,7 +40,7 @@
   - `ollama_planner.py` — Gemini planner + sample fallback (filename historical; Ollama local LLM retired 2026-04)
 - `worker/media/` — adapter registry, provider policy, cost estimation
   - `adapters.py` — 17 provider configs across 5 categories (Sora 2 retired 2026-04)
-  - `provider_policy.py` — free-first selection + manual approval
+  - `provider_policy.py` — zero-paid selection + explicit paid opt-in
   - `model_router.py` — per-scene cost breakdown
 - `worker/render/` — FFmpeg composition
   - `compose.py` — orchestrator (compose_smoke_render + CLI)
@@ -53,7 +53,7 @@
 - `storage/` — local generated inputs, cache, and renders
 
 ## Provider Adapter Scripts
-- `scripts/pollinations_flux.py` — DEPRECATED (Pollinations dead since 2026-03, routes to Imagen 4)
+- `scripts/pollinations_flux.py` — DEPRECATED (not part of the zero-paid verify path)
 - `scripts/edge_tts.py` — free cross-platform TTS
 - `scripts/dalle3_image.py` — DALL-E 3 images
 - `scripts/imagen3_image.py` — Imagen 3 images
@@ -65,15 +65,16 @@
 
 ## Usage Tracking
 - Local SQLite DB at `worker/usage/usage.db` (gitignored) — tracks API calls, costs, tokens per session
-- Image routing: Serper (Google Images) → Imagen 4 → Pexels fallback
+- Image routing: zero-paid default uses Gemini Flash → Pexels/Klipy; Serper/Imagen are opt-in paid paths
 - Usage stats endpoint: `GET /api/usage-stats` — session counts, limits, monthly cost totals
-- Providers with no free tier (Imagen, Serper, Veo3, DALL-E, Sora) require confirmation dialog before use
+- Providers with billable usage (Imagen, Serper, Veo3, DALL-E, Runway, ElevenLabs, OpenAI TTS, Suno) require `VIDEO_STUDIO_ALLOW_PAID_PROVIDERS=1`
 
 ## Current Constraints
 - Package manager files are present; keep dependency changes explicit
 - No DB or remote storage yet
-- Required API keys: `GEMINI_API_KEY`, `PEXELS_API_KEY`, `SERPER_API_KEY`, `GROQ_API_KEY`
-- FLUX/Wan default to `stub` mode until the operator sets command-backed adapter env vars
+- Optional free keys: `GEMINI_API_KEY`, `PEXELS_API_KEY`, `KLIPY_API_KEY`, `FREESOUND_API_KEY`
+- Paid/API opt-in keys remain manual-only and require `VIDEO_STUDIO_ALLOW_PAID_PROVIDERS=1`
+- Wan defaults to `stub` mode until the operator sets command-backed adapter env vars
 - Suno API adapter is marked [UNCERTAIN] — API surface may not be stable
 
 ## Logging
@@ -96,8 +97,9 @@ python -m worker.bridge.server
 python -m worker.render.compose --project-id demo
 python -m compileall worker
 python -m compileall scripts
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\verify-bridge.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\verify-render.ps1
 ffmpeg -version
-ollama --version
 ```
 
 ## Local Run Flow
@@ -133,7 +135,8 @@ ollama --version
 - Intro/outro: BGM -8dB + fade
 
 **Background Material Priority**
-1. User upload → 2. Pexels video → 3. Pexels image + Ken Burns → 4. Imagen → 5. Title card
+1. User upload → 2. Pexels video → 3. Pexels image + Ken Burns → 4. Title card
+Paid opt-in only: Imagen may be used before title card when `VIDEO_STUDIO_ALLOW_PAID_PROVIDERS=1`.
 
 **Verification**
 - verify_render() must run after every render
