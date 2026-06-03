@@ -302,6 +302,10 @@ async function downloadAssetFromCurrentTab(command, currentUrl) {
 function directAutostartEventTarget(request) {
   try {
     const commandUrl = new URL(request.commandUrl);
+    // SSRF guard at the sink: never build an event endpoint for a non-bridge
+    // origin, so no caller (including the error path in runAutostartFromTabUrl)
+    // can POST to an attacker-controlled host.
+    if (!BRIDGE_ALLOWED_ORIGINS.has(commandUrl.origin)) return null;
     const parts = commandUrl.pathname.split("/").filter(Boolean);
     const handoffIndex = parts.indexOf("grok-handoff");
     const projectId = handoffIndex >= 0 ? parts[handoffIndex + 1] : "";
@@ -454,12 +458,19 @@ async function runAutostartFromTabUrl(tabId, url) {
   handledAutostartKeys.add(key);
   let command = null;
   try {
-    let approvedInUrl = false;
+    let parsedCommandUrl;
     try {
-      approvedInUrl = new URL(request.commandUrl).searchParams.get("operatorApproved") === "true";
+      parsedCommandUrl = new URL(request.commandUrl);
     } catch (error) {
-      approvedInUrl = false;
+      throw new Error(`invalid autostart command URL: ${request.commandUrl}`);
     }
+    // SSRF guard: commandUrl comes from the (untrusted) grok.com page hash and
+    // drives postDirectAutostartEvent's POST target *before* the command is loaded.
+    // Reject any non-bridge origin up front so no request reaches an attacker host.
+    if (!BRIDGE_ALLOWED_ORIGINS.has(parsedCommandUrl.origin)) {
+      throw new Error(`refusing autostart from non-bridge origin: ${parsedCommandUrl.origin}`);
+    }
+    const approvedInUrl = parsedCommandUrl.searchParams.get("operatorApproved") === "true";
     if (!request.operatorApproved || !approvedInUrl) {
       throw new Error("operatorApproved=true is required in the Grok autostart URL.");
     }

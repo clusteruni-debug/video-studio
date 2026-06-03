@@ -64,6 +64,25 @@ header support unverified). Verified: `compileall worker` exit 0; image_router /
 / translate / tts.providers import OK; grep confirms 0 Google key-in-URL sites remain;
 pytest zero_paid + provider_policy + ssrf green.
 
+## /code-review hardening 2026-06-04 (5-agent Round 1 + adversarial Round 2)
+A local `/code-review` on the two commits above surfaced two sibling-site gaps of the
+class "guarded one site, missed the sink" (same class twice → lifted to an architectural
+sink-guard fix per MO-9):
+- **SSRF redirect bypass** (`image_router.download_pexels_video`): the host allowlist only
+  checked the initial URL; `urlopen` follows 3xx by default. Added `_BlockInternalRedirect`
+  opener that rejects redirects to private/loopback/link-local/reserved IPs (public→public
+  redirects, e.g. Vimeo→its CDN, still allowed). `urlparse` moved into try (bracket-IPv6 URL
+  no longer escapes the bool contract).
+- **Extension error-path origin leak** (`background.js`): the `loadCommandFromUrl` origin
+  guard was bypassed on the autostart catch path (`postDirectAutostartEvent` fired with the
+  attacker origin). Guarded at the sink (`directAutostartEventTarget` returns null for
+  non-bridge origins) so no caller can POST to an attacker host.
+- Verified: `compileall worker` + `node --check background.js` + pytest
+  (ssrf/zero_paid/provider_policy = 13 passed) + bridge-server import OK.
+- **Known LOW residual**: `_host_is_internal` uses `socket.getaddrinfo` with no DNS timeout —
+  a redirect to a slow-DNS host can block a worker thread (self-DoS). Low-weight for a local
+  single-user tool; revisit if the bridge is ever exposed beyond 127.0.0.1.
+
 ## MED findings — historical list (SUPERSEDED by Resolution 2026-06-04 above)
 
 ### Policy / cost

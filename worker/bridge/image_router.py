@@ -11,9 +11,11 @@ import base64
 import binascii
 import hashlib
 import http.client
+import ipaddress
 import json
 import logging
 import os
+import socket
 from pathlib import Path
 from urllib import request as urllib_request
 from urllib.error import URLError
@@ -341,12 +343,54 @@ def _select_best_video_file(video_files: list[dict]) -> dict | None:
 _PEXELS_VIDEO_HOSTS = frozenset({"videos.pexels.com", "player.vimeo.com"})
 
 
+def _host_is_internal(host: str | None) -> bool:
+    """True if host is missing or resolves to a private/loopback/link-local/reserved IP."""
+    if not host:
+        return True
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return True  # unresolvable → treat as unsafe
+    for info in infos:
+        try:
+            addr = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return True
+        if (addr.is_private or addr.is_loopback or addr.is_link_local
+                or addr.is_reserved or addr.is_multicast or addr.is_unspecified):
+            return True
+    return False
+
+
+class _BlockInternalRedirect(urllib_request.HTTPRedirectHandler):
+    """Block 3xx redirects to internal hosts.
+
+    The initial host is allowlisted, but urlopen follows redirects by default, so a
+    CDN open-redirect (or a spoofed response) could point at an internal address
+    (SSRF). Public→public redirects (e.g. Vimeo → its file CDN) stay allowed.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if _host_is_internal(urlparse(newurl).hostname):
+            logger.warning("pexels-video redirect to internal host blocked: %r", newurl)
+            return None  # urllib raises HTTPError → caught by caller → returns False
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_PEXELS_OPENER = urllib_request.build_opener(_BlockInternalRedirect())
+
+
 def download_pexels_video(video_url: str, output_path: str, timeout: int = 60) -> bool:
     """Download a Pexels video file to a local path. Returns True on success."""
-    parsed = urlparse(video_url)
+    try:
+        parsed = urlparse(video_url)
+    except ValueError:
+        logger.warning("pexels-video download rejected unparseable URL")
+        return False
     # SSRF guard: video_url comes from a Pexels API response. Pexels serves video
     # files from its own CDN and from Vimeo's player CDN (per the Pexels API docs);
-    # allow only those over https, never an arbitrary or internal host.
+    # allow only those over https, never an arbitrary or internal host. Redirects are
+    # re-checked by _BlockInternalRedirect (urlopen follows 3xx by default).
     if parsed.scheme != "https" or parsed.hostname not in _PEXELS_VIDEO_HOSTS:
         logger.warning("pexels-video download rejected non-allowlisted host: %r", parsed.hostname)
         return False
@@ -354,7 +398,7 @@ def download_pexels_video(video_url: str, output_path: str, timeout: int = 60) -
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         req = urllib_request.Request(video_url, headers={"User-Agent": "VideoStudio/1.0"})
-        with urllib_request.urlopen(req, timeout=timeout) as resp:
+        with _PEXELS_OPENER.open(req, timeout=timeout) as resp:
             with open(out, "wb") as f:
                 while True:
                     chunk = resp.read(65536)
