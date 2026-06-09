@@ -6,6 +6,12 @@ from pathlib import Path
 
 TRANSITION_TYPES = ("fade", "dissolve", "wipeleft", "wiperight", "slideright", "slideleft", "circleopen", "circleclose", "none")
 DEFAULT_TRANSITION_DURATION = 0.5
+FINAL_XFADE_POLISH_FILTERS = (
+    "fps=30",
+    "unsharp=3:3:0.18:3:3:0.06",
+    "eq=contrast=1.010:saturation=1.010:gamma=1.005",
+    "format=yuv420p",
+)
 
 
 def build_xfade_filter_complex(
@@ -87,8 +93,8 @@ def build_xfade_filter_complex(
             final_video_filters.append(f"ass=filename='{safe_path}'")
         else:
             final_video_filters.append(f"subtitles=filename='{safe_path}'")
-    final_video_filters.append(f"scale={output_scale}")
-    final_video_filters.append("format=yuv420p")
+    final_video_filters.append(f"scale={output_scale}:flags=lanczos")
+    final_video_filters.extend(FINAL_XFADE_POLISH_FILTERS)
 
     video_parts.append(
         f"[vmerged]{','.join(final_video_filters)}[vout]"

@@ -1,0 +1,36 @@
+{
+  "incompetech-impact-prelude.mp3": {
+    "provider": "local-bgm",
+    "sourceProvider": "incompetech",
+    "title": "Impact Prelude",
+    "artist": "Kevin MacLeod",
+    "creator": "Kevin MacLeod",
+    "sourceUrl": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Impact%20Prelude.mp3",
+    "sourceLicense": "Creative Commons Attribution 3.0 Unported",
+    "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+    "attributionRequired": true,
+    "attribution": "Impact Prelude Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 3.0 License. http://creativecommons.org/licenses/by/3.0/",
+    "mood": "cinematic",
+    "kind": "bgm",
+    "templateFamilies": ["news_explainer", "longform_deep_dive", "interview_documentary"],
+    "downloadDate": "2026-06-08",
+    "editNotes": "Use for serious setup or documentary stakes; fade before dense narration."
+  },
+  "incompetech-darkest-child.mp3": {
+    "provider": "local-bgm",
+    "sourceProvider": "incompetech",
+    "title": "Darkest Child",
+    "artist": "Kevin MacLeod",
+    "creator": "Kevin MacLeod",
+    "sourceUrl": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Darkest%20Child.mp3",
+    "sourceLicense": "Creative Commons Attribution 3.0 Unported",
+    "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+    "attributionRequired": true,
+    "attribution": "Darkest Child Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 3.0 License. http://creativecommons.org/licenses/by/3.0/",
+    "mood": "cinematic",
+    "kind": "bgm",
+    "templateFamilies": ["longform_deep_dive", "persona_story", "interview_documentary"],
+    "downloadDate": "2026-06-08",
+    "editNotes": "Use for darker narrative beats; keep very low under spoken explanation."
+  }
+}

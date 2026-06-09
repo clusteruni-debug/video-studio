@@ -3,9 +3,38 @@ const promptPreviewEl = document.getElementById("promptPreview");
 const statusEl = document.getElementById("status");
 const autoQueueEl = document.getElementById("autoQueue");
 let command = null;
+const PROVIDER_CAPABILITIES = Object.freeze({
+  "grok-web-video": Object.freeze({
+    canUsePopupControls: true,
+    canFillPrompt: true,
+    canClickGenerate: true,
+    canImportResult: true
+  }),
+  "gemini-web-image": Object.freeze({
+    canUsePopupControls: false,
+    canFillPrompt: true,
+    canClickGenerate: false,
+    canImportResult: false
+  })
+});
 
 function setStatus(value) {
   statusEl.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+}
+
+function commandProvider() {
+  return String(command?.provider || "grok-web-video");
+}
+
+function providerCapabilities() {
+  return PROVIDER_CAPABILITIES[commandProvider()] || null;
+}
+
+function assertGrokPopupControls() {
+  const capabilities = providerCapabilities();
+  if (!capabilities?.canUsePopupControls) {
+    throw new Error(`Popup controls are Grok-only for now. Use the ${commandProvider()} autostartUrl; Gemini Generate/import remains operator-owned.`);
+  }
 }
 
 async function activeTab() {
@@ -31,34 +60,118 @@ async function waitForTabComplete(tabId, timeoutMs = 15000) {
   });
 }
 
+function isImagineTabUrl(url) {
+  try {
+    const parsed = new URL(String(url || ""));
+    const pathname = parsed.pathname.toLowerCase();
+    return parsed.hostname.endsWith("grok.com")
+      && pathname.startsWith("/imagine")
+      && !pathname.startsWith("/imagine/post");
+  } catch (error) {
+    return false;
+  }
+}
+
+function isGrokTabUrl(url) {
+  try {
+    const parsed = new URL(String(url || ""));
+    return parsed.hostname.endsWith("grok.com");
+  } catch (error) {
+    return false;
+  }
+}
+
+function imagineUrlForCommand() {
+  const value = String(command?.grokUrl || "");
+  return isImagineTabUrl(value) ? value : "https://grok.com/imagine";
+}
+
+function contentScriptForTab(tab) {
+  try {
+    const parsed = new URL(String(tab?.url || ""));
+    if (parsed.hostname.endsWith("grok.com")) return "content.js";
+    if (isGeminiTabHost(parsed.hostname)) return "content_gemini.js";
+  } catch (error) {
+    return "";
+  }
+  return "";
+}
+
+function describeTabUrl(tab) {
+  return String(tab?.url || "").slice(0, 180);
+}
+
+function isGeminiTabHost(hostname) {
+  const value = String(hostname || "").toLowerCase();
+  return value === "gemini.google.com" || /^gemini\.google-[a-z0-9-]+\.com$/.test(value);
+}
+
+function isReceivingEndError(error) {
+  return /receiving end does not exist|could not establish connection/i.test(String(error?.message || error || ""));
+}
+
+async function injectContentScript(tab) {
+  const file = contentScriptForTab(tab);
+  if (!file || !tab?.id || !chrome.scripting?.executeScript) return false;
+  await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: [file] });
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  return true;
+}
+
+async function sendMessageWithInjection(tab, message) {
+  try {
+    return await chrome.tabs.sendMessage(tab.id, message);
+  } catch (error) {
+    if (!isReceivingEndError(error) || !(await injectContentScript(tab))) {
+      throw error;
+    }
+    return chrome.tabs.sendMessage(tab.id, message);
+  }
+}
+
 async function ensureGrokTab() {
   if (!command) await loadCommand();
-  const grokUrl = command.grokUrl || "https://grok.com/imagine";
-  const tabs = await chrome.tabs.query({ currentWindow: true });
-  let tab = tabs.find((item) => String(item.url || "").includes("grok.com"));
-  if (!tab) {
-    tab = await chrome.tabs.create({ url: grokUrl, active: true });
-  } else {
-    await chrome.tabs.update(tab.id, { active: true });
+  const current = await activeTab();
+  if (isImagineTabUrl(current?.url)) {
+    await waitForTabComplete(current.id);
+    const refreshed = await chrome.tabs.get(current.id);
+    if (isImagineTabUrl(refreshed?.url)) return refreshed;
+    throw new Error(`Grok left Imagine after loading: ${describeTabUrl(refreshed)}. Open the actual Imagine composer, then press Prep + Generate again.`);
   }
+  const tabs = await chrome.tabs.query({ currentWindow: true });
+  const tab = tabs.find((item) => isImagineTabUrl(item.url));
+  if (!tab) {
+    throw new Error("No active Grok Imagine composer tab found. Open the real Grok Imagine composer first; Prep + Generate will not auto-open /imagine because Grok can redirect it to /c chat.");
+  }
+  await chrome.tabs.update(tab.id, { active: true });
   await waitForTabComplete(tab.id);
-  return chrome.tabs.get(tab.id);
+  const refreshed = await chrome.tabs.get(tab.id);
+  if (!isImagineTabUrl(refreshed?.url)) {
+    throw new Error(`Grok tab is not on the Imagine composer: ${describeTabUrl(refreshed)}. Open Imagine manually and retry.`);
+  }
+  return refreshed;
 }
 
 async function sendToTab(tab, type) {
   if (!command) throw new Error("Load a command URL first.");
-  return chrome.tabs.sendMessage(tab.id, { type, command });
+  return sendMessageWithInjection(tab, { type, command });
 }
 
-async function sendToContent(type) {
+async function sendToContent(type, options = {}) {
   if (!command) throw new Error("Load a command URL first.");
   let tab = await activeTab();
-  if (!tab || !String(tab.url || "").includes("grok.com")) {
+  const requireImagine = options.requireImagine === true;
+  const usableTab = requireImagine ? isImagineTabUrl(tab?.url) : isGrokTabUrl(tab?.url);
+  if (!tab || !usableTab) {
+    if (requireImagine) {
+      setStatus("Open the actual Grok Imagine composer tab first. This control no longer auto-opens /imagine because Grok can redirect it to /c chat.");
+      return null;
+    }
     tab = await chrome.tabs.create({ url: command.grokUrl || "https://grok.com/imagine", active: true });
     setStatus("Opened Grok. Run the action again after the page finishes loading.");
     return null;
   }
-  return chrome.tabs.sendMessage(tab.id, { type, command });
+  return sendMessageWithInjection(tab, { type, command });
 }
 
 async function reportContentResult(eventType, result, successStatus, fallbackDetail) {
@@ -96,14 +209,17 @@ async function loadCommand() {
   if (!data.ok) throw new Error(data.error || "Command load failed.");
   command = data;
   promptPreviewEl.value = data.prompt || "";
-  await chrome.runtime.sendMessage({ type: "store-command", command });
+  await chrome.runtime.sendMessage({ type: "store-command", command, commandUrl: url });
   const autoQueue = await loadAutoQueueSetting();
   setStatus({
+    provider: data.provider || "grok-web-video",
     sceneId: data.sceneId,
+    cutId: data.cutId || "",
     expectedFileName: data.expectedFileName,
     downloadDir: data.defaultDownloadDir,
     autoImport: Boolean(data.importEndpoint),
     autoQueue,
+    capabilities: providerCapabilities(),
     missingSceneIds: data.missingSceneIds || [],
     rejectedSceneIds: data.rejectedSceneIds || [],
     nextMissingSceneId: data.nextMissingSceneId || "",
@@ -143,6 +259,7 @@ document.getElementById("loadNextScene").addEventListener("click", async () => {
 document.getElementById("openGrok").addEventListener("click", async () => {
   try {
     if (!command) await loadCommand();
+    assertGrokPopupControls();
     await chrome.tabs.create({ url: command.grokUrl || "https://grok.com/imagine", active: true });
   } catch (error) {
     setStatus(String(error.message || error));
@@ -152,7 +269,8 @@ document.getElementById("openGrok").addEventListener("click", async () => {
 document.getElementById("fillPrompt").addEventListener("click", async () => {
   try {
     if (!command) await loadCommand();
-    const result = await sendToContent("fill-prompt");
+    assertGrokPopupControls();
+    const result = await sendToContent("fill-prompt", { requireImagine: true });
     await reportContentResult("prompt-fill", result, "filled", "Prompt filled.");
     setStatus(result || "Grok tab opened.");
   } catch (error) {
@@ -163,6 +281,7 @@ document.getElementById("fillPrompt").addEventListener("click", async () => {
 document.getElementById("prepGenerate").addEventListener("click", async () => {
   try {
     if (!command) await loadCommand();
+    assertGrokPopupControls();
     const tab = await ensureGrokTab();
     setStatus(`Preparing ${command.sceneId || "scene"} in Grok...`);
     const fillResult = await sendToTab(tab, "fill-prompt");
@@ -190,7 +309,8 @@ document.getElementById("prepGenerate").addEventListener("click", async () => {
 document.getElementById("clickGenerate").addEventListener("click", async () => {
   try {
     if (!command) await loadCommand();
-    const result = await sendToContent("click-generate");
+    assertGrokPopupControls();
+    const result = await sendToContent("click-generate", { requireImagine: true });
     await reportContentResult("generate-click", result, "clicked", "Generate requested.");
     setStatus(result || "Grok tab opened.");
   } catch (error) {
@@ -201,6 +321,7 @@ document.getElementById("clickGenerate").addEventListener("click", async () => {
 document.getElementById("clickDownload").addEventListener("click", async () => {
   try {
     if (!command) await loadCommand();
+    assertGrokPopupControls();
     const result = await sendToContent("click-download");
     const candidateMeta = (candidate = {}) => ({
       sourceKind: candidate.sourceKind || "",
@@ -275,7 +396,7 @@ document.getElementById("clickDownload").addEventListener("click", async () => {
           ? "blocked"
           : (result.importError ? "failed" : result.directImport ? "direct-imported" : "manual-fallback-required"),
         detail: lowQualityVisibleFallback
-          ? "visible-video-fallback-proof-only; use Companion/pageAssets direct import or operator-owned manual upload for original MP4"
+          ? "visible-video-fallback-proof-only; use operator-owned download/import or manual upload for original MP4"
           : (result.importError || (result.directImport ? "companion-direct-import" : candidate.kind)),
         currentUrl: result.currentUrl,
         candidateUrl: candidate.url,
@@ -293,6 +414,7 @@ document.getElementById("clickDownload").addEventListener("click", async () => {
 document.getElementById("probePage").addEventListener("click", async () => {
   try {
     if (!command) await loadCommand();
+    assertGrokPopupControls();
     const result = await sendToContent("probe");
     if (result) await report({ eventType: "probe", status: result.ok ? "ready" : "failed", detail: `editable=${result.editableCount || 0}; videos=${(result.videoCandidates || []).length}`, currentUrl: result.currentUrl });
     setStatus(result || "Grok tab opened.");

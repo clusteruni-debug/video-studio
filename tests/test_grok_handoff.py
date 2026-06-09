@@ -1,10 +1,13 @@
 """Grok web handoff tests for Video Studio."""
 
 import base64
+import hashlib
+import importlib.util
 import json
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import urllib.parse
@@ -26,6 +29,16 @@ def _grok_test_client(project_root: Path):
     app = Flask(__name__)
     app.register_blueprint(grok_bp)
     return app.test_client()
+
+
+def _load_live_proof_runner():
+    script_path = Path(__file__).resolve().parents[1] / "tools" / "chrome-grok-companion" / "live_proof_runner.py"
+    spec = importlib.util.spec_from_file_location("video_studio_live_proof_runner", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _write_probe_fixture_mp4(path: Path, source: str) -> None:
@@ -70,7 +83,7 @@ def _grok_main_quality_fields(**overrides):
         "audioMixReviewNote": "Native audio can be muted or kept under BGM without fighting the final mix.",
         "platformComparisonNote": "Closer to Korean Shorts hero footage than stock filler or generic AI montage.",
         "sourceProvenanceConfirmed": True,
-        "sourceProvenanceNote": "Operator confirms this MP4 came from Companion/pageAssets direct import or operator-owned manual upload, not browser preview currentSrc.",
+        "sourceProvenanceNote": "Operator confirms this MP4 came from operator-owned download/import or manual upload, not browser preview currentSrc.",
     }
     fields.update(overrides)
     return fields
@@ -135,6 +148,7 @@ def test_grok_handoff_creates_prompt_packet_and_matches_downloaded_mp4(tmp_path)
     assert manifest["shotBible"]["visualContinuity"].startswith("Treat every clip")
     assert manifest["shotBible"]["productionProfile"]["templateType"] == "authentic_vlog"
     assert manifest["shotBible"]["productionProfile"]["family"] == "authentic-vlog"
+    assert manifest["shotBible"]["promptRulesetVersion"] == routes_grok.GROK_GENERATION_PROMPT_RULESET_VERSION
     assert "caption-safe" in manifest["shotBible"]["captionSafePlan"]
     assert "intentional raw footage" in manifest["shotBible"]["cinematicQualityFloor"]
     assert any("generic stock b-roll" in item for item in manifest["shotBible"]["antiSlopDirectives"])
@@ -144,35 +158,51 @@ def test_grok_handoff_creates_prompt_packet_and_matches_downloaded_mp4(tmp_path)
     assert "static image with Ken Burns-like movement only" in manifest["shotBible"]["hardRejectChecklist"]
     assert "generic stock b-roll that only resembles the topic" in manifest["shotBible"]["hardRejectChecklist"]
     assert any("raw footage" in item for item in manifest["shotBible"]["grokPromptRules"])
-    assert "same recurring subject" in manifest["scenes"][0]["prompt"]
-    assert "Shot lock:" in manifest["scenes"][0]["prompt"]
-    assert "Reject generic stock/ad/AI montage look" in manifest["scenes"][0]["prompt"]
+    assert "first second:" in manifest["scenes"][0]["prompt"]
+    assert "Vertical 9:16 phone MP4" in manifest["scenes"][0]["prompt"]
+    assert "uncluttered lower-right background" in manifest["scenes"][0]["prompt"]
+    assert "no visible text or watermark" in manifest["scenes"][0]["prompt"]
+    assert "Shot lock:" not in manifest["scenes"][0]["prompt"]
+    assert "Reject generic stock/ad/AI montage look" not in manifest["scenes"][0]["prompt"]
     assert "Reject before download" not in manifest["scenes"][0]["prompt"]
-    assert "raw footage for editing" in manifest["scenes"][0]["prompt"]
-    assert "lower third and right edge" in manifest["scenes"][0]["prompt"]
-    assert "First-second motion" in manifest["scenes"][0]["prompt"]
-    assert "later lower-info caption" in manifest["scenes"][0]["prompt"]
+    assert "raw footage for editing" not in manifest["scenes"][0]["prompt"]
+    assert "caption-safe" not in manifest["scenes"][0]["prompt"]
     take_prompts = manifest["scenes"][0]["takePrompts"]
     assert [item["takeNumber"] for item in take_prompts] == [1, 2, 3]
     assert take_prompts[0]["label"] == "continuity-master"
     assert take_prompts[1]["label"] == "motion-first"
-    assert take_prompts[2]["label"] == "caption-safe-composition"
-    assert "first-second motion" in take_prompts[1]["prompt"]
-    assert "Shot lock:" in take_prompts[1]["prompt"]
-    assert "lower third" in take_prompts[2]["prompt"]
-    assert "Shot lock:" in take_prompts[2]["prompt"]
+    assert take_prompts[2]["label"] == "clean-composition"
+    assert "Motion-first take" in take_prompts[1]["prompt"]
+    assert "Shot lock:" not in take_prompts[1]["prompt"]
+    assert "Composition take" in take_prompts[2]["prompt"]
+    assert "caption-safe" not in take_prompts[2]["prompt"]
+    assert "Shot lock:" not in take_prompts[2]["prompt"]
     assert "promptQuality" in take_prompts[1]
     for take in take_prompts:
         assert "no text, no logos, no." not in take["prompt"]
         assert not take["prompt"].rstrip().lower().endswith((" no", " no."))
+        assert take["promptQuality"]["status"] == "ready"
+        assert take["promptQuality"]["brokenPromptFragments"] == []
+        assert take["promptQuality"]["checks"]["completeSentences"] is True
         assert (tmp_path / take["promptPath"]).exists()
     assert manifest["scenes"][0]["promptQuality"]["status"] == "ready"
     assert manifest["scenes"][0]["promptQuality"]["score"] >= 80
     assert "captionSafe" in manifest["scenes"][0]["promptQuality"]["checks"]
     assert manifest["scenes"][0]["promptQuality"]["checks"]["sceneSpecificIntent"] is True
     assert manifest["scenes"][0]["promptQuality"]["checks"]["sourceActionCue"] is True
+    assert manifest["scenes"][0]["promptQuality"]["checks"]["positiveShotInstruction"] is True
+    assert manifest["scenes"][0]["promptQuality"]["standard"] == "concise-positive-shot-v1"
+    assert manifest["scenes"][0]["promptQuality"]["rulesetVersion"] == routes_grok.GROK_GENERATION_PROMPT_RULESET_VERSION
+    assert manifest["scenes"][0]["promptQuality"]["bannedPromptTerms"] == []
     assert manifest["scenes"][0]["promptQuality"]["checks"]["shotLock"] is True
     assert manifest["scenes"][0]["promptQuality"]["checks"]["antiSlop"] is True
+    assert manifest["scenes"][0]["promptQuality"]["checks"]["largePhysicalMotion"] is True
+    assert manifest["scenes"][0]["promptQuality"]["checks"]["observableFirstSecondChange"] is True
+    assert manifest["scenes"][0]["promptQuality"]["checks"]["singleContinuousShot"] is True
+    assert manifest["scenes"][0]["promptQuality"]["checks"]["cameraConcrete"] is True
+    assert manifest["scenes"][0]["promptQuality"]["checks"]["propContinuityAnchor"] is True
+    assert manifest["scenes"][0]["promptQuality"]["checks"]["minimalNegativeOnly"] is True
+    assert manifest["scenes"][0]["promptQuality"]["repairHints"] == {}
     assert "Matches the shot bible" in manifest["scenes"][0]["operatorChecklist"][1]
     assert "caption" in manifest["scenes"][0]["operatorChecklist"][3].lower()
     worksheet_path = Path(data["worksheetPath"])
@@ -201,24 +231,24 @@ def test_grok_handoff_creates_prompt_packet_and_matches_downloaded_mp4(tmp_path)
     assert "generic stock b-roll" in production_queue
     assert "barista" in production_queue
     assert "Grok-main readiness" in production_queue
-    assert "The Codex Chrome extension alone is not the Video Studio Grok Companion." in production_queue
-    assert "Video Studio Companion" in production_queue
+    assert "browser-control generation proof is followed by operator-owned local MP4 import" in production_queue
+    assert "Video Studio Companion" not in production_queue
     assert "Chrome/CDP attach" in production_queue
     assert "Downloads watcher" in production_queue
-    assert "Copy Companion folder" in production_queue
+    assert "Copy Companion folder" not in production_queue
     assert "Grok-main runway" in production_queue
-    assert "Queue Fill+Generate+Direct Import" in production_queue
+    assert "Queue Fill+Generate fallback" in production_queue
     assert "Copy queue console runner" in production_queue
     assert "Grok source status" in production_queue
     assert "Model access" in production_queue
     assert "Not the blocker" in production_queue
-    assert "Native local MP4 export/import is the main path" in production_queue
+    assert "Existing signed-in Chrome browser-control plus local MP4 import is the main path" in production_queue
     assert "First hook scene must be Grok before publish-ready render." in production_queue
     assert "Take 2 / motion-first" in production_queue
     assert "candidate floor: generate 2+ takes before accepting Grok-main" in production_queue
     assert "Take 1: continuity-master" in production_queue
     assert "Take 2: motion-first" in production_queue
-    assert "Take 3: caption-safe-composition" in production_queue
+    assert "Take 3: clean-composition" in production_queue
     assert "Copy prompt packet" in production_queue
     assert "Before import, reject if:" in production_queue
     assert "Source import rule" in production_queue
@@ -228,7 +258,7 @@ def test_grok_handoff_creates_prompt_packet_and_matches_downloaded_mp4(tmp_path)
     assert "Scene-grouped 2-take production matrix" in production_queue
     assert "Generate/save two MP4s per scene before moving to the next scene." not in production_queue
     assert "Preserve two imported MP4 takes per scene before moving to the next scene." in production_queue
-    assert "Direct-import or manually batch-upload every viable candidate take" in production_queue
+    assert "Manually import or batch-upload every viable candidate take" in production_queue
     assert "sceneGroupedTakeSize=2" in production_queue
     assert "scene-01 take 1" in production_queue
     assert "scene-01 take 2" in production_queue
@@ -270,14 +300,15 @@ def test_grok_handoff_creates_prompt_packet_and_matches_downloaded_mp4(tmp_path)
     assert initial_status["operatorRun"]["input"]["sceneId"] == "scene-01"
     manual_primary = initial_status["manualPrimaryPath"]
     assert manual_primary["mode"] == "manual-grok-app-web-primary"
+    assert manual_primary["browserControlRail"] == "existing-signed-in-chrome-browser-control-primary"
     assert manual_primary["primarySource"] == "grok-app-web-mp4"
     assert manual_primary["usesPaidApi"] is False
-    assert manual_primary["browserAutomationRole"] == "secondary-experimental"
+    assert manual_primary["browserAutomationRole"] == "browser-control-primary; isolated-cdp-and-bookmarklet-fallback-only"
     assert manual_primary["currentScene"]["sceneId"] == "scene-01"
     assert manual_primary["currentScene"]["expectedFileName"] == "scene-01.grok.mp4"
     assert manual_primary["currentScene"]["recommendedTakeNumber"] == 2
     assert manual_primary["currentScene"]["recommendedTakeLabel"] == "motion-first"
-    assert "Take 2 focus (motion-first)" in manual_primary["currentScene"]["prompt"]
+    assert "Motion-first take" in manual_primary["currentScene"]["prompt"]
     assert "take=2" in manual_primary["currentScene"]["commandUrl"]
     assert "take=2" in urllib.parse.unquote(manual_primary["currentScene"]["prepGenerateAutostartUrl"])
     assert "Take 2 / motion-first" in manual_primary["operatorNextAction"]
@@ -288,8 +319,8 @@ def test_grok_handoff_creates_prompt_packet_and_matches_downloaded_mp4(tmp_path)
     assert manual_primary["orderedBatchUpload"]["supported"] is True
     assert manual_primary["orderedBatchUpload"]["filenameStillAccepted"] is True
     assert "not required" in manual_primary["currentScene"]["downloadInstruction"]
-    assert "production queue" in manual_primary["operatorSteps"][0]
-    assert "signed-in Grok app/web" in manual_primary["operatorSteps"][1]
+    assert "browser-control" in manual_primary["operatorSteps"][0]
+    assert "existing signed-in Chrome" in manual_primary["operatorSteps"][1]
     assert "top-tier" in " ".join(manual_primary["qualityRules"])
 
     incoming = Path(data["incomingDir"])
@@ -317,6 +348,116 @@ def test_grok_handoff_creates_prompt_packet_and_matches_downloaded_mp4(tmp_path)
     assert asset["sourcePath"].endswith("storage/grok-handoffs/grok-test/incoming/scene-01.grok.mp4")
     assert asset["previewUrl"].endswith("/api/grok-handoff/grok-test/asset/scene-01.grok.mp4")
     assert status_data["reviewPacketUrl"].endswith("/api/grok-handoff/grok-test/review-packet")
+
+
+def test_grok_handoff_recommends_ready_take_when_motion_take_fails(tmp_path):
+    client = _grok_test_client(tmp_path)
+
+    response = client.post(
+        "/api/grok-handoff",
+        json={
+            "projectId": "ready-take-fallback",
+            "templateType": "authentic_vlog",
+            "draftScenes": [
+                {
+                    "sceneId": "scene-01",
+                    "scene_num": 1,
+                    "image_source": "grok",
+                    "grok_prompt": "A barista in a warm cafe counter slowly tilts the same white ceramic cup as coffee steam rises in front of the lens.",
+                    "hook_note": "steam already moving across the cup in the first second",
+                    "continuity_note": "same white cup, wooden counter, warm cafe lighting",
+                    "layout_variant_note": "keep cup and hands above lower captions",
+                    "caption_preset": "lower-info",
+                    "duration": 4,
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()
+    manifest_path = Path(data["manifestPath"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    scene = manifest["scenes"][0]
+    assert scene["takePrompts"][1]["takeNumber"] == 2
+    assert scene["takePrompts"][2]["takeNumber"] == 3
+    assert scene["takePrompts"][2]["promptQuality"]["status"] == "ready"
+    scene["takePrompts"][1]["promptQuality"] = {
+        "status": "needs-rewrite",
+        "score": 72,
+        "missing": ["largePhysicalMotion", "observableFirstSecondChange"],
+    }
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    command = client.get(
+        "/api/grok-handoff/ready-take-fallback/extension-command"
+        "?operatorApproved=true&sceneId=scene-01"
+    )
+
+    assert command.status_code == 200
+    command_data = command.get_json()
+    assert command_data["takeNumber"] == 3
+    assert command_data["takeLabel"] == "clean-composition"
+    assert command_data["promptQuality"]["status"] == "ready"
+    assert command_data["takeCommands"][1]["recommended"] is False
+    assert command_data["takeCommands"][2]["recommended"] is True
+    assert command_data["allSceneCommands"][0]["recommendedTakeNumber"] == 3
+    assert command_data["allSceneCommands"][0]["recommendedTakeLabel"] == "clean-composition"
+    assert "take=3" in urllib.parse.unquote(command_data["commandUrl"])
+
+    status_data = client.get("/api/grok-handoff/ready-take-fallback/status").get_json()
+    manual_primary = status_data["manualPrimaryPath"]
+    assert manual_primary["currentScene"]["recommendedTakeNumber"] == 3
+    assert manual_primary["currentScene"]["recommendedTakeLabel"] == "clean-composition"
+    assert "Take 3 / clean-composition" in manual_primary["operatorNextAction"]
+
+
+def test_grok_handoff_uses_visual_action_seed_for_preproduction_prompt(tmp_path):
+    client = _grok_test_client(tmp_path)
+
+    response = client.post(
+        "/api/grok-handoff",
+        json={
+            "projectId": "preproduction-visual-seed",
+            "templateType": "authentic_vlog",
+            "draftScenes": [
+                {
+                    "sceneId": "scene-001",
+                    "scene_num": 1,
+                    "image_source": "grok",
+                    "grok_prompt": (
+                        "Raw vertical 9:16 phone-camera MP4, 4-6 seconds. First second: "
+                        "A hand circles the opening date on a printed football calendar in the first second. "
+                        "Setting: desk with printed football schedule. Subject: Korean football viewers. "
+                        "Purpose: Calendar action makes the schedule problem visible."
+                    ),
+                    "visual_prompt": "A hand circles the opening date on a printed football calendar in the first second.",
+                    "hook_note": "A hand circles the opening date on a printed football calendar in the first second.",
+                    "continuity_note": "same host hands, desk with printed football schedule, same key prop, natural phone-camera light",
+                    "layout_variant_note": "keep lower-right background open for later captions",
+                    "caption_preset": "top-hook",
+                    "duration": 6,
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    scene = response.get_json()["scenes"][0]
+    assert scene["prompt"].startswith("A hand circles the opening date")
+    assert "Setting: desk with;" not in scene["prompt"]
+    assert "Keep Keep" not in scene["prompt"]
+    assert "slight." not in scene["prompt"]
+    assert "same key;" not in scene["prompt"]
+    assert scene["promptQuality"]["status"] == "ready"
+    assert scene["promptQuality"]["checks"]["largePhysicalMotion"] is True
+    assert scene["promptQuality"]["checks"]["observableFirstSecondChange"] is True
+    take_two = scene["takePrompts"][1]
+    assert take_two["takeNumber"] == 2
+    assert take_two["promptQuality"]["status"] == "ready"
+    assert "Keep Keep" not in take_two["prompt"]
+    assert "slight." not in take_two["prompt"]
+    assert "same key;" not in take_two["prompt"]
 
 
 def test_grok_handoff_records_codex_chrome_generation_observation(tmp_path):
@@ -430,7 +571,17 @@ def test_grok_handoff_records_codex_chrome_generation_observation(tmp_path):
     assert status["grokMainSourceDiagnosis"]["modelBlocked"] is False
     assert status["grokMainSourceDiagnosis"]["generationObserved"] is True
     assert status["grokMainSourceDiagnosis"]["currentBlocker"] == "local-mp4-file-not-yet-present"
+    assert status["grokMainSourceDiagnosis"]["recommendedPrimaryPath"] == "existing-signed-in-chrome-browser-control-plus-operator-download-import"
+    assert "companionExtensionRole" not in status["grokMainSourceDiagnosis"]
+    assert status["grokMainSourceDiagnosis"]["downloadAuthority"] == "operator-owned-manual-download-or-local-upload"
     assert status["grokMainSourceDiagnosis"]["doNotDowngradeToStockOnly"] is True
+    rail = status["browserControlPrimaryRail"]
+    assert rail["mode"] == "existing-signed-in-chrome-browser-control-primary"
+    assert rail["generationObserved"] is True
+    assert rail["observedPostUrl"].startswith("https://grok.com/imagine/post/")
+    assert rail["autoNativeDownloadPromptAllowed"] is False
+    assert rail["automaticDownloadClickAllowed"] is False
+    assert "operator-owned" in rail["downloadAuthority"]
     assert acquisition["state"] == "generated-awaiting-local-mp4"
     assert acquisition["clipGenerated"] is True
     assert acquisition["localMp4Imported"] is False
@@ -447,6 +598,54 @@ def test_grok_handoff_records_codex_chrome_generation_observation(tmp_path):
     assert "Grok generation succeeded" in status["mainPathStatus"]["summary"]
     assert "logged-in Chrome/SuperGrok generation has been observed" in status["mainPathStatus"]["notBlockedBy"]
     assert any(item.startswith("observedPost=https://grok.com/imagine/post/") for item in status["mainPathStatus"]["proofPoints"])
+
+
+def test_grok_handoff_rejects_surface_only_codex_chrome_observation(tmp_path):
+    client = _grok_test_client(tmp_path)
+
+    created = client.post(
+        "/api/grok-handoff",
+        json={
+            "projectId": "codex-chrome-surface-only",
+            "grokMainSourceRequired": True,
+            "qualityGateRequired": True,
+            "draftScenes": [
+                {
+                    "sceneId": "scene-01",
+                    "scene_num": 1,
+                    "image_source": "grok",
+                    "display_text": "퇴근길 지하철에서 루틴을 다시 잡는 직장인",
+                    "narration": "",
+                    "duration": 6,
+                }
+            ],
+        },
+    )
+    assert created.status_code == 200
+
+    surface_only = client.post(
+        "/api/grok-handoff/codex-chrome-surface-only/codex-chrome-observation",
+        json={
+            "operatorApproved": True,
+            "codexChromeApproved": True,
+            "sceneId": "scene-01",
+            "status": "surface-visible-only",
+            "currentUrl": "https://grok.com/imagine",
+            "detail": "Imagine surface visible, but prompt fill/generate was not proven.",
+        },
+    )
+
+    assert surface_only.status_code == 400
+    payload = surface_only.get_json()
+    assert payload["generationObserved"] is False
+    assert payload["surfaceProofEndpoint"] == "/api/grok-handoff/codex-chrome-surface-only/extension-event"
+    assert "requires generated Grok proof" in payload["error"]
+
+    status = client.get("/api/grok-handoff/codex-chrome-surface-only/status").get_json()
+    assert status["codexChromeObservation"] is None
+    assert status["grokMainSourceDiagnosis"]["generationObserved"] is False
+    assert status["mainPathStatus"]["status"] == "needs-first-grok-mp4"
+    assert "codexChromeObservation=surface-visible-only" not in status["mainPathStatus"]["proofPoints"]
 
 
 def test_grok_handoff_direct_import_proof_monitor_prefers_upload_endpoint_for_720p_candidate(tmp_path, monkeypatch):
@@ -490,19 +689,15 @@ def test_grok_handoff_direct_import_proof_monitor_prefers_upload_endpoint_for_72
     assert observation["renderedWidth"] == 720
     assert observation["renderedHeight"] == 1280
     assert observation["qualityFloorMet"] is True
-    assert observation["directImportPreferred"] is True
-    assert observation["exportStatus"] == "pending-upload-endpoint-import"
+    assert observation["directImportPreferred"] is False
+    assert observation["exportStatus"] == "pending-download-import"
     assert observation["uploadEndpoint"].endswith("/api/grok-handoff/codex-chrome-720p-observed/upload-mp4")
-    assert "uploadEndpoint" in observation["operatorNextAction"]
-    assert "do not click Chrome Download" in observation["operatorNextAction"]
-    assert "download approval dialog" in observation["operatorNextAction"]
+    assert "operator-owned MP4 download/save" in observation["operatorNextAction"]
+    assert "native Chrome download dialog" in observation["operatorNextAction"]
 
     status = client.get("/api/grok-handoff/codex-chrome-720p-observed/status").get_json()
-    assert status["codexChromeObservation"]["directImportPreferred"] is True
-    assert status["latestExtensionEvent"]["eventType"] == "codex-chrome-observation"
-    assert status["latestExtensionEvent"]["videoWidth"] == 720
-    assert status["latestExtensionEvent"]["videoHeight"] == 1280
-    assert status["latestExtensionEvent"]["qualityFloorMet"] == "true"
+    assert status["codexChromeObservation"]["directImportPreferred"] is False
+    assert "latestExtensionEvent" not in status
     assert status["observedPostImportPlan"]["uploadEndpoint"].endswith(
         "/api/grok-handoff/codex-chrome-720p-observed/upload-mp4"
     )
@@ -531,10 +726,10 @@ def test_grok_handoff_direct_import_proof_monitor_prefers_upload_endpoint_for_72
     monitor = client.get("/api/grok-handoff/codex-chrome-720p-observed/direct-import-proof?sceneId=scene-01")
     assert monitor.status_code == 200
     proof_html = monitor.get_data(as_text=True)
-    assert "Direct Import Proof Monitor" in proof_html
-    assert "liveGrokDirectImportProven=true" in proof_html
-    assert "without Chrome Download approval dialogs" in proof_html
-    assert "Copy Companion folder" in proof_html
+    assert "Grok Proof Monitor" in proof_html
+    assert "operator-owned local MP4 import" in proof_html
+    assert "surface-only proof" in proof_html
+    assert "Copy Companion folder" not in proof_html
     assert "Open observed Grok post" in proof_html
     assert "Copy observed-post console" in proof_html
     assert "Copy console + open post" in proof_html
@@ -672,8 +867,13 @@ def test_grok_handoff_flags_production_meta_prompt_seed(tmp_path):
     assert scene["promptQuality"]["checks"]["visualSeedNotMeta"] is False
     assert "이번영상은" in scene["promptQuality"]["productionMetaTerms"]
     assert "이번 영상은 조용한 루틴의 의도를 설명합니다" not in scene["prompt"]
-    assert "Rewrite required before generation" in scene["prompt"]
-    assert "concrete subject + visible action" in scene["promptQuality"]["operatorAction"]
+    assert "Rewrite required before generation" not in scene["prompt"]
+    assert scene["promptQuality"]["standard"] == "concise-positive-shot-v1"
+    assert scene["promptQuality"]["rulesetVersion"] == routes_grok.GROK_GENERATION_PROMPT_RULESET_VERSION
+    assert scene["promptQuality"]["checks"]["largePhysicalMotion"] is False
+    assert "largePhysicalMotion" in scene["promptQuality"]["missing"]
+    assert "largePhysicalMotion" in scene["promptQuality"]["repairHints"]
+    assert "one large first-second physical action" in scene["promptQuality"]["operatorAction"]
     take_two = scene["takePrompts"][1]
     assert take_two["promptQuality"]["status"] == "needs-rewrite"
     assert take_two["promptQuality"]["checks"]["visualSeedNotMeta"] is False
@@ -726,8 +926,9 @@ def test_grok_handoff_accepts_nested_production_context(tmp_path):
     assert manifest["shotBible"]["productionProfile"]["templateType"] == "authentic_vlog"
     assert manifest["shotBible"]["productionProfile"]["family"] == "authentic-vlog"
     scene_prompt = manifest["scenes"][0]["prompt"]
-    assert "Template family: authentic-vlog" in scene_prompt
+    assert "Template family: authentic-vlog" not in scene_prompt
     assert "phone-camera realism" in scene_prompt
+    assert "glossy ad" not in scene_prompt
     assert "news-or-explainer" not in scene_prompt
     assert manifest["scenes"][0]["promptQuality"]["status"] == "ready"
 
@@ -938,20 +1139,58 @@ def test_grok_handoff_packages_concise_prompts_without_truncated_neighbor_intent
     manifest = json.loads(Path(response.get_json()["manifestPath"]).read_text(encoding="utf-8"))
     for scene in manifest["scenes"]:
         prompt = scene["prompt"]
-        assert len(prompt) <= 1050
+        assert len(prompt) <= 520
         assert "Next scene intent" not in prompt
         assert "Previous scene intent" not in prompt
         assert "Reject before download" not in prompt
         assert "..." not in prompt
-        assert prompt.count("raw footage for editing") == 1
+        assert "raw footage for editing" not in prompt
+        assert "Shot lock:" not in prompt
+        assert "caption-safe" not in prompt
+        assert scene["promptQuality"]["standard"] == "concise-positive-shot-v1"
+        assert scene["promptQuality"]["rulesetVersion"] == routes_grok.GROK_GENERATION_PROMPT_RULESET_VERSION
         assert scene["promptQuality"]["status"] == "ready"
+        assert scene["promptQuality"]["checks"]["largePhysicalMotion"] is True
+        assert scene["promptQuality"]["checks"]["observableFirstSecondChange"] is True
+        assert scene["promptQuality"]["checks"]["singleContinuousShot"] is True
+        assert scene["promptQuality"]["checks"]["cameraConcrete"] is True
+        assert scene["promptQuality"]["checks"]["propContinuityAnchor"] is True
+        assert scene["promptQuality"]["repairHints"] == {}
         for take in scene["takePrompts"]:
-            assert len(take["prompt"]) <= 1240
+            assert len(take["prompt"]) <= 520
             assert "Grok candidate take" not in take["prompt"]
+            assert "Take 2 focus" not in take["prompt"]
+            assert "Shot lock:" not in take["prompt"]
             assert "..." not in take["prompt"]
-    assert "Take 2 focus (motion-first)" in manifest["scenes"][0]["takePrompts"][1]["prompt"]
-    assert "next beat" in manifest["scenes"][0]["prompt"]
-    assert "previous beat" in manifest["scenes"][1]["prompt"]
+            assert "Vertical 9:16 phone MP4" in take["prompt"]
+            assert "4-6 seconds" in take["prompt"]
+            assert "in the first." not in take["prompt"]
+            assert "; first." not in take["prompt"]
+            assert take["promptQuality"]["brokenPromptFragments"] == []
+            assert take["promptQuality"]["checks"]["completeSentences"] is True
+            assert take["promptQuality"]["rulesetVersion"] == routes_grok.GROK_GENERATION_PROMPT_RULESET_VERSION
+            assert take["promptQuality"]["checks"]["largePhysicalMotion"] is True
+            assert take["promptQuality"]["checks"]["observableFirstSecondChange"] is True
+            assert take["promptQuality"]["status"] == "ready"
+    assert "Motion-first take" in manifest["scenes"][0]["takePrompts"][1]["prompt"]
+    assert "next beat" not in manifest["scenes"][0]["prompt"]
+    assert "previous beat" not in manifest["scenes"][1]["prompt"]
+
+    command = client.get(
+        "/api/grok-handoff/concise-grok-prompts/extension-command?operatorApproved=true&sceneId=scene-02&take=2"
+    )
+    assert command.status_code == 200
+    command_data = command.get_json()
+    assert command_data["takeNumber"] == 2
+    assert command_data["takeLabel"] == "motion-first"
+    assert command_data["promptQuality"]["status"] == "ready"
+    assert "Vertical 9:16 phone MP4" in command_data["prompt"]
+    assert "4-6 seconds" in command_data["prompt"]
+    assert "in the first." not in command_data["prompt"]
+    assert "; first." not in command_data["prompt"]
+    assert command_data["promptQuality"]["brokenPromptFragments"] == []
+    assert command_data["promptQuality"]["rulesetVersion"] == routes_grok.GROK_GENERATION_PROMPT_RULESET_VERSION
+    assert command_data["promptQuality"]["checks"]["largePhysicalMotion"] is True
 
 
 def test_grok_handoff_marks_weak_generic_source_prompts_for_rewrite(tmp_path):
@@ -978,6 +1217,7 @@ def test_grok_handoff_marks_weak_generic_source_prompts_for_rewrite(tmp_path):
     assert scene["promptQuality"]["status"] == "needs-rewrite"
     assert scene["promptQuality"]["weakSourcePrompt"] is True
     assert "sceneSpecificIntent" in scene["promptQuality"]["missing"]
+    assert scene["promptQuality"]["rulesetVersion"] == routes_grok.GROK_GENERATION_PROMPT_RULESET_VERSION
     worksheet = Path(response.get_json()["worksheetPath"]).read_text(encoding="utf-8")
     assert "prompt quality: needs-rewrite" in worksheet
 
@@ -1008,7 +1248,61 @@ def test_grok_handoff_prompt_quality_rejects_generic_source_prompt(tmp_path):
     assert scene["promptQuality"]["weakSourcePrompt"] is True
     assert "sceneSpecificIntent" in scene["promptQuality"]["missing"]
     assert "sourceActionCue" in scene["promptQuality"]["missing"]
+    assert "largePhysicalMotion" in scene["promptQuality"]["missing"]
+    assert scene["promptQuality"]["checks"]["largePhysicalMotion"] is False
+    assert "largePhysicalMotion" in scene["promptQuality"]["repairHints"]
     assert scene["promptQuality"]["operatorAction"].startswith("Rewrite the scene Grok prompt")
+
+
+def test_grok_handoff_blocks_weak_prompt_extension_command_before_generation(tmp_path):
+    client = _grok_test_client(tmp_path)
+
+    created = client.post(
+        "/api/grok-handoff",
+        json={
+            "projectId": "weak-prompt-command-block",
+            "draftScenes": [
+                {
+                    "sceneId": "scene-01",
+                    "scene_num": 1,
+                    "image_source": "grok",
+                    "grok_prompt": "Hero.",
+                    "duration": 4,
+                },
+            ],
+        },
+    )
+    assert created.status_code == 200
+    scene = created.get_json()["scenes"][0]
+    assert scene["promptQuality"]["status"] == "needs-rewrite"
+
+    blocked = client.get(
+        "/api/grok-handoff/weak-prompt-command-block/extension-command"
+        "?operatorApproved=true&sceneId=scene-01&take=2"
+    )
+
+    assert blocked.status_code == 409
+    payload = blocked.get_json()
+    assert payload["ok"] is False
+    assert payload["status"] == "blocked-prompt-quality"
+    assert payload["promptQuality"]["status"] == "needs-rewrite"
+    assert "largePhysicalMotion" in payload["promptQuality"]["missing"]
+    assert "Rewrite the scene Grok prompt" in payload["operatorAction"]
+    assert "allowWeakPrompt=true" in payload["debugOverride"]
+
+    bookmarklet = client.get(
+        "/api/grok-handoff/weak-prompt-command-block/bookmarklet.js"
+        "?operatorApproved=true&sceneId=scene-01&take=2&autoGenerate=true"
+    )
+    assert bookmarklet.status_code == 409
+    assert bookmarklet.get_json()["status"] == "blocked-prompt-quality"
+
+    debug = client.get(
+        "/api/grok-handoff/weak-prompt-command-block/extension-command"
+        "?operatorApproved=true&sceneId=scene-01&take=2&allowWeakPrompt=true"
+    )
+    assert debug.status_code == 200
+    assert debug.get_json()["promptQuality"]["status"] == "needs-rewrite"
 
 
 def test_grok_handoff_accepts_physical_action_source_prompt(tmp_path):
@@ -1044,6 +1338,185 @@ def test_grok_handoff_accepts_physical_action_source_prompt(tmp_path):
     assert scene["promptQuality"]["weakSourcePrompt"] is False
     assert scene["promptQuality"]["checks"]["sourceActionCue"] is True
     assert scene["promptQuality"]["checks"]["specificAction"] is True
+    assert scene["promptQuality"]["checks"]["largePhysicalMotion"] is True
+    assert scene["promptQuality"]["checks"]["observableFirstSecondChange"] is True
+    assert scene["promptQuality"]["checks"]["singleContinuousShot"] is True
+    assert scene["promptQuality"]["checks"]["cameraConcrete"] is True
+    assert scene["promptQuality"]["checks"]["propContinuityAnchor"] is True
+    assert scene["promptQuality"]["repairHints"] == {}
+
+
+def test_grok_handoff_fresh_concept_packet_preserves_reference_action_voice_and_risk(tmp_path):
+    client = _grok_test_client(tmp_path)
+
+    response = client.post(
+        "/api/grok-handoff",
+        json={
+            "projectId": "fresh-concept-packet",
+            "templateType": "ranking_list",
+            "freshConceptRequired": True,
+            "draftScenes": [
+                {
+                    "sceneId": "scene-01",
+                    "scene_num": 1,
+                    "image_source": "grok",
+                    "grok_prompt": (
+                        "A Korean night-market vendor pulls up a metal shutter, warm stall lights switch on, "
+                        "and steam rolls across stacked paper cups in the first second."
+                    ),
+                    "hook_note": "metal shutter lift and steam movement start immediately",
+                    "continuity_note": "same red stall awning, paper cups, stainless counter, warm sodium light",
+                    "reference_note": "phone-shot Korean night market stall opening, handheld close distance",
+                    "action_beat": "vendor lifts the shutter and reveals the lit stall in one continuous motion",
+                    "visual_risk": "reject if it becomes generic food b-roll without the shutter movement",
+                    "voice_requirement": "voice required; short zero-paid or operator-owned narration explains rank one",
+                    "quality_rationale": "large shutter movement and steam make the first-second hook easy to judge",
+                    "duration": 4,
+                },
+                {
+                    "sceneId": "scene-02",
+                    "scene_num": 2,
+                    "image_source": "grok",
+                    "grok_prompt": (
+                        "The same vendor pours bright sauce from a squeeze bottle onto skewers while a gloved hand "
+                        "turns the tray under warm stall lighting."
+                    ),
+                    "hook_note": "sauce pour and tray turn begin in the first second",
+                    "continuity_note": "same red awning, stainless counter, paper cups, warm night-market light",
+                    "reference_note": "raw phone-camera food stall prep shot, close hands and tray",
+                    "action_beat": "sauce pour and tray turn create clear visible motion",
+                    "visual_risk": "reject if hands melt or the tray changes shape between frames",
+                    "voice_required": True,
+                    "quality_rationale": "pouring sauce and hand rotation are larger motion than subtle posture changes",
+                    "duration": 4,
+                },
+                {
+                    "sceneId": "scene-03",
+                    "scene_num": 3,
+                    "image_source": "grok",
+                    "grok_prompt": (
+                        "A customer slides a transit card across the counter, the same vendor places a wrapped paper cup "
+                        "beside it, and steam drifts upward."
+                    ),
+                    "hook_note": "card slide and cup placement start immediately",
+                    "continuity_note": "same stall counter, paper cup, red awning, warm sodium light",
+                    "reference_note": "close counter exchange at a Korean food stall, phone camera height",
+                    "action_beat": "card slide and cup placement make the payoff readable without tiny expressions",
+                    "visual_risk": "reject if the exchange turns into a glossy product ad or unreadable montage",
+                    "voice_requirement": "voice required; one natural spoken payoff line after source acceptance",
+                    "quality_rationale": "object exchange gives an obvious before/after state for review",
+                    "duration": 4,
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()
+    packet = data["freshConceptPacket"]
+    assert packet["required"] is True
+    assert packet["status"] == "ready"
+    assert packet["sceneCount"] == 3
+    assert packet["missing"] == []
+    assert packet["oldShoulderReleaseRisk"] is False
+    assert [item["sceneId"] for item in packet["scenes"]] == ["scene-01", "scene-02", "scene-03"]
+    assert all(item["complete"] is True for item in packet["scenes"])
+    assert all(item["promptQualityStatus"] == "ready" for item in packet["scenes"])
+    assert data["scenes"][0]["freshConcept"]["referenceNote"].startswith("phone-shot Korean night market")
+    assert "voice required" in data["scenes"][1]["freshConcept"]["voiceRequirement"]
+    assert data["scenes"][2]["actionBeat"].startswith("card slide")
+    assert data["scenes"][0]["promptQuality"]["standard"] == "concise-positive-shot-v1"
+    assert data["scenes"][0]["promptQuality"]["rulesetVersion"] == routes_grok.GROK_GENERATION_PROMPT_RULESET_VERSION
+    assert all(scene["promptQuality"]["checks"]["largePhysicalMotion"] is True for scene in data["scenes"])
+    assert all(scene["promptQuality"]["checks"]["observableFirstSecondChange"] is True for scene in data["scenes"])
+
+    manifest = json.loads(Path(data["manifestPath"]).read_text(encoding="utf-8"))
+    assert manifest["freshConceptPacket"]["status"] == "ready"
+    assert manifest["shotBible"]["promptRulesetVersion"] == routes_grok.GROK_GENERATION_PROMPT_RULESET_VERSION
+    worksheet = Path(data["worksheetPath"]).read_text(encoding="utf-8")
+    assert "Fresh concept packet" in worksheet
+    assert "Fresh concept notes" in worksheet
+    assert "vendor lifts the shutter" in worksheet
+    review_html = Path(data["reviewPacketPath"]).read_text(encoding="utf-8")
+    assert "Fresh concept packet" in review_html
+    assert "Fresh concept notes" in review_html
+    assert "object exchange gives an obvious before/after state" in review_html
+    queue_html = Path(data["productionQueuePath"]).read_text(encoding="utf-8")
+    assert "Fresh concept notes" in queue_html
+    assert "reject if it becomes generic food b-roll" in queue_html
+
+    status = client.get("/api/grok-handoff/fresh-concept-packet/status")
+    assert status.status_code == 200
+    assert status.get_json()["freshConceptPacket"]["status"] == "ready"
+
+
+def test_grok_handoff_fresh_concept_packet_rejects_old_shoulder_release_benchmark(tmp_path):
+    client = _grok_test_client(tmp_path)
+
+    response = client.post(
+        "/api/grok-handoff",
+        json={
+            "projectId": "old-shoulder-concept",
+            "templateType": "authentic_vlog",
+            "freshConceptRequired": True,
+            "draftScenes": [
+                {
+                    "sceneId": "scene-01",
+                    "image_source": "grok",
+                    "grok_prompt": "Korean office worker at a desk rolls tense shoulders and slowly releases the tension.",
+                    "hook_note": "shoulder release starts in the first second",
+                    "continuity_note": "same office desk and muted wall light",
+                    "reference_note": "old office shoulder-release attempt",
+                    "action_beat": "shoulders tense then relax",
+                    "visual_risk": "subtle posture change is hard to judge and already failed",
+                    "voice_requirement": "voice required if this were an information format",
+                    "quality_rationale": "this intentionally repeats the rejected baseline",
+                    "duration": 4,
+                },
+                {
+                    "sceneId": "scene-02",
+                    "image_source": "grok",
+                    "grok_prompt": "The same office worker opens a notebook and moves a pen across the desk.",
+                    "hook_note": "notebook opening starts immediately",
+                    "continuity_note": "same office desk and muted wall light",
+                    "reference_note": "office continuation",
+                    "action_beat": "notebook opens and pen moves",
+                    "visual_risk": "too close to the stale office runway",
+                    "voice_requirement": "voice required",
+                    "quality_rationale": "included only to prove stale packet rejection",
+                    "duration": 4,
+                },
+                {
+                    "sceneId": "scene-03",
+                    "image_source": "grok",
+                    "grok_prompt": "The same worker places a mug beside the notebook while desk light moves across the wall.",
+                    "hook_note": "mug placement starts immediately",
+                    "continuity_note": "same office desk and muted wall light",
+                    "reference_note": "office payoff",
+                    "action_beat": "mug placement creates a small object change",
+                    "visual_risk": "office context keeps the stale benchmark alive",
+                    "voice_requirement": "voice required",
+                    "quality_rationale": "included only to prove stale packet rejection",
+                    "duration": 4,
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()
+    packet = data["freshConceptPacket"]
+    assert packet["status"] == "needs-rewrite"
+    assert "oldShoulderReleaseConcept" in packet["missing"]
+    assert packet["oldShoulderReleaseRisk"] is True
+    assert packet["oldShoulderReleaseSceneIds"] == ["scene-01"]
+    assert packet["scenes"][0]["oldShoulderReleaseRisk"] is True
+    assert packet["scenes"][0]["complete"] is False
+    stale_scene_quality = data["scenes"][0]["promptQuality"]
+    assert stale_scene_quality["status"] == "needs-rewrite"
+    assert stale_scene_quality["checks"]["largePhysicalMotion"] is False
+    assert "largePhysicalMotion" in stale_scene_quality["missing"]
+    assert "largePhysicalMotion" in stale_scene_quality["repairHints"]
 
 
 def test_grok_handoff_review_packet_previews_imported_mp4s_and_operator_checks(tmp_path):
@@ -1532,7 +2005,7 @@ def test_grok_handoff_acquisition_flags_low_resolution_import_as_replacement_req
     assert export_plan["targetSceneId"] == "scene-01"
     assert export_plan["expectedFileName"] == "scene-01.grok.mp4"
     assert "native Grok MP4 export" in export_plan["summary"]
-    assert any("Companion/pageAssets direct import" in item for item in export_plan["requiredActions"])
+    assert any("operator-owned manual download/import" in item for item in export_plan["requiredActions"])
     assert "browser currentSrc or cache copy" in export_plan["rejectAsMainSource"]
     review_packet = client.get("/api/grok-handoff/quality-blocker-status/review-packet")
     assert review_packet.status_code == 200
@@ -1832,10 +2305,10 @@ def test_grok_main_status_prioritizes_replacing_failed_first_hook_before_later_s
     assert "scene-01.grok.mp4" in production_queue_html
     assert "416x752 / 24fps" in production_queue_html
     assert "Generate two fresh Grok MP4 takes" in production_queue_html
-    assert "Companion/pageAssets direct import" in production_queue_html
+    assert "existing signed-in Chrome browser-control" in production_queue_html
     assert "vertical height below review floor: 752" in production_queue_html
     assert "Grok source status" in production_queue_html
-    assert "Replace scene-01 with two fresh Grok MP4 takes through Companion/pageAssets direct import" in production_queue_html
+    assert "Replace scene-01 with two fresh Grok MP4 takes through existing signed-in Chrome browser-control" in production_queue_html
     assert "Copy prompt packet" in production_queue_html
 
 
@@ -2000,7 +2473,7 @@ def test_grok_main_rejects_visible_video_fallback_as_main_source(tmp_path, monke
             "status": "saved",
             "sourceKind": "visible-video-fallback",
             "qualityNote": "visible-video-fallback-proof-only",
-            "detail": "visible-video-fallback-proof-only: use Companion/pageAssets direct import or operator-owned manual upload for original MP4",
+            "detail": "visible-video-fallback-proof-only: use operator-owned download/import or manual upload for original MP4",
         },
     )
     assert event.status_code == 200
@@ -2083,7 +2556,7 @@ def test_grok_main_rejects_browser_observed_mp4_without_original_download_proven
     provenance = status["assets"][0]["sourceProvenance"]
     assert provenance["status"] == "browser-observed-source-unverified"
     assert provenance["acceptAsGrokMainSource"] is False
-    assert "local uploadEndpoint" in provenance["operatorAction"]
+    assert "operator-owned manual download/import" in provenance["operatorAction"]
     assert "manual batch upload" in provenance["operatorAction"]
     assert status["assets"][0]["qualityGate"]["status"] == "source-review"
 
@@ -2775,36 +3248,32 @@ def test_grok_handoff_open_route_can_open_observed_asset_runway_in_chrome(tmp_pa
     data = response.get_json()
     assert data["ok"] is True
     assert [item["target"] for item in data["openedTargets"]] == [
-        "chrome-extensions",
-        "observed-post-download",
+        "observed-post",
         "observed-asset-manual-runway",
     ]
-    assert len(opened_args) == 3
-    assert opened_args[0] == ["C:\\Chrome\\chrome.exe", "chrome://extensions"]
-    assert opened_args[1][0] == "C:\\Chrome\\chrome.exe"
-    post_url = opened_args[1][1]
-    assert post_url.startswith("https://grok.com/imagine/post/cd0#")
-    decoded_post_url = urllib.parse.unquote(post_url)
-    assert "operatorApproved=true" in decoded_post_url
-    assert "videoStudioAction=download-visible-video" in decoded_post_url
-    assert "sceneId=scene-01" in decoded_post_url
-    observed_post = data["openedTargets"][1]
-    assert observed_post["requiresCompanionExtension"] is True
-    assert observed_post["requiresCompanionReload"] is True
-    assert observed_post["autostartAction"] == "download-visible-video"
+    assert len(opened_args) == 2
+    assert opened_args[0][0] == "C:\\Chrome\\chrome.exe"
+    post_url = opened_args[0][1]
+    assert post_url == "https://grok.com/imagine/post/cd0"
+    observed_post = data["openedTargets"][0]
+    assert observed_post["requiresCompanionExtension"] is False
+    assert observed_post["requiresExistingSignedInChrome"] is True
+    assert observed_post["browserControlPrimary"] is True
+    assert observed_post["autostartAction"] == "none"
     assert observed_post["expectedFileName"] == "scene-01.grok.mp4"
-    assert "visible video" in observed_post["postDownloadInstruction"]
-    assert "local uploadEndpoint" in observed_post["postDownloadInstruction"]
-    assert "save prompt" in observed_post["postDownloadInstruction"]
-    assert opened_args[2][0] == "C:\\Chrome\\chrome.exe"
-    asset_url = opened_args[2][1]
+    assert "browser-control" in observed_post["postInstruction"]
+    assert "Download/Save/Export" in observed_post["postInstruction"]
+    assert opened_args[1][0] == "C:\\Chrome\\chrome.exe"
+    asset_url = opened_args[1][1]
     assert asset_url.startswith("http://127.0.0.1:5161/api/grok-handoff/observed-asset-runway/observed-asset-manual-runway?")
     decoded_asset_url = urllib.parse.unquote(asset_url)
     assert "operatorApproved=true" in decoded_asset_url
     assert "sceneId=scene-01" in decoded_asset_url
     assert "https://assets.grok.com" not in "\n".join(arg[1] for arg in opened_args)
-    observed_asset = data["openedTargets"][2]
+    observed_asset = data["openedTargets"][1]
     assert observed_asset["requiresOperatorClick"] is True
+    assert observed_asset["requiresCompanionExtension"] is False
+    assert observed_asset["browserControlPrimary"] is True
     assert "must not click the observed Grok MP4 link" in observed_asset["manualRunwayInstruction"]
     assert "--remote-debugging-port" not in json.dumps(data)
     assert "--user-data-dir" not in json.dumps(data)
@@ -2860,10 +3329,12 @@ def test_grok_handoff_open_route_can_open_observed_asset_manual_runway(tmp_path,
     assert "sceneId=scene-01" in decoded_url
     target = data["openedTargets"][0]
     assert target["requiresOperatorClick"] is True
+    assert target["browserControlPrimary"] is True
+    assert target["requiresCompanionExtension"] is False
     assert target["usesPaidApi"] is False
     assert target["storesCredentials"] is False
     assert target["expectedFileName"] == "scene-01.grok.mp4"
-    assert "companion" in target["manualRunwayInstruction"]
+    assert "browser-control" in target["manualRunwayInstruction"]
     assert "--remote-debugging-port" not in json.dumps(data)
     assert "--user-data-dir" not in json.dumps(data)
 
@@ -2951,7 +3422,7 @@ def test_grok_handoff_chrome_companion_extension_command_and_events(tmp_path, mo
     assert denied.status_code == 403
 
     command = client.get(
-        "/api/grok-handoff/chrome-companion/extension-command?sceneId=scene-01&operatorApproved=true"
+        "/api/grok-handoff/chrome-companion/extension-command?sceneId=scene-01&operatorApproved=true&allowWeakPrompt=true"
     )
     assert command.status_code == 200
     command_data = command.get_json()
@@ -2978,7 +3449,7 @@ def test_grok_handoff_chrome_companion_extension_command_and_events(tmp_path, mo
     assert command_data["bookmarkletGenerateInlineUrl"].startswith("javascript:")
     assert "/bookmarklet.js?" not in urllib.parse.unquote(command_data["bookmarkletGenerateInlineUrl"])
     assert "Video Studio Grok bookmarklet fallback started" in urllib.parse.unquote(command_data["bookmarkletGenerateInlineUrl"])
-    assert "Existing signed-in Chrome extension prompt." in command_data["bookmarkletGenerateInlineConsoleSnippet"]
+    assert command_data["prompt"] in command_data["bookmarkletGenerateInlineConsoleSnippet"]
     assert "document.createElement('script')" not in command_data["bookmarkletGenerateInlineConsoleSnippet"]
     assert command_data["bookmarkletQueueInlineUrl"].startswith("javascript:")
     assert "/bookmarklet-queue.js?" not in urllib.parse.unquote(command_data["bookmarkletQueueInlineUrl"])
@@ -3026,23 +3497,24 @@ def test_grok_handoff_chrome_companion_extension_command_and_events(tmp_path, mo
     assert event_data["latestExtensionEvent"]["qualityNote"] == "original-download-source"
 
     status = client.get("/api/grok-handoff/chrome-companion/status").get_json()
-    assert status["chromeCompanionExtension"]["opensEdge"] is False
-    assert status["chromeCompanionExtension"]["usesRemoteDebugging"] is False
-    assert status["chromeCompanionExtension"]["autostartUrl"].startswith(routes_grok.GROK_IMAGINE_URL + "#")
-    assert status["latestExtensionEvent"]["eventType"] == "prompt-fill"
-    assert status["companionConnection"]["status"] == "connected"
-    assert status["companionConnection"]["connected"] is True
-    assert status["companionConnection"]["eventType"] == "prompt-fill"
+    assert "chromeCompanionExtension" not in status
+    assert "latestExtensionEvent" not in status
+    assert "companionConnection" not in status
+    assert status["browserControlPrimaryRail"]["extensionRequiredForGeneration"] is False
+    assert status["browserControlPrimaryRail"]["mode"] == "existing-signed-in-chrome-browser-control-primary"
 
     guide = client.get("/api/grok-handoff/chrome-companion/chrome-extension?sceneId=scene-01")
     assert guide.status_code == 200
     html = guide.get_data(as_text=True)
     assert "Existing Chrome profile" in html
     assert "No CDP" in html
-    assert "Autostart URL" in html
+    assert "Queue autostart URL" in html
     assert "Copy Companion folder" in html
-    assert "Copy command URL" in html
-    assert "Copy Prep+Generate URL" in html
+    assert "Copy queue command URL" in html
+    assert "Copy queue Prep+Generate URL" in html
+    assert "Queue command URL - operator default" in html
+    assert "Do not edit <code>sceneId</code> or <code>take</code>" in html
+    assert "Selected scene debug URLs" in html
     assert "Clipboard helper is ready" in html
     assert 'id="vs-copy-status"' in html
     assert 'document.querySelectorAll("[data-copy-value]")' in html
@@ -3078,13 +3550,15 @@ def test_grok_handoff_chrome_companion_extension_command_and_events(tmp_path, mo
     assert denied_script.status_code == 403
 
     script = client.get(
-        "/api/grok-handoff/chrome-companion/bookmarklet.js?sceneId=scene-01&operatorApproved=true&autoGenerate=true"
+        "/api/grok-handoff/chrome-companion/bookmarklet.js?sceneId=scene-01&operatorApproved=true&autoGenerate=true&allowWeakPrompt=true"
     )
     assert script.status_code == 200
     assert script.mimetype == "application/javascript"
     script_text = script.get_data(as_text=True)
     assert "Video Studio Grok bookmarklet fallback started" in script_text
-    assert "Existing signed-in Chrome extension prompt." in script_text
+    assert "Existing signed-in Chrome extension prompt" in script_text
+    assert "Vertical 9:16 phone MP4" in script_text
+    assert "no visible text or watermark" in script_text
     assert "bookmarklet-generate" in script_text
     assert "operatorApproved" in script_text
 
@@ -3092,13 +3566,15 @@ def test_grok_handoff_chrome_companion_extension_command_and_events(tmp_path, mo
     assert denied_queue_script.status_code == 403
 
     queue_script = client.get(
-        "/api/grok-handoff/chrome-companion/bookmarklet-queue.js?operatorApproved=true&maxScenes=3&waitSeconds=30"
+        "/api/grok-handoff/chrome-companion/bookmarklet-queue.js?operatorApproved=true&maxScenes=3&waitSeconds=30&allowWeakPrompt=true"
     )
     assert queue_script.status_code == 200
     assert queue_script.mimetype == "application/javascript"
     queue_script_text = queue_script.get_data(as_text=True)
     assert "Video Studio Grok queue bookmarklet started" in queue_script_text
-    assert "Existing signed-in Chrome extension prompt." in queue_script_text
+    assert "Existing signed-in Chrome extension prompt" in queue_script_text
+    assert "Vertical 9:16 phone MP4" in queue_script_text
+    assert "no visible text or watermark" in queue_script_text
     assert "bookmarklet-queue-direct-import" in queue_script_text
     assert "maxScenes = 3" in queue_script_text
     assert "command.uploadEndpoint" in queue_script_text
@@ -3125,8 +3601,8 @@ def test_grok_handoff_chrome_companion_extension_command_and_events(tmp_path, mo
     assert bookmarklet_event_data["latestExtensionEvent"]["source"] == "bookmarklet-fallback"
     assert bookmarklet_event_data["latestExtensionEvent"]["status"] == "filled"
     bookmarklet_status = client.get("/api/grok-handoff/chrome-companion/status").get_json()
-    assert bookmarklet_status["companionConnection"]["status"] == "bookmarklet-only"
-    assert bookmarklet_status["companionConnection"]["connected"] is False
+    assert "companionConnection" not in bookmarklet_status
+    assert "latestExtensionEvent" not in bookmarklet_status
 
     denied_bookmarklet_import = client.get("/api/grok-handoff/chrome-companion/bookmarklet-import")
     assert denied_bookmarklet_import.status_code == 403
@@ -3187,8 +3663,10 @@ def test_grok_handoff_chrome_companion_extension_command_and_events(tmp_path, mo
     assert captured_import["sinceHandoff"] is True
 
     plan = client.get("/api/grok-handoff/chrome-companion/automation-plan").get_json()
-    assert plan["chromeCompanionExtension"]["mode"] == "existing-logged-in-chrome-extension"
-    assert plan["chromeCompanionExtension"]["storesCredentials"] is False
+    assert "chromeCompanionExtension" not in plan
+    assert plan["browserControlPrimaryRail"]["mode"] == "existing-signed-in-chrome-browser-control-primary"
+    assert plan["browserControlPrimaryRail"]["extensionRequiredForGeneration"] is False
+    assert plan["automationBoundaries"]["primaryProductionRail"] == "existing signed-in Chrome browser-control plus operator-owned manual download/import"
 
 
 def test_grok_companion_profile_probe_distinguishes_codex_extension(tmp_path, monkeypatch):
@@ -3240,31 +3718,10 @@ def test_grok_companion_profile_probe_distinguishes_codex_extension(tmp_path, mo
     )
 
     status = client.get("/api/grok-handoff/profile-probe/status").get_json()
-    probe = status["chromeCompanionExtension"]["profileProbe"]
-    assert probe["checked"] is True
-    assert probe["status"] == "codex-extension-only"
-    assert probe["anyCodexExtension"] is True
-    assert probe["anyVideoStudioCompanion"] is False
-    assert probe["codexExtensionIsNotCompanion"] is True
-    assert probe["codexExtensionCanDriveVideoStudioGrok"] is False
-    assert probe["recommendedProfileDirectory"] == "Default"
-    assert probe["primaryOperatorProfileDirectory"] == "Default"
-    assert probe["primaryOperatorProfileLabel"] == "Default (Default)"
-    assert probe["browserPolicy"] == "existing-signed-in-chrome-profile-only"
-    assert "Microsoft Edge" in probe["doNotOpenBrowsers"]
-    assert probe["recommendedProfileReason"] == "codex-extension-profile"
-    assert probe["profileMismatch"] is False
-    assert probe["profileAlignment"]["status"] == "aligned"
-    assert probe["profileAlignment"]["primaryOperatorProfileDirectory"] == "Default"
-    assert probe["profileAlignment"]["codexChromePluginRoute"] == "installed-but-not-bridge-control"
-    assert probe["codexNativeHost"]["status"] == "installed"
-    assert probe["codexNativeHost"]["usedByVideoStudioGrok"] is False
-    assert probe["codexNativeHost"]["videoStudioDirectControlAvailable"] is False
-    assert probe["codexNativeHost"]["controlSurfaceExposedToBridge"] is False
-    assert "Codex Chrome/node_repl" in probe["codexNativeHost"]["requiredControlSurface"]
-    assert probe["profiles"][0]["profileDir"] == "Default"
-    assert probe["profiles"][0]["codexExtension"] is True
-    assert probe["profiles"][0]["videoStudioCompanion"] is False
+    assert "chromeCompanionExtension" not in status
+    assert status["browserControlPrimaryRail"]["requiresExistingSignedInChromeProfile"] is True
+    assert status["browserControlPrimaryRail"]["forbidEdgeFallback"] is True
+    assert status["browserControlPrimaryRail"]["extensionRequiredForGeneration"] is False
 
     handoff_dir = tmp_path / "storage" / "grok-handoffs" / "profile-probe"
     (handoff_dir / "automation-request.json").write_text(
@@ -3277,15 +3734,8 @@ def test_grok_companion_profile_probe_distinguishes_codex_extension(tmp_path, mo
         encoding="utf-8",
     )
     mismatch_status = client.get("/api/grok-handoff/profile-probe/status").get_json()
-    mismatch_probe = mismatch_status["chromeCompanionExtension"]["profileProbe"]
-    assert mismatch_probe["automationReplayProfileDirectory"] == "Profile 1"
-    assert mismatch_probe["profileMismatch"] is True
-    assert mismatch_probe["profileAlignment"]["status"] == "mismatch"
-    assert mismatch_probe["profileAlignment"]["automationReplayProfileDirectory"] == "Profile 1"
-    assert "Microsoft Edge" in mismatch_probe["profileAlignment"]["doNotOpen"]
-    assert "Profile 1" in mismatch_probe["operatorAction"]
-    assert "Default" in mismatch_probe["operatorAction"]
-    assert "Edge" in mismatch_probe["operatorAction"]
+    assert "chromeCompanionExtension" not in mismatch_status
+    assert mismatch_status["browserControlPrimaryRail"]["forbidNewChromeProfile"] is True
 
     production_queue = client.get("/api/grok-handoff/profile-probe/production-queue").get_data(as_text=True)
     assert "Chrome profile alignment" in production_queue
@@ -3318,14 +3768,8 @@ def test_grok_companion_profile_probe_distinguishes_codex_extension(tmp_path, mo
     (companion_profile / "Preferences").write_text(json.dumps(companion_preferences), encoding="utf-8")
 
     updated = client.get("/api/grok-handoff/profile-probe/status").get_json()
-    updated_probe = updated["chromeCompanionExtension"]["profileProbe"]
-    assert updated_probe["status"] == "video-studio-companion-seen"
-    assert updated_probe["anyVideoStudioCompanion"] is True
-    assert updated_probe["recommendedProfileDirectory"] == "Profile 1"
-    assert updated_probe["profileAlignment"]["status"] == "aligned"
-    assert updated_probe["profileMismatch"] is False
-    assert updated_probe["profiles"][1]["profileDir"] == "Profile 1"
-    assert updated_probe["profiles"][1]["videoStudioCompanion"] is True
+    assert "chromeCompanionExtension" not in updated
+    assert updated["browserControlPrimaryRail"]["source"] == "codex-or-claude-chrome-browser-control"
 
 
 def test_grok_companion_heartbeat_status_marks_extension_connected(tmp_path):
@@ -3346,8 +3790,8 @@ def test_grok_companion_heartbeat_status_marks_extension_connected(tmp_path):
     )
 
     initial = client.get("/api/grok-handoff/companion-heartbeat/status").get_json()
-    assert initial["companionConnection"]["status"] == "not-seen"
-    assert initial["companionConnection"]["connected"] is False
+    assert "companionConnection" not in initial
+    assert "latestExtensionEvent" not in initial
 
     event = client.post(
         "/api/grok-handoff/companion-heartbeat/extension-event",
@@ -3362,14 +3806,106 @@ def test_grok_companion_heartbeat_status_marks_extension_connected(tmp_path):
         },
     )
     assert event.status_code == 200
+    event_data = event.get_json()
+    assert event_data["latestExtensionEvent"]["eventType"] == "companion-heartbeat"
 
     status = client.get("/api/grok-handoff/companion-heartbeat/status").get_json()
-    assert status["latestExtensionEvent"]["eventType"] == "companion-heartbeat"
-    assert status["companionConnection"]["status"] == "connected"
-    assert status["companionConnection"]["connected"] is True
-    assert status["companionConnection"]["sceneId"] == "scene-01"
-    assert status["companionConnection"]["secondsSinceLastSeen"] is not None
-    assert "Prep + Generate" in status["companionConnection"]["operatorAction"]
+    assert "latestExtensionEvent" not in status
+    assert "companionConnection" not in status
+    assert "companionRunReadiness" not in status
+    assert status["browserControlPrimaryRail"]["extensionRequiredForGeneration"] is False
+
+
+def test_grok_companion_run_readiness_preserves_latest_control_failure_after_heartbeat(tmp_path):
+    client = _grok_test_client(tmp_path)
+    client.post(
+        "/api/grok-handoff",
+        json={
+            "projectId": "companion-control-failure",
+            "draftScenes": [
+                {
+                    "sceneId": "scene-01",
+                    "image_source": "grok",
+                    "grok_prompt": "Same presenter opens a red notebook beside a window.",
+                    "duration": 4,
+                }
+            ],
+        },
+    )
+
+    for payload in [
+        {
+            "eventType": "companion-heartbeat",
+            "status": "connected",
+            "detail": "Command stored in companion. version=0.1.0",
+        },
+        {
+            "eventType": "background-autostart-fill",
+            "status": "failed",
+            "detail": "Could not establish connection. Receiving end does not exist.",
+        },
+        {
+            "eventType": "companion-heartbeat",
+            "status": "connected",
+            "detail": "Companion keepalive while Grok generation is pending.",
+        },
+    ]:
+        event = client.post(
+            "/api/grok-handoff/companion-control-failure/extension-event",
+            json={
+                "operatorApproved": True,
+                "extensionApproved": True,
+                "sceneId": "scene-01",
+                "currentUrl": "https://grok.com/imagine",
+                **payload,
+            },
+        )
+        assert event.status_code == 200
+
+    status = client.get("/api/grok-handoff/companion-control-failure/status").get_json()
+    assert "companionConnection" not in status
+    assert "companionRunReadiness" not in status
+    assert "chromeCompanionExtension" not in status
+    assert status["browserControlPrimaryRail"]["extensionRequiredForGeneration"] is False
+
+
+def test_grok_handoff_companion_summary_surfaces_imagine_redirect_to_chat(tmp_path):
+    client = _grok_test_client(tmp_path)
+    client.post(
+        "/api/grok-handoff",
+        json={
+            "projectId": "companion-imagine-redirect",
+            "draftScenes": [
+                {
+                    "sceneId": "scene-01",
+                    "image_source": "grok",
+                    "grok_prompt": "Vendor lifts a shutter as steam starts moving across stacked cups.",
+                    "duration": 4,
+                }
+            ],
+        },
+    )
+
+    event = client.post(
+        "/api/grok-handoff/companion-imagine-redirect/extension-event",
+        json={
+            "operatorApproved": True,
+            "extensionApproved": True,
+            "sceneId": "scene-01",
+            "eventType": "background-autostart-fill",
+            "status": "failed",
+            "detail": "video-mode-control-not-confirmed",
+            "currentUrl": "https://grok.com/c/0c72180f-fe46-4a49-a9cd-80d914322c49",
+        },
+    )
+    assert event.status_code == 200
+    event_data = event.get_json()
+    assert event_data["latestExtensionEvent"]["eventType"] == "background-autostart-fill"
+
+    status = client.get("/api/grok-handoff/companion-imagine-redirect/status").get_json()
+    assert "companionLiveEventSummary" not in status
+    assert "chromeCompanionExtension" not in status
+    assert status["browserControlPrimaryRail"]["forbidEdgeFallback"] is True
 
 
 def test_grok_companion_imports_exact_completed_chrome_download(tmp_path):
@@ -3460,6 +3996,7 @@ def test_grok_companion_autoqueue_is_opt_in_and_existing_chrome_only():
     assert "tabs" in manifest["permissions"]
     assert "downloads" in manifest["permissions"]
     assert "alarms" in manifest["permissions"]
+    assert "scripting" in manifest["permissions"]
     assert "videoStudioGrokAutoQueueEnabled" in background
     assert "videoStudioGrokCompanionKeepalive" in background
     assert "KEEPALIVE_PERIOD_MINUTES" in background
@@ -3471,19 +4008,158 @@ def test_grok_companion_autoqueue_is_opt_in_and_existing_chrome_only():
     assert "get-auto-queue" in background
     assert "companion-heartbeat" in background
     assert "postHeartbeat" in background
+    assert "chrome.scripting.executeScript" in background
+    assert "sendToGrokTabWithInjection" in background
+    assert "EXTENSION_BUILD_TAG" in background
+    assert "build=${EXTENSION_BUILD_TAG}" in background
     assert "content-ready" in background
+    assert "isImagineTabUrl" in background
+    assert "tabs.find((item) => isImagineTabUrl(item.url))" in background
+    assert "imagine-surface-required-background-autostart" in background
+    assert "imagine-surface-required-background-autoqueue" in background
     assert "Grok tab content script loaded with stored command." in background
     assert "extensionApproved: true" in background
     assert "downloadFilePath: filename" in background
-    assert "content-ready" in (extension_dir / "content.js").read_text(encoding="utf-8")
+    content_js = (extension_dir / "content.js").read_text(encoding="utf-8")
+    assert "content-ready" in content_js
+    assert "EXTENSION_BUILD_TAG" in content_js
+    assert "build=${EXTENSION_BUILD_TAG}" in content_js
     assert "Auto-prep next scene after MP4 import" in popup
     assert "set-auto-queue" in popup_js
+    assert "isImagineTabUrl" in popup_js
+    assert "chrome.scripting.executeScript" in popup_js
+    assert "sendMessageWithInjection" in popup_js
+    assert "requireImagine: true" in popup_js
+    assert "tabs.find((item) => isImagineTabUrl(item.url))" in popup_js
     assert "Auto-queue is opt-in" in readme
     assert "keepalive about once per" in readme
     assert "does not inspect Grok content" in readme
     assert "extension installed but idle" in readme
     assert "The companion never starts a Chrome browser download" in readme
     assert "No paid xAI/Grok API integration" in readme
+
+
+def test_ai_web_companion_live_proof_harness_is_provider_gated():
+    extension_dir = Path(__file__).resolve().parents[1] / "tools" / "chrome-grok-companion"
+    background = (extension_dir / "background.js").read_text(encoding="utf-8")
+    content = (extension_dir / "content.js").read_text(encoding="utf-8")
+    gemini_content = (extension_dir / "content_gemini.js").read_text(encoding="utf-8")
+    popup_js = (extension_dir / "popup.js").read_text(encoding="utf-8")
+    runner = (extension_dir / "live_proof_runner.py").read_text(encoding="utf-8")
+
+    assert "PROVIDER_CAPABILITIES" in background
+    assert '"gemini-web-image"' in background
+    assert "canClickGenerate: false" in background
+    assert "assertProviderAction(command, request.action)" in background
+    assert "PROVIDER_CAPABILITIES" in content
+    assert "grok-prompt-target-found" in content
+    assert "grok-prompt-target-missing" in content
+    assert "capabilities=probe,fill-prompt,generate,direct-import" in content
+    assert "PROVIDER_CAPABILITIES" in gemini_content
+    assert "function isGeminiHost" in gemini_content
+    assert "gemini\\.google-[a-z0-9-]+\\.com" in gemini_content
+    assert "bridge-post-event" in gemini_content
+    assert "load-command-url" in gemini_content
+    assert "fetch(request.commandUrl)" not in gemini_content
+    assert "function postBridgeEvent" in background
+    assert "load-command-url sender not allowed" in background
+    assert "bridge-post-event sender not allowed" in background
+    assert "gemini-content-ready" in gemini_content
+    assert "gemini-command-loaded" in gemini_content
+    assert "gemini-command-load-failed" in gemini_content
+    assert "gemini-prompt-target-found" in gemini_content
+    assert "gemini-prompt-target-missing" in gemini_content
+    assert "Gemini companion supports fill-prompt/probe only" in gemini_content
+    assert "Popup controls are Grok-only for now" in popup_js
+    assert "Gemini Generate/import remains operator-owned" in popup_js
+    assert "canUsePopupControls: false" in popup_js
+    assert 'chrome.runtime.sendMessage({ type: "store-command", command, commandUrl: url })' in popup_js
+    assert "Prep + Generate will not auto-open /imagine" in popup_js
+    assert "Grok left Imagine after loading" in popup_js
+    assert "pathname.startsWith(\"/imagine\")" in popup_js
+    assert "!pathname.startsWith(\"/imagine/post\")" in popup_js
+    assert "fallbackTab" not in background
+    assert "currentUrl: tab.url || url" in background
+    assert "function isGeminiTabHost" in background
+    assert "function isGeminiTabHost" in popup_js
+    assert "chrome.downloads.download" not in runner
+    assert "--load-extension" in runner
+    assert "--extension-dir" in runner
+    assert "DisableLoadExtensionCommandLineSwitch" in runner
+    assert "extension_load_status" in runner
+    assert "extensionLoadStatus" in runner
+    assert "extensionTargetCount" in runner
+    assert "signed-in live proof must use the operator's existing Chrome profile" in runner
+    assert "--user-data-dir" in runner
+    assert "classify_gemini_events" in runner
+    assert "classify_grok_events" in runner
+    assert "browser-control proof" in runner
+    assert "GEMINI_BUILD_TAG" in runner
+    assert "GROK_BUILD_TAG" in runner
+
+
+def test_live_proof_runner_classifies_gemini_and_grok_evidence(tmp_path):
+    runner = _load_live_proof_runner()
+    gemini_log = tmp_path / "gemini-events.jsonl"
+    grok_log = tmp_path / "grok-events.jsonl"
+
+    gemini_log.write_text(
+        json.dumps({
+            "eventType": "gemini-content-ready",
+            "status": "hash-detected",
+            "build": runner.GEMINI_BUILD_TAG,
+        }) + "\n"
+        + json.dumps({
+            "eventType": "gemini-prompt-fill",
+            "status": "filled",
+            "build": runner.GEMINI_BUILD_TAG,
+            "proofMode": "browser-control",
+            "source": "codex-chrome-browser-control",
+            "detail": "filledLength=120; generate remains operator-owned",
+        }) + "\n",
+        encoding="utf-8",
+    )
+    gemini_result = runner.classify_events("gemini-web-image", gemini_log)
+    assert gemini_result.status == "pass"
+    assert gemini_result.marker_seen is True
+    assert gemini_result.last_event["eventType"] == "gemini-prompt-fill"
+    assert "browser-control proof" in gemini_result.detail
+
+    grok_log.write_text(
+        json.dumps({
+            "eventType": "content-script-ready",
+            "status": "ready",
+            "detail": f"version=0.1.0 build={runner.GROK_BUILD_TAG}",
+            "currentUrl": "https://grok.com/imagine",
+        }) + "\n"
+        + json.dumps({
+            "eventType": "background-autostart-fill",
+            "status": "failed",
+            "detail": "video-mode-control-not-confirmed",
+            "currentUrl": "https://grok.com/imagine/templates/example",
+        }) + "\n",
+        encoding="utf-8",
+    )
+    grok_result = runner.classify_events("grok-web-video", grok_log)
+    assert grok_result.status == "pass"
+    assert grok_result.marker_seen is True
+
+    grok_log.write_text(
+        json.dumps({
+            "eventType": "background-autostart-fill",
+            "status": "filled",
+            "detail": f"version=0.1.0 build={runner.GROK_BUILD_TAG}",
+            "currentUrl": "https://grok.com/c/unsafe-chat-thread",
+        }) + "\n",
+        encoding="utf-8",
+    )
+    unsafe_result = runner.classify_events("grok-web-video", grok_log)
+    assert unsafe_result.status == "fail"
+    assert "/c/" in unsafe_result.last_event["currentUrl"]
+
+    missing_result = runner.classify_events("gemini-web-image", tmp_path / "missing.jsonl")
+    assert missing_result.status == "blocked"
+    assert missing_result.marker_seen is False
 
 
 def test_grok_companion_background_downloads_direct_asset_autostart():
@@ -3623,13 +4299,13 @@ def test_grok_dashboard_copy_prioritizes_import_mp4_direct_import():
         / "SceneDetailPanel.tsx"
     ).read_text(encoding="utf-8")
 
-    assert "Companion Import MP4/direct import가 기본 경로입니다." in scene_panel
-    assert "Chrome/Grok Download/Save/Export 클릭과 Downloads 감시는 native prompt 함정 때문에 차단" in scene_panel
-    assert "Import MP4가 local uploadEndpoint로 직접 반입할 현재 씬 command URL" in scene_panel
+    assert "기본 경로는 기존 signed-in Chrome/Grok 탭에서 browser-control로 생성 proof를 확보" in scene_panel
+    assert "Chrome/Grok Download/Save/Export 자동 클릭과 native prompt 자동화는 차단" in scene_panel
+    assert "Chrome 확장 안내" not in scene_panel
     assert "로컬 MP4 fallback" in scene_panel
     assert "감시 차단" in scene_panel
     assert "nativeGrokDownloadFallbackBlocked" in scene_panel
-    assert "manual batch upload is operator-owned fallback" in scene_panel
+    assert "explicit manual upload" in scene_panel
     assert "visible-video/currentSrc fallback is proof-only" in scene_panel
     assert "writeGrokFallbackClipboard" in scene_panel
     assert "document.execCommand(\"copy\")" in scene_panel
@@ -3655,7 +4331,7 @@ def test_grok_companion_original_download_priority_metadata():
     assert "videoWidth >= 720 && videoHeight >= 1280" in content
     assert "visible-video-fallback-proof-only" in content
     assert "visible-video-fallback-below-quality-floor" in content
-    assert "use Companion/pageAssets direct import or operator-owned manual upload for original MP4" in content
+    assert "use operator-owned download/import or manual upload for original MP4" in content
     assert "sourceKind: message.sourceKind" in background
     assert "qualityFloorMet: event.qualityFloorMet" in background
     assert "qualityNote: event.qualityNote" in background
@@ -3724,6 +4400,24 @@ def test_grok_companion_content_supports_hash_autostart():
     assert "autostart-download" in content
     assert "direct-mp4-asset-tab" in content
     assert "operatorApproved=true is required" in content
+    assert "imagineSurfaceStatus" in content
+    assert "imagine-surface-required-general-chat-thread" in content
+    assert "imagine-composer-required-not-post" in content
+    assert "chatComposerTextPattern" in content
+    assert "imagine-prompt-input-not-found-or-chat-composer" in content
+    assert "requireWordMatch" in content
+    assert "video-mode-control-not-confirmed" in content
+    generate_words_block = content.split("async function clickGenerate()", 1)[1].split(
+        "const button = buttonCandidates",
+        1,
+    )[0]
+    assert '"submit"' not in generate_words_block
+    assert '"send"' not in generate_words_block
+    assert '"제출"' not in generate_words_block
+    generate_button_options = content.split("const button = buttonCandidates", 1)[1].split("})[0]", 1)[0]
+    assert "allowIconButtons: false" in generate_button_options
+    assert "requireWordMatch: true" in generate_button_options
+    assert 'pathname.startsWith("/c/")' in content
 
 
 def test_grok_handoff_chrome_companion_queue_advances_to_next_missing_scene(tmp_path):
@@ -3749,7 +4443,7 @@ def test_grok_handoff_chrome_companion_queue_advances_to_next_missing_scene(tmp_
         },
     ).get_json()
 
-    queue_command = client.get("/api/grok-handoff/chrome-queue/extension-command?operatorApproved=true")
+    queue_command = client.get("/api/grok-handoff/chrome-queue/extension-command?operatorApproved=true&allowWeakPrompt=true")
     assert queue_command.status_code == 200
     queue_data = queue_command.get_json()
     assert queue_data["sceneId"] == "scene-01"
@@ -3782,7 +4476,9 @@ def test_grok_handoff_chrome_companion_queue_advances_to_next_missing_scene(tmp_
     assert "take=2" in import_data["nextCommandUrl"]
     assert import_data["nextRecommendedTakeNumber"] == 2
 
-    next_command = client.get(import_data["queueCommandUrl"].replace("http://127.0.0.1:5161", ""))
+    next_command = client.get(
+        import_data["queueCommandUrl"].replace("http://127.0.0.1:5161", "") + "&allowWeakPrompt=true"
+    )
     assert next_command.status_code == 200
     next_data = next_command.get_json()
     assert next_data["sceneId"] == "scene-02"
@@ -3792,9 +4488,7 @@ def test_grok_handoff_chrome_companion_queue_advances_to_next_missing_scene(tmp_
     assert "Second Grok scene prompt" in next_data["prompt"]
 
     status = client.get("/api/grok-handoff/chrome-queue/status").get_json()
-    assert status["chromeCompanionExtension"]["nextMissingSceneId"] == "scene-02"
-    assert "sceneId=scene-02" in status["chromeCompanionExtension"]["commandUrl"]
-    assert "take=2" in status["chromeCompanionExtension"]["commandUrl"]
+    assert "chromeCompanionExtension" not in status
     assert status["missingSceneIds"] == ["scene-02"]
 
 
@@ -3816,15 +4510,16 @@ def test_grok_handoff_rejected_scene_command_uses_review_retry_prompt(tmp_path):
         },
     )
 
-    first_command = client.get("/api/grok-handoff/retry-prompt/extension-command?operatorApproved=true")
+    first_command = client.get("/api/grok-handoff/retry-prompt/extension-command?operatorApproved=true&allowWeakPrompt=true")
     assert first_command.status_code == 200
     first_data = first_command.get_json()
     assert first_data["isRetry"] is False
     assert first_data["attemptNumber"] == 1
     assert first_data["takeNumber"] == 2
     assert first_data["takeLabel"] == "motion-first"
-    assert first_data["basePrompt"] in first_data["prompt"]
-    assert "Take 2 focus (motion-first)" in first_data["prompt"]
+    assert first_data["prompt"].startswith("Slow push-in on the same desk lamp")
+    assert first_data["basePrompt"] != first_data["prompt"]
+    assert "Motion-first take" in first_data["prompt"]
 
     rejected = client.post(
         "/api/grok-handoff/retry-prompt/review-decision",
@@ -3841,10 +4536,14 @@ def test_grok_handoff_rejected_scene_command_uses_review_retry_prompt(tmp_path):
     assert rejected.status_code == 200
     decision = rejected.get_json()["reviewDecision"]
     assert decision["retryAttempt"] == 2
-    assert "Regenerate attempt 2" in decision["nextRetryPrompt"]
-    assert "random cafe" in decision["nextRetryPrompt"]
+    assert len(decision["nextRetryPrompt"]) <= 520
+    assert "Fresh retry: first second" in decision["nextRetryPrompt"]
+    assert "Vertical 9:16 phone MP4" in decision["nextRetryPrompt"]
+    assert "Rejected because:" not in decision["nextRetryPrompt"]
+    assert "random cafe" not in decision["nextRetryPrompt"]
+    assert "caption-safe" not in decision["nextRetryPrompt"]
 
-    retry_command = client.get("/api/grok-handoff/retry-prompt/extension-command?operatorApproved=true")
+    retry_command = client.get("/api/grok-handoff/retry-prompt/extension-command?operatorApproved=true&allowWeakPrompt=true")
     assert retry_command.status_code == 200
     retry_data = retry_command.get_json()
     assert retry_data["sceneId"] == "scene-01"
@@ -3852,15 +4551,15 @@ def test_grok_handoff_rejected_scene_command_uses_review_retry_prompt(tmp_path):
     assert retry_data["attemptNumber"] == 2
     assert retry_data["prompt"] == retry_data["retryPrompt"]
     assert retry_data["basePrompt"] != retry_data["prompt"]
-    assert "Rejected because:" in retry_data["prompt"]
-    assert "random cafe" in retry_data["prompt"]
-    assert "Leave caption-safe space" in retry_data["prompt"]
+    assert "Rejected because:" not in retry_data["prompt"]
+    assert "random cafe" not in retry_data["prompt"]
+    assert "uncluttered lower-right background" in retry_data["prompt"]
 
     review_packet = client.get("/api/grok-handoff/retry-prompt/review-packet")
     assert review_packet.status_code == 200
     html = review_packet.get_data(as_text=True)
     assert "Next retry prompt for Grok" in html
-    assert "Regenerate attempt 2" in html
+    assert "Fresh retry: first second" in html
 
 
 def test_grok_handoff_render_payload_requires_complete_mp4s(tmp_path):
@@ -3993,9 +4692,21 @@ def test_grok_handoff_automation_plan_exposes_approval_gated_import(tmp_path):
     assert data["mainPathStatus"]["primaryPath"] == "signed-in-grok-app-web-mp4"
     assert data["mainPathStatus"]["usesPaidApi"] is False
     assert data["mainPathStatus"]["cdpPrimaryRecommended"] is False
+    assert data["mainPathStatus"]["secondaryAutomationRole"] == "isolated-cdp-and-bookmarklet-fallback-only"
     assert data["mainPathStatus"]["nextSceneId"] == "scene-01"
     assert "scene-01.grok.mp4" in data["mainPathStatus"]["primaryNextAction"]
+    rail = data["browserControlPrimaryRail"]
+    assert rail["mode"] == "existing-signed-in-chrome-browser-control-primary"
+    assert rail["primary"] is True
+    assert rail["extensionRequiredForGeneration"] is False
+    assert "companionExtensionRole" not in rail
+    assert rail["downloadAuthority"] == "operator-owned-manual-download-or-local-upload"
+    assert rail["autoNativeDownloadPromptAllowed"] is False
+    assert rail["sceneId"] == "scene-01"
+    assert "new Chrome profile" in " ".join(rail["doNotUse"])
     assert data["manualPrimaryPath"]["mode"] == "manual-grok-app-web-primary"
+    assert data["manualPrimaryPath"]["browserControlRail"] == "existing-signed-in-chrome-browser-control-primary"
+    assert "companionExtensionRole" not in data["manualPrimaryPath"]
     assert data["manualPrimaryPath"]["currentScene"]["sceneId"] == "scene-01"
     assert data["manualPrimaryPath"]["currentScene"]["expectedFileName"] == "scene-01.grok.mp4"
     assert data["manualPrimaryPath"]["endpoints"]["importDownloads"] == "/api/grok-handoff/automation-plan/import-downloads"
@@ -4004,12 +4715,14 @@ def test_grok_handoff_automation_plan_exposes_approval_gated_import(tmp_path):
     assert data["manualPrimaryPath"]["orderedBatchUpload"]["supported"] is True
     assert "scene order" in data["manualPrimaryPath"]["orderedBatchUpload"]["selectionRule"]
     assert data["manualPrimaryPath"]["orderedBatchUpload"]["recommendedFileOrder"][0]["sceneId"] == "scene-01"
-    assert data["manualPrimaryPath"]["browserAutomationRole"] == "secondary-experimental"
-    assert "Grok app/web" in data["manualPrimaryPath"]["operatorNextAction"]
+    assert data["manualPrimaryPath"]["browserAutomationRole"] == "browser-control-primary; isolated-cdp-and-bookmarklet-fallback-only"
+    assert "direct browser-control" in data["manualPrimaryPath"]["operatorNextAction"]
     assert "scene-01.grok.mp4" in data["manualPrimaryPath"]["operatorNextAction"]
-    assert data["manualPrimaryPath"]["operatorSteps"][0].startswith("Open the Grok production queue")
-    assert data["manualPrimaryPath"]["operatorSteps"][2].startswith("Copy the current scene prompt")
-    assert "not required" in data["manualPrimaryPath"]["operatorSteps"][3]
+    assert data["manualPrimaryPath"]["operatorSteps"][0].startswith("Use Codex/Claude browser-control")
+    assert data["manualPrimaryPath"]["operatorSteps"][2].startswith("Fill the current scene prompt")
+    assert "downloads/saves" in data["manualPrimaryPath"]["operatorSteps"][3]
+    assert "extensionIsPrimary" not in data["automationBoundaries"]
+    assert "existing signed-in Chrome browser-control" in data["automationBoundaries"]["primaryProductionRail"]
     assert data["operatorRun"]["endpoint"] == "/api/grok-handoff/automation-plan/operator-run"
     assert data["operatorRun"]["requiresOperatorApprovedTrue"] is True
     assert data["operatorRun"]["opensTargets"] == ["worksheet", "grok"]
@@ -4023,7 +4736,8 @@ def test_grok_handoff_automation_plan_exposes_approval_gated_import(tmp_path):
     automation_steps = " ".join(data["browserAutomation"]["automates"])
     assert "watch/import" not in automation_steps
     assert "block Download/Save/Export click requests" in automation_steps
-    assert "direct import or explicit local MP4 upload/import" in automation_steps
+    assert "browser-control/manual download" in automation_steps
+    assert "explicit local MP4 upload/import" in automation_steps
     assert data["shotBible"]["promptAnchor"].startswith("Continuity bible:")
     assert "No captions" not in data["reviewChecklist"][0]
     assert data["expectedFiles"][0]["expectedFileName"] == "scene-01.grok.mp4"
@@ -4083,15 +4797,18 @@ def test_grok_main_path_status_keeps_cdp_failure_secondary(tmp_path):
     assert main_path["grokAppWebViable"] is True
     assert main_path["usesPaidApi"] is False
     assert main_path["cdpPrimaryRecommended"] is False
-    assert main_path["secondaryAutomationRole"] == "secondary-experimental"
+    assert main_path["secondaryAutomationRole"] == "isolated-cdp-and-bookmarklet-fallback-only"
     assert main_path["secondaryAutomationBlocker"] == routes_grok.CHROME_DEFAULT_PROFILE_SOCKET_ABORT_BLOCKER
-    assert "Companion" in main_path["secondaryAutomationDetail"]
+    assert "existing signed-in Chrome profile" in main_path["secondaryAutomationDetail"]
+    assert "saves/downloads the MP4" in main_path["secondaryAutomationDetail"]
+    assert "Companion" not in main_path["secondaryAutomationDetail"]
     assert main_path["nextSceneId"] == "scene-01"
     assert main_path["nextExpectedFileName"] == "scene-01.grok.mp4"
     assert "scene-01" in main_path["primaryNextAction"]
     assert "mp4" in main_path["primaryNextAction"].lower()
     assert "xAI API pricing or quota is not required" in main_path["notBlockedBy"]
-    assert data["manualPrimaryPath"]["browserAutomationRole"] == "secondary-experimental"
+    assert data["manualPrimaryPath"]["browserAutomationRole"] == "browser-control-primary; isolated-cdp-and-bookmarklet-fallback-only"
+    assert data["browserControlPrimaryRail"]["primary"] is True
 
 
 def test_grok_browser_automation_requires_explicit_approval(tmp_path):
@@ -5738,7 +6455,8 @@ def test_grok_background_error_routes_socket_abort_to_companion_path():
     assert status["status"] == "failed"
     assert status["requiresOperatorAction"] is True
     assert status["browserBlocker"] == routes_grok.CHROME_DEFAULT_PROFILE_SOCKET_ABORT_BLOCKER
-    assert "Video Studio Grok Companion" in status["operatorNextAction"]
+    assert "existing signed-in Chrome profile" in status["operatorNextAction"]
+    assert "operator then saves/downloads the MP4" in status["operatorNextAction"]
     assert "Edge/new profile" in status["operatorNextAction"]
 
 
@@ -5788,10 +6506,12 @@ def test_grok_status_enriches_stale_socket_abort_status(tmp_path):
     assert status["automationStatus"]["status"] == "failed"
     assert status["automationStatus"]["requiresOperatorAction"] is True
     assert status["automationStatus"]["browserBlocker"] == routes_grok.CHROME_DEFAULT_PROFILE_SOCKET_ABORT_BLOCKER
-    assert "Video Studio Grok Companion" in status["automationStatus"]["operatorNextAction"]
+    assert "existing signed-in Chrome profile" in status["automationStatus"]["operatorNextAction"]
+    assert "operator then saves/downloads the MP4" in status["automationStatus"]["operatorNextAction"]
     assert status["operatorNextAction"] == status["manualPrimaryPath"]["operatorNextAction"]
-    assert "Grok app/web" in status["operatorNextAction"]
-    assert "Downloads import/watch" in status["operatorNextAction"]
+    assert "direct browser-control" in status["operatorNextAction"]
+    assert "Downloads import or batch upload" in status["operatorNextAction"]
+    assert status["browserControlPrimaryRail"]["mode"] == "existing-signed-in-chrome-browser-control-primary"
     assert status["manualPrimaryPath"]["automationNextAction"] == status["automationStatus"]["operatorNextAction"]
 
 
@@ -6204,6 +6924,12 @@ def test_grok_handoff_shot_bible_keeps_multi_scene_continuity(tmp_path):
 
     assert response.status_code == 200
     data = response.get_json()
+    for scene in data["scenes"]:
+        assert scene["promptQuality"]["status"] == "ready"
+        for take in scene["takePrompts"]:
+            assert take["promptQuality"]["status"] == "ready"
+            assert take["promptQuality"]["brokenPromptFragments"] == []
+            assert take["promptQuality"]["checks"]["completeSentences"] is True
     manifest = json.loads(Path(data["manifestPath"]).read_text(encoding="utf-8"))
     shot_bible = manifest["shotBible"]
     assert "same white ceramic cup" in shot_bible["subjectContinuity"]
@@ -6223,8 +6949,12 @@ def test_grok_handoff_shot_bible_keeps_multi_scene_continuity(tmp_path):
     ]
     assert len(shot_bible["sceneIntents"]) == 2
     for scene in manifest["scenes"]:
-        assert "same recurring subject" in scene["prompt"]
-        assert "no unrelated cutaways" in scene["prompt"]
+        assert "first second:" in scene["prompt"]
+        assert "Vertical 9:16 phone MP4" in scene["prompt"]
+        assert "uncluttered lower-right background" in scene["prompt"]
+        assert "no visible text or watermark" in scene["prompt"]
+        assert "same recurring subject" not in scene["prompt"]
+        assert "no unrelated cutaways" not in scene["prompt"]
         assert any(item.startswith("Operator can explain") for item in scene["operatorChecklist"])
         assert any("safe zones" in item for item in scene["operatorChecklist"])
     worksheet = Path(data["worksheetPath"]).read_text(encoding="utf-8")
@@ -6564,8 +7294,8 @@ def test_grok_handoff_direct_import_bridge_smoke_uses_upload_endpoint_without_do
     assert atomic_events[-1]["candidateUrl"].endswith("/generated/direct/generated_video.mp4")
 
     status_after_upload = client.get("/api/grok-handoff/direct-import-bridge-smoke/status").get_json()
-    assert status_after_upload["latestExtensionEvent"]["source"] == "uploadEndpoint-direct-import"
-    assert status_after_upload["latestExtensionEvent"]["eventType"] == "companion-direct-import"
+    assert "latestExtensionEvent" not in status_after_upload
+    assert "companionConnection" not in status_after_upload
 
     event = client.post(
         event_path,
@@ -6589,9 +7319,8 @@ def test_grok_handoff_direct_import_bridge_smoke_uses_upload_endpoint_without_do
     assert event.status_code == 200
 
     status = client.get("/api/grok-handoff/direct-import-bridge-smoke/status").get_json()
-    assert status["latestExtensionEvent"]["eventType"] == "companion-direct-import"
-    assert status["latestExtensionEvent"]["status"] == "imported"
-    assert status["companionConnection"]["status"] == "connected"
+    assert "latestExtensionEvent" not in status
+    assert "companionConnection" not in status
     assert status["downloadImport"]["nextSceneId"] == "scene-02"
     asset = status["assets"][0]
     provenance = asset["sourceProvenance"]
@@ -6686,7 +7415,7 @@ def test_grok_handoff_upload_mp4_records_companion_blob_direct_import_proof(tmp_
     assert direct_event["candidateUrl"].startswith("blob:https://grok.com/")
 
     status = client.get("/api/grok-handoff/companion-blob-direct-import/status").get_json()
-    assert status["latestExtensionEvent"]["eventType"] == "companion-blob-direct-import"
+    assert "latestExtensionEvent" not in status
     provenance = status["assets"][0]["sourceProvenance"]
     assert provenance["status"] == "browser-native-original-download"
     assert provenance["acceptAsGrokMainSource"] is True
@@ -6763,7 +7492,7 @@ def test_grok_handoff_upload_mp4_records_chrome_pageassets_direct_import_proof(t
     assert direct_event["candidateUrl"].startswith("https://imagine-public.x.ai/")
 
     status = client.get("/api/grok-handoff/chrome-pageassets-direct-import/status").get_json()
-    assert status["latestExtensionEvent"]["eventType"] == "codex-chrome-page-assets-direct-import"
+    assert "latestExtensionEvent" not in status
     provenance = status["assets"][0]["sourceProvenance"]
     assert provenance["status"] == "browser-native-original-download"
     assert provenance["acceptAsGrokMainSource"] is True
@@ -8181,6 +8910,346 @@ def test_grok_handoff_render_payload_maps_ready_mp4_to_scene_asset(tmp_path):
     assert grok_scene["layout_variant_key"] == "grok-first-hook"
     assert grok_scene["layoutVariantLabel"] == "Grok-first hook"
     assert data["draftScenes"][1]["image_source"] == "pexels-video"
+
+
+def test_grok_handoff_render_payload_uses_source_recovery_replacement_for_rejected_scene(tmp_path):
+    client = _grok_test_client(tmp_path)
+    created = client.post(
+        "/api/grok-handoff",
+        json={
+            "projectId": "render-recovery",
+            "prompt": "Recovered Grok reel",
+            "draftScenes": [
+                {
+                    "sceneId": "scene-01",
+                    "scene_num": 1,
+                    "title": "Hook reset",
+                    "narration": "The first action makes the reset readable.",
+                    "display_text": "Reset first",
+                    "image_prompt": "Korean office worker flips a phone face down",
+                    "image_source": "grok",
+                    "grok_prompt": "Korean office worker flips a phone face down in the first second.",
+                    "duration": 4,
+                    "caption_preset": "top-hook",
+                }
+            ],
+        },
+    )
+    assert created.status_code == 200
+    rejected = client.post(
+        "/api/grok-handoff/render-recovery/review-decision",
+        json={
+            "sceneId": "scene-01",
+            "accepted": False,
+            "operatorNote": "Original local candidate had visible phone UI and weak caption-safe framing.",
+        },
+    )
+    assert rejected.status_code == 200
+
+    replacement = tmp_path / "storage" / "source-recovery" / "render-recovery" / "scene-01-fixed.mp4"
+    replacement.parent.mkdir(parents=True, exist_ok=True)
+    replacement_bytes = b"accepted source recovery replacement mp4"
+    replacement.write_bytes(replacement_bytes)
+    replacement_sha = hashlib.sha256(replacement_bytes).hexdigest()
+    handoff_dir = tmp_path / "storage" / "grok-handoffs" / "render-recovery"
+    acceptance_path = handoff_dir / "source-recovery-acceptance.json"
+    acceptance_path.write_text(
+        json.dumps(
+            {
+                "schema": "video-studio.source-recovery-acceptance.v1",
+                "projectId": "render-recovery",
+                "templateOnly": False,
+                "acceptanceScenes": [
+                    {
+                        "sceneId": "scene-01",
+                        "operatorDecision": {
+                            "accepted": True,
+                            "reviewStatus": "accepted",
+                            "acceptedReplacementFileName": replacement.name,
+                            "acceptedReplacementPath": str(replacement),
+                            "acceptedReplacementSha256": replacement_sha,
+                            "reviewerId": "operator-test",
+                            "acceptedAt": "2026-06-06T12:00:00+09:00",
+                            "firstTwoSecondHookPass": True,
+                            "motionDensityPass": True,
+                            "aiSlopVisualFitPass": True,
+                            "stockAiClipFitPass": True,
+                            "captionSafeZonePass": True,
+                            "sourceProvenanceConfirmed": True,
+                            "phoneFirstFrameReviewPass": True,
+                            "continuityReviewPass": True,
+                        },
+                    }
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    acceptance_sha = hashlib.sha256(acceptance_path.read_bytes()).hexdigest()
+    rerender_plan = {
+        "schema": "video-studio.source-recovery-rerender-plan.v1",
+        "projectId": "render-recovery",
+        "templateOnly": True,
+        "doNotSubmitAsProof": True,
+        "sourceRecoveryAcceptanceCleared": True,
+        "rerenderInputReady": True,
+        "sourceRecoveryAcceptanceArtifactPath": str(acceptance_path),
+        "sourceRecoveryAcceptanceSha256": "0" * 64,
+        "sceneReplacements": [
+            {
+                "sceneId": "scene-01",
+                "acceptedReplacementFileName": replacement.name,
+                "acceptedReplacementPath": str(replacement),
+                "acceptedReplacementSha256": replacement_sha,
+                "acceptedReplacementPathCheck": {
+                    "ok": True,
+                    "actualSha256": replacement_sha,
+                    "expectedSha256": replacement_sha,
+                },
+                "renderInputOverride": {
+                    "sceneId": "scene-01",
+                    "sourcePath": str(replacement),
+                    "sourceFileName": replacement.name,
+                    "sourceKind": "source-recovery-accepted-replacement",
+                },
+            }
+        ],
+    }
+    (handoff_dir / "source-recovery-rerender-plan.template.json").write_text(
+        json.dumps(rerender_plan, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    mismatch_status_response = client.get("/api/grok-handoff/render-recovery/status")
+    assert mismatch_status_response.status_code == 200
+    mismatch_status_data = mismatch_status_response.get_json()
+    assert mismatch_status_data["allReady"] is False
+    assert mismatch_status_data["rejectedSceneIds"] == ["scene-01"]
+
+    rerender_plan["sourceRecoveryAcceptanceSha256"] = acceptance_sha
+    (handoff_dir / "source-recovery-rerender-plan.template.json").write_text(
+        json.dumps(rerender_plan, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    status_response = client.get("/api/grok-handoff/render-recovery/status")
+    assert status_response.status_code == 200
+    status_data = status_response.get_json()
+    assert status_data["allReady"] is True
+    assert status_data["rejectedSceneIds"] == []
+    assert status_data["assets"][0]["sourceRecoveryReplacement"] is True
+
+    response = client.get("/api/grok-handoff/render-recovery/render-payload")
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["ok"] is True
+    assert data["allReady"] is True
+    assert data["rejectedSceneIds"] == []
+    scene_asset = data["sceneAssets"][0]
+    assert scene_asset["sceneId"] == "scene-01"
+    assert scene_asset["sourcePath"] == "storage/source-recovery/render-recovery/scene-01-fixed.mp4"
+    assert scene_asset["sourceRecoveryReplacement"] is True
+    assert scene_asset["sourceRecoveryRerenderPlanPath"] == (
+        "storage/grok-handoffs/render-recovery/source-recovery-rerender-plan.template.json"
+    )
+    assert scene_asset["sourceRecoveryAcceptanceSha256"] == acceptance_sha
+    assert scene_asset["acceptedReplacementSha256"] == replacement_sha
+    assert scene_asset["candidateCount"] == 1
+    assert scene_asset["selectedCandidateSummary"].startswith("Source recovery acceptance selected")
+    assert scene_asset["sourceProvenance"]["sourceKind"] == "source-recovery-accepted-replacement"
+    assert data["draftScenes"][0]["sourceRecoveryReplacement"] is True
+    assert data["draftScenes"][0]["sourceProvenanceConfirmed"] is True
+    assert data["draftScenes"][0]["selectedFileName"] == replacement.name
+    assert data["draftScenes"][0]["visualQualityVerdict"] == "pass"
+    assert "Source recovery replacement accepted" in data["draftScenes"][0]["quality_review_note"]
+
+
+def test_source_recovery_rerender_plan_blocks_false_phone_review_acceptance(tmp_path):
+    client = _grok_test_client(tmp_path)
+
+    created = client.post(
+        "/api/grok-handoff",
+        json={
+            "projectId": "render-recovery-phone-gate",
+            "templateType": "authentic_vlog",
+            "tone": "casual_heyo",
+            "lang": "ko",
+            "targetDuration": "10s",
+            "draftScenes": [
+                {
+                    "sceneId": "scene-01",
+                    "scene_num": 1,
+                    "image_prompt": "Korean office worker flips a phone face down",
+                    "image_source": "grok",
+                    "grok_prompt": "Korean office worker flips a phone face down in the first second.",
+                    "duration": 4,
+                    "caption_preset": "top-hook",
+                }
+            ],
+        },
+    )
+    assert created.status_code == 200
+    rejected = client.post(
+        "/api/grok-handoff/render-recovery-phone-gate/review-decision",
+        json={
+            "sceneId": "scene-01",
+            "accepted": False,
+            "operatorNote": "Original candidate fails phone-size first-frame review.",
+        },
+    )
+    assert rejected.status_code == 200
+
+    replacement = tmp_path / "storage" / "source-recovery" / "render-recovery-phone-gate" / "scene-01-fixed.mp4"
+    replacement.parent.mkdir(parents=True, exist_ok=True)
+    replacement_bytes = b"accepted source recovery replacement mp4"
+    replacement.write_bytes(replacement_bytes)
+    replacement_sha = hashlib.sha256(replacement_bytes).hexdigest()
+    handoff_dir = tmp_path / "storage" / "grok-handoffs" / "render-recovery-phone-gate"
+    acceptance_path = handoff_dir / "source-recovery-acceptance.json"
+
+    acceptance_payload = {
+        "schema": "video-studio.source-recovery-acceptance.v1",
+        "projectId": "render-recovery-phone-gate",
+        "templateOnly": False,
+        "acceptanceScenes": [
+            {
+                "sceneId": "scene-01",
+                "operatorDecision": {
+                    "accepted": True,
+                    "reviewStatus": "accepted",
+                    "acceptedReplacementFileName": replacement.name,
+                    "acceptedReplacementPath": str(replacement),
+                    "acceptedReplacementSha256": replacement_sha,
+                    "reviewerId": "operator-test",
+                    "acceptedAt": "2026-06-06T12:00:00+09:00",
+                    "firstTwoSecondHookPass": True,
+                    "motionDensityPass": True,
+                    "aiSlopVisualFitPass": True,
+                    "stockAiClipFitPass": True,
+                    "captionSafeZonePass": True,
+                    "sourceProvenanceConfirmed": True,
+                    "phoneFirstFrameReviewPass": False,
+                    "continuityReviewPass": True,
+                },
+            }
+        ],
+    }
+    acceptance_path.write_text(json.dumps(acceptance_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    acceptance_sha = hashlib.sha256(acceptance_path.read_bytes()).hexdigest()
+    rerender_plan = {
+        "schema": "video-studio.source-recovery-rerender-plan.v1",
+        "projectId": "render-recovery-phone-gate",
+        "templateOnly": True,
+        "doNotSubmitAsProof": True,
+        "sourceRecoveryAcceptanceCleared": True,
+        "rerenderInputReady": True,
+        "sourceRecoveryAcceptanceArtifactPath": str(acceptance_path),
+        "sourceRecoveryAcceptanceSha256": acceptance_sha,
+        "sceneReplacements": [
+            {
+                "sceneId": "scene-01",
+                "acceptedReplacementFileName": replacement.name,
+                "acceptedReplacementPath": str(replacement),
+                "acceptedReplacementSha256": replacement_sha,
+                "acceptedReplacementPathCheck": {
+                    "ok": True,
+                    "actualSha256": replacement_sha,
+                    "expectedSha256": replacement_sha,
+                },
+                "renderInputOverride": {
+                    "sceneId": "scene-01",
+                    "sourcePath": str(replacement),
+                    "sourceFileName": replacement.name,
+                    "sourceKind": "source-recovery-accepted-replacement",
+                },
+            }
+        ],
+    }
+    (handoff_dir / "source-recovery-rerender-plan.template.json").write_text(
+        json.dumps(rerender_plan, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    status_response = client.get("/api/grok-handoff/render-recovery-phone-gate/status")
+
+    assert status_response.status_code == 200
+    status_data = status_response.get_json()
+    assert status_data["allReady"] is False
+    assert status_data["rejectedSceneIds"] == ["scene-01"]
+    assert all(item.get("sourceRecoveryReplacement") is not True for item in status_data["assets"])
+
+
+def test_save_project_bundle_preserves_source_recovery_replacement_metadata(tmp_path):
+    source = tmp_path / "storage" / "source-recovery" / "bundle" / "scene-01-fixed.mp4"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b"source recovery replacement")
+    source_sha = hashlib.sha256(source.read_bytes()).hexdigest()
+
+    result = save_project_bundle(
+        prompt="Recovered source render",
+        budget_mode="free",
+        availability=ProviderAvailability(),
+        planner_mode="sample",
+        project_id="bundle-recovery",
+        project_root=tmp_path,
+        draft_scenes=[
+            {
+                "sceneId": "scene-01",
+                "scene_num": 1,
+                "title": "Recovered hook",
+                "narration": "",
+                "display_text": "Recovered hook",
+                "image_prompt": "Korean office worker starts a focus reset.",
+                "image_source": "grok",
+                "duration": 4,
+                "selectedFileName": source.name,
+                "selectedCandidateSummary": "Source recovery acceptance selected this replacement after phone/source review.",
+                "sourceProvenanceConfirmed": True,
+                "sourceProvenanceNote": "Source recovery acceptance recorded replacement path and sha256 before rerender.",
+                "visualQualityVerdict": "pass",
+            }
+        ],
+        scene_assets=[
+            {
+                "sceneId": "scene-01",
+                "role": "visual",
+                "fileName": source.name,
+                "mimeType": "video/mp4",
+                "sourcePath": str(source),
+                "provider": "upload",
+                "sourceOrigin": "grok-handoff",
+                "sourceIntent": "grok",
+                "sourceGenerator": "grok-app-web-handoff",
+                "candidateCount": 1,
+                "selectedCandidateSummary": "Source recovery acceptance selected this replacement after phone/source review.",
+                "sourceRecoveryReplacement": True,
+                "sourceRecoveryRerenderPlanPath": "storage/grok-handoffs/bundle/source-recovery-rerender-plan.template.json",
+                "sourceRecoveryAcceptanceArtifactPath": "storage/grok-handoffs/bundle/source-recovery-acceptance.json",
+                "sourceRecoveryAcceptanceSha256": "acceptance-sha",
+                "acceptedReplacementSha256": source_sha,
+                "sourceProvenance": {
+                    "status": "local-mp4-source-unverified",
+                    "acceptAsGrokMainSource": True,
+                    "sourceKind": "source-recovery-accepted-replacement",
+                },
+            }
+        ],
+    )
+
+    manifest = result["manifest"]
+    scene = manifest["scenes"][0]
+    visual_asset = next(asset for asset in manifest["assets"] if asset["role"] == "visual")
+    assert scene["selectedFileName"] == source.name
+    assert scene["sourceProvenanceConfirmed"] is True
+    assert visual_asset["sourceRecoveryReplacement"] is True
+    assert visual_asset["sourceRecoveryAcceptanceSha256"] == "acceptance-sha"
+    assert visual_asset["acceptedReplacementSha256"] == source_sha
+    assert visual_asset["selectedCandidateSummary"].startswith("Source recovery acceptance selected")
+    assert visual_asset["sourceProvenance"]["sourceKind"] == "source-recovery-accepted-replacement"
 
 
 def test_grok_render_payload_marks_authentic_vlog_as_no_voice_by_default(tmp_path):

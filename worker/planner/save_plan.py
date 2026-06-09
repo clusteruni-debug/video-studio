@@ -189,6 +189,18 @@ def _apply_asset_source_metadata(asset, item: dict) -> None:
         "selectionKey": ("selectionKey", "selection_key"),
         "selectedCandidateSummary": ("selectedCandidateSummary", "selected_candidate_summary", "selectionRationale", "selection_rationale"),
         "downloadDate": ("downloadDate", "download_date"),
+        "sourceOrigin": ("sourceOrigin", "source_origin"),
+        "kind": ("kind",),
+        "sourceRecoveryRerenderPlanPath": ("sourceRecoveryRerenderPlanPath", "source_recovery_rerender_plan_path"),
+        "sourceRecoveryAcceptanceArtifactPath": (
+            "sourceRecoveryAcceptanceArtifactPath",
+            "source_recovery_acceptance_artifact_path",
+        ),
+        "sourceRecoveryAcceptanceSha256": (
+            "sourceRecoveryAcceptanceSha256",
+            "source_recovery_acceptance_sha256",
+        ),
+        "acceptedReplacementSha256": ("acceptedReplacementSha256", "accepted_replacement_sha256"),
     }.items():
         value = _scene_asset_text(item, *keys)
         if value:
@@ -199,6 +211,16 @@ def _apply_asset_source_metadata(asset, item: dict) -> None:
     attribution_required = _scene_asset_bool(item, "attributionRequired", "attribution_required")
     if attribution_required is not None:
         asset.attributionRequired = attribution_required
+    operator_owned = _scene_asset_bool(item, "operatorOwned", "operator_owned")
+    if operator_owned is not None:
+        asset.operatorOwned = operator_owned
+    source_recovery_replacement = _scene_asset_bool(
+        item,
+        "sourceRecoveryReplacement",
+        "source_recovery_replacement",
+    )
+    if source_recovery_replacement is not None:
+        asset.sourceRecoveryReplacement = source_recovery_replacement
     source_provenance = item.get("sourceProvenance") or item.get("source_provenance")
     if isinstance(source_provenance, dict):
         asset.sourceProvenance = source_provenance
@@ -592,9 +614,14 @@ def _apply_scene_assets(
             asset.prompt = f"Scene SFX asset: {asset.sourceLabel}"
             asset.outputPath = relative_path
         else:
-            asset.kind = "uploaded-audio"
-            asset.prompt = f"Uploaded audio asset: {file_name}"
-            scene.audioKind = "native"
+            audio_kind = _scene_asset_text(item, "kind") or "uploaded-audio"
+            asset.kind = audio_kind
+            asset.sourceOrigin = _scene_asset_text(item, "sourceOrigin", "source_origin") or "uploaded"
+            asset.sourceLabel = item_source_label or file_name
+            if item_provider:
+                asset.provider = item_provider
+            asset.prompt = f"Uploaded audio asset: {asset.sourceLabel}"
+            scene.audioKind = "voiceover" if audio_kind == "voiceover" else "native"
 
         saved_uploads.append(
             {

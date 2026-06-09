@@ -25,8 +25,9 @@ logger = logging.getLogger(__name__)
 
 from worker.tts.providers import generate_tts
 from worker.bridge.image_router import route_image, search_pexels_video_candidates
-from worker.bridge.layouts import DEFAULT_TTS_RATE, TEMPLATE_BGM_MOOD
+from worker.bridge.layouts import DEFAULT_TTS_RATE, TEMPLATE_BGM_MOOD, TTS_QUALITY_CANDIDATES
 from worker.bridge.templates import get_live_channel_operating_templates, operating_template_for
+from worker.quality_gate_system import build_final_readiness_gate_system
 from worker.media.adapters import (
     AdapterExecutionContext,
     parse_command_template_value,
@@ -857,6 +858,8 @@ def regenerate_scene_tts_route():
     lang = data.get("lang", "ko")
     tts_provider = data.get("tts_provider", "edge")
     voice_gender = data.get("voice_gender", "female")
+    tts_rate = str(data.get("rate") or data.get("tts_rate") or DEFAULT_TTS_RATE)
+    tts_pitch = str(data.get("pitch") or data.get("tts_pitch") or "+0Hz")
 
     regen_ts = str(int(time.time()))
     regen_dir = _tts_dir / regen_ts
@@ -867,11 +870,19 @@ def regenerate_scene_tts_route():
         generate_tts(
             text=narration, lang=lang, gender=voice_gender,
             provider=tts_provider, output_path=audio_path,
-            rate=DEFAULT_TTS_RATE, pitch="+0Hz",
+            rate=tts_rate, pitch=tts_pitch,
         )
         duration = _get_audio_duration(str(audio_path))
         tts_url = f"http://{_bridge_host}:{_bridge_port}/api/tts/{regen_ts}/scene_{scene_num}.mp3"
-        return jsonify({"ok": True, "_tts_url": tts_url, "duration": round(duration, 1)})
+        return jsonify({
+            "ok": True,
+            "_tts_url": tts_url,
+            "duration": round(duration, 1),
+            "rate": tts_rate,
+            "pitch": tts_pitch,
+            "qualityCandidates": TTS_QUALITY_CANDIDATES,
+            "operatorAction": "Regenerate 2-4 zero-paid voice/rate candidates and pick by phone/headphone listening before final render.",
+        })
     except Exception as e:
         # Flask route handler: broad catch required to convert any downstream
         # failure into a 500 response; log for observability.
@@ -1205,6 +1216,13 @@ def _audio_sidecar_from_request(data: dict) -> dict:
         "risk_note": "riskNote",
         "downloadDate": "downloadDate",
         "download_date": "downloadDate",
+        "operatorOwned": "operatorOwned",
+        "operator_owned": "operatorOwned",
+        "recordedAt": "recordedAt",
+        "recorded_at": "recordedAt",
+        "speaker": "speaker",
+        "sourceOrigin": "sourceOrigin",
+        "source_origin": "sourceOrigin",
     }
     for input_key, output_key in field_map.items():
         if input_key in data and data[input_key] not in (None, ""):
@@ -1223,11 +1241,17 @@ def _free_audio_provenance_ready(metadata: dict) -> bool:
     )
 
 
+def _operator_owned_voiceover_ready(metadata: dict) -> bool:
+    return _truthy(metadata.get("operatorOwned") or metadata.get("operator_owned"))
+
+
 def _audio_target_role(data: dict, sidecar: dict) -> str:
     raw = str(data.get("targetRole") or data.get("target_role") or data.get("role") or "").strip().lower()
-    if raw in {"bgm", "sfx"}:
+    if raw in {"bgm", "sfx", "voiceover"}:
         return raw
     kind = str(sidecar.get("kind") or data.get("kind") or "").strip().lower()
+    if kind in {"voiceover", "native", "uploaded-audio"}:
+        return "voiceover"
     return "sfx" if kind in {"sfx", "sfx-pack"} else "bgm"
 
 
@@ -1248,6 +1272,8 @@ def _audio_destination(source_path: Path, data: dict, sidecar: dict) -> tuple[st
     mood = slugify(str(data.get("mood") or sidecar.get("mood") or "calm")) or "calm"
     if role == "bgm":
         destination_dir = _project_root / "assets" / "bgm" / mood
+    elif role == "voiceover":
+        destination_dir = _project_root / "assets" / "voiceover"
     else:
         destination_dir = _project_root / "assets" / "sfx"
     raw_file_name = str(data.get("fileName") or data.get("file_name") or "").strip()
@@ -1296,7 +1322,7 @@ def free_audio_candidates_route():
 
 @media_bp.route("/api/free-assets/import-audio", methods=["POST"])
 def free_audio_import_route():
-    """Copy an operator-downloaded free BGM/SFX file into the local library with provenance."""
+    """Copy operator-approved BGM/SFX/voiceover audio into the local library with provenance."""
     data = flask_request.get_json(silent=True) or {}
     if not _truthy(data.get("operatorApproved") or data.get("operator_approved")):
         return jsonify({"ok": False, "error": "operatorApproved=true is required before importing local audio"}), 400
@@ -1344,7 +1370,20 @@ def free_audio_import_route():
         import_method = "browser-upload"
 
     sidecar = _audio_sidecar_from_request(data)
-    if not _free_audio_provenance_ready(sidecar):
+    role = _audio_target_role(data, sidecar)
+    if role == "voiceover":
+        sidecar.setdefault("provider", "upload")
+        sidecar.setdefault("kind", "voiceover")
+        sidecar.setdefault("sourceOrigin", "operator-owned-voiceover")
+        sidecar.setdefault("sourceLicense", "operator-owned")
+        if _operator_owned_voiceover_ready(data):
+            sidecar["operatorOwned"] = True
+    if role == "voiceover" and not _operator_owned_voiceover_ready(sidecar):
+        return jsonify({
+            "ok": False,
+            "error": "operatorOwned=true is required for voiceover imports",
+        }), 400
+    if role != "voiceover" and not _free_audio_provenance_ready(sidecar):
         return jsonify({
             "ok": False,
             "error": "sourceUrl and sourceLicense/license/licenseUrl are required for free audio provenance",
@@ -1359,7 +1398,7 @@ def free_audio_import_route():
             shutil.copy2(source_path, destination)
         else:
             destination.write_bytes(upload_bytes or b"")
-        sidecar.setdefault("provider", "local-bgm" if role == "bgm" else "local-sfx")
+        sidecar.setdefault("provider", "upload" if role == "voiceover" else "local-bgm" if role == "bgm" else "local-sfx")
         sidecar["targetRole"] = role
         sidecar["originalFileName"] = original_file_name
         sidecar["importMethod"] = import_method
@@ -1375,7 +1414,7 @@ def free_audio_import_route():
     return jsonify({
         "ok": True,
         "asset": {
-            "role": role,
+            "role": "audio" if role == "voiceover" else role,
             "path": _project_relative(destination),
             "sidecarPath": _project_relative(sidecar_path),
             "provider": sidecar.get("provider"),
@@ -1384,10 +1423,16 @@ def free_audio_import_route():
             "sourceUrl": sidecar.get("sourceUrl"),
             "sourceLicense": sidecar.get("sourceLicense") or sidecar.get("license") or sidecar.get("licenseUrl"),
             "mood": sidecar.get("mood"),
-            "kind": sidecar.get("kind"),
+            "kind": sidecar.get("kind") or ("voiceover" if role == "voiceover" else None),
+            "targetRole": role,
+            "operatorOwned": sidecar.get("operatorOwned") is True,
             "importMethod": import_method,
             "provenanceReady": True,
-            "operatorAction": "Render again so the manifest records free audio provenance and BGM rotation evidence.",
+            "operatorAction": (
+                "Attach this asset as the scene voiceover, then render again so the manifest records owned voice evidence."
+                if role == "voiceover"
+                else "Render again so the manifest records free audio provenance and BGM rotation evidence."
+            ),
         },
         "sidecar": sidecar,
     })
@@ -2803,6 +2848,162 @@ def _quality_status(condition: bool) -> str:
     return "pass" if condition else "check"
 
 
+def _audit_nested_value(source: dict, path: tuple[str, ...]) -> object:
+    current: object = source
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
+def _audit_metric_number(value: object) -> int | None:
+    if isinstance(value, bool):
+        return 1 if value else 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    return None
+
+
+def _audit_scene_count(source: dict, paths: list[tuple[str, ...]]) -> int:
+    for path in paths:
+        value = _audit_nested_value(source, path)
+        if isinstance(value, list):
+            scene_ids = {str(item).strip() for item in value if str(item or "").strip()}
+            return len(scene_ids)
+        number = _audit_metric_number(value)
+        if number is not None:
+            return number
+    return 0
+
+
+def _audit_first_number(source: dict, paths: list[tuple[str, ...]]) -> int:
+    for path in paths:
+        number = _audit_metric_number(_audit_nested_value(source, path))
+        if number is not None:
+            return number
+    return 0
+
+
+def _quality_gate_blocker_count(audit: dict) -> int:
+    blockers: list[str] = []
+    checks_needed = _audit_nested_value(audit, ("summary", "checksNeeded"))
+    if isinstance(checks_needed, list):
+        blockers.extend(f"summary:{item}" for item in _clean_string_list(checks_needed))
+    for section_key in ("publishReadiness", "channelReadiness", "uploadReview", "topTierReadiness"):
+        section = audit.get(section_key)
+        if not isinstance(section, dict):
+            continue
+        required_fixes = _clean_string_list(section.get("requiredFixes"))
+        blockers.extend(f"{section_key}:{item}" for item in required_fixes)
+        status = str(section.get("status") or "").strip()
+        ready_status = "top-tier-ready" if section_key == "topTierReadiness" else (
+            "channel-ready" if section_key == "channelReadiness" else "ready"
+        )
+        if status and status != ready_status and not required_fixes:
+            blockers.append(f"{section_key}:status={status}")
+    if not blockers:
+        evidence = audit.get("automatedEvidence")
+        if isinstance(evidence, dict):
+            for key, value in evidence.items():
+                if isinstance(value, dict) and value.get("status") == "fail":
+                    blockers.append(f"automatedEvidence.{key}")
+    return len(set(blockers))
+
+
+def _quality_gate_metrics(audit: dict) -> dict:
+    metrics = {
+        "acceptedScenes": _audit_scene_count(audit, [
+            ("summary", "acceptedSceneIds"),
+            ("summary", "originalClipSceneIds"),
+            ("topTierReadiness", "summary", "originalClipSceneIds"),
+            ("channelReadiness", "summary", "originalClipSceneIds"),
+            ("uploadReview", "summary", "originalClipSceneIds"),
+            ("topTierReadiness", "summary", "originalClipScenes"),
+            ("channelReadiness", "summary", "originalClipScenes"),
+            ("uploadReview", "summary", "originalClipScenes"),
+        ]),
+        "qualityScore": _audit_first_number(audit, [
+            ("summary", "qualityScore"),
+            ("summary", "passed"),
+            ("topTierReadiness", "score", "passed"),
+            ("uploadReview", "score", "passed"),
+            ("channelReadiness", "score", "passed"),
+            ("publishReadiness", "score", "passed"),
+        ]),
+        "blockerCount": _quality_gate_blocker_count(audit),
+        "originalSceneCount": _audit_scene_count(audit, [
+            ("topTierReadiness", "summary", "originalClipSceneIds"),
+            ("channelReadiness", "summary", "originalClipSceneIds"),
+            ("uploadReview", "summary", "originalClipSceneIds"),
+            ("topTierReadiness", "summary", "originalClipScenes"),
+            ("channelReadiness", "summary", "originalClipScenes"),
+            ("uploadReview", "summary", "originalClipScenes"),
+        ]),
+        "stockSceneCount": _audit_scene_count(audit, [
+            ("topTierReadiness", "summary", "stockVideoSceneIds"),
+            ("channelReadiness", "summary", "stockVideoSceneIds"),
+            ("topTierReadiness", "summary", "stockVideoScenes"),
+            ("channelReadiness", "summary", "stockVideoScenes"),
+            ("uploadReview", "summary", "stockVideoScenes"),
+        ]),
+        "visualVerdictPassScenes": _audit_scene_count(audit, [
+            ("topTierReadiness", "summary", "visualVerdictScenes"),
+            ("channelReadiness", "summary", "visualVerdictScenes"),
+            ("uploadReview", "summary", "visualVerdictScenes"),
+        ]),
+        "visualVerdictMissingScenes": _audit_scene_count(audit, [
+            ("topTierReadiness", "summary", "missingVisualVerdictScenes"),
+            ("channelReadiness", "summary", "missingVisualVerdictScenes"),
+            ("uploadReview", "summary", "missingVisualVerdictScenes"),
+        ]),
+        "visualVerdictFailedScenes": _audit_scene_count(audit, [
+            ("topTierReadiness", "summary", "failedVisualVerdictScenes"),
+            ("channelReadiness", "summary", "failedVisualVerdictScenes"),
+            ("uploadReview", "summary", "failedVisualVerdictScenes"),
+        ]),
+    }
+    return metrics
+
+
+def _quality_gate_hard_failures(audit: dict) -> list[str]:
+    failures: list[str] = []
+    readiness_expectations = {
+        "publishReadiness": "ready",
+        "channelReadiness": "channel-ready",
+        "uploadReview": "ready",
+        "topTierReadiness": "top-tier-ready",
+    }
+    for section_key, ready_status in readiness_expectations.items():
+        section = audit.get(section_key)
+        if not isinstance(section, dict):
+            continue
+        status = str(section.get("status") or "").strip()
+        if status and status != ready_status:
+            failures.append(f"{section_key}:status={status}")
+        for item in _clean_string_list(section.get("requiredFixes")):
+            failures.append(f"{section_key}:{item}")
+
+    evidence = audit.get("automatedEvidence")
+    if isinstance(evidence, dict):
+        for key, value in evidence.items():
+            if isinstance(value, dict) and value.get("status") == "fail":
+                failures.append(f"{key}:{value.get('detail') or 'failed'}")
+    return sorted(set(failures))
+
+
+def _attach_quality_gate_fields(audit: dict) -> dict:
+    audit["metrics"] = _quality_gate_metrics(audit)
+    hard_failures = _quality_gate_hard_failures(audit)
+    if hard_failures:
+        audit["hardFailures"] = hard_failures
+    else:
+        audit.pop("hardFailures", None)
+    return audit
+
+
 def _clean_string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -3118,7 +3319,7 @@ def _build_final_quality_audit(
 
     passed = sum(1 for item in checklist if item["status"] == "pass")
     needs_check = [item["key"] for item in checklist if item["status"] != "pass"]
-    return {
+    audit = {
         "projectId": report.get("projectId") or "unknown",
         "finalVideo": str(final_video),
         "generatedAt": datetime.now().isoformat(timespec="seconds"),
@@ -3127,7 +3328,7 @@ def _build_final_quality_audit(
         "uploadReview": upload,
         "topTierReadiness": top_tier,
         "automationDirection": {
-            "grok": "operator-approved Chrome/Grok handoff: prompt preparation, generation observation, and uploadEndpoint direct import only; Chrome native download prompts and Downloads watcher fallback are repeatability failures",
+            "grok": "operator-approved Chrome/Grok handoff: prompt preparation, generation observation, then operator-owned local MP4 import; Chrome native download prompts and Downloads watcher fallback are repeatability failures",
             "localModels": "operator-approved Wan/LTX/Hunyuan command adapter packets with local MP4 scene import",
             "paidApiPolicy": "paid AI/API routes remain disabled unless the operator explicitly changes policy outside this flow",
         },
@@ -3142,6 +3343,8 @@ def _build_final_quality_audit(
             "movingClipPriority": checks.get("movingClipPriority") or {},
             "sourceMotionEvidence": checks.get("sourceMotionEvidence") or {},
             "captionSafePresets": checks.get("captionSafePresets") or {},
+            "aiSlopVisualFit": checks.get("aiSlopVisualFit") or {},
+            "stockAiClipFit": checks.get("stockAiClipFit") or {},
             "ttsNarrationEvidence": checks.get("ttsNarrationEvidence") or {},
             "voicePolicyCompliance": checks.get("voicePolicyCompliance") or {},
             "captionLayoutReview": checks.get("captionLayoutReview") or {},
@@ -3182,6 +3385,7 @@ def _build_final_quality_audit(
             "benchmarkGap": "none" if top_tier_evidence_ready else "needs Grok/local hero, viewer-facing audio design, caption/layout proof, varied free visual/audio assets, source/license provenance, BGM rotation evidence, audio mix review, and Korean YouTube benchmark pass",
         },
     }
+    return _attach_quality_gate_fields(audit)
 
 
 def _read_json_artifact(path: Path) -> dict | None:
@@ -3553,7 +3757,7 @@ def _publish_packet_content_audit(packet_dir: Path, publish_packet_path: Path, f
             else "Complete publish-packet.json before showing this artifact packet as ready: "
             + ", ".join(missing_fields)
             + (
-                ". Replace Grok/Chrome download guidance with uploadEndpoint direct import or operator-owned already-saved MP4 batch upload."
+                ". Replace Grok/Chrome automation-download guidance with operator-owned local MP4 import or explicit already-saved MP4 batch upload."
                 if unsafe_source_flow_guidance else ""
             )
         ),
@@ -3623,10 +3827,10 @@ def _final_packet_next_actions(
             "label": "Add Grok/local AI hero MP4",
             "detail": flags.get("benchmarkGap"),
             "operatorAction": (
-                "Use the existing logged-in Chrome/Grok app or web with Companion/pageAssets uploadEndpoint direct import: "
-                "copy the scene prompt, generate the short MP4, import it through Video Studio direct fetch or operator-owned "
-                "already-saved MP4 batch upload, then review/accept the candidate. Do not press Grok Download/Save/Export "
-                "or any Chrome native download prompt from Codex automation. Use local Wan/LTX/Hunyuan as the offline fallback."
+                "Use browser-control against the existing logged-in Chrome/Grok app or web: copy the scene prompt, "
+                "generate the short MP4, then have the operator save/download and import it through Downloads import "
+                "or explicit batch upload before review/acceptance. Do not press Grok Download/Save/Export or any "
+                "Chrome native download prompt from Codex automation. Use local Wan/LTX/Hunyuan as the offline fallback."
             ),
         })
     if not flags.get("topTierEvidenceReady"):
@@ -3704,13 +3908,23 @@ def _final_packet_next_actions(
     return actions
 
 
+def _final_video_from_publish_packet(packet_dir: Path, publish_packet: dict | None) -> Path | None:
+    if not isinstance(publish_packet, dict):
+        return None
+    final_mp4 = _packet_artifact_path(packet_dir, publish_packet.get("finalMp4"))
+    if final_mp4 and final_mp4.suffix.lower() == ".mp4":
+        return final_mp4
+    return None
+
+
 def _final_video_packet_audit(packet_dir: Path) -> dict:
     videos = sorted(packet_dir.glob("*.mp4"), key=lambda path: path.stat().st_mtime, reverse=True)
-    final_video = videos[0] if videos else None
     quality_audit_path = packet_dir / "quality-audit.json"
     report_path = packet_dir / "render-quality-report.json"
     publish_packet_path = packet_dir / "publish-packet.json"
     publish_packet_markdown_path = packet_dir / "publish-packet.md"
+    publish_packet = _read_json_artifact(publish_packet_path)
+    final_video = _final_video_from_publish_packet(packet_dir, publish_packet) or (videos[0] if videos else None)
     quality_audit = _read_json_artifact(quality_audit_path)
     report = _read_json_artifact(report_path)
     ffprobe = _run_final_video_ffprobe(final_video) if final_video else {"ok": False, "error": "final MP4 missing", "specReady": False}
@@ -3816,6 +4030,7 @@ def final_video_library_audit_route():
         if not best_report and audit_path_raw:
             best_report = _read_json_artifact(Path(audit_path_raw)) or {}
     source_pipeline_status = _source_pipeline_status(best_report)
+    goal_readiness = _goal_readiness_audit(packets, best_packet, best_report, source_pipeline_status)
     return jsonify({
         "ok": True,
         "root": str(final_root),
@@ -3833,7 +4048,8 @@ def final_video_library_audit_route():
         },
         "bestPacket": best_packet,
         "sourcePipelineStatus": source_pipeline_status,
-        "goalReadiness": _goal_readiness_audit(packets, best_packet, best_report, source_pipeline_status),
+        "goalReadiness": goal_readiness,
+        "gateSystem": goal_readiness.get("gateSystem"),
         "packets": packets,
     })
 
@@ -3990,7 +4206,7 @@ def _fresh_source_intake_scene_action(scene: dict) -> str:
         category_detail = f" Failed live-channel categories: {categories}." if categories else ""
         return (
             f"Rejected imported Grok MP4 for {scene_id}.{category_detail} "
-            "Replace it with a clean moving clip through Companion/pageAssets uploadEndpoint direct import or operator-owned manual batch upload from an already-saved local MP4; "
+            "Replace it with a clean moving clip through operator-owned manual download/import or explicit batch upload from an already-saved local MP4; "
             "do not press Grok Download/Save/Export or any Chrome native download prompt from Codex automation, then rerun review acceptance."
         )
     if scene.get("imported") is True:
@@ -3998,12 +4214,12 @@ def _fresh_source_intake_scene_action(scene: dict) -> str:
     if browser_generation.get("generated") is True:
         return (
             f"Grok browser generation was observed for {scene_id}, but no native MP4 is imported yet. "
-            f"Use the Video Studio Companion/pageAssets uploadEndpoint direct import or manual batch upload from an already saved MP4 to save it as {expected_file}; "
+            f"Use operator-owned manual download/import or explicit batch upload from an already saved MP4 to save it as {expected_file}; "
             "do not press Grok Download/Save/Export or any Chrome native download prompt from Codex automation, "
             "then run import preflight and review acceptance."
         )
     return (
-        f"Generate or acquire a native Grok MP4 for {scene_id}, import it as {expected_file} through uploadEndpoint direct import or manual batch upload from an already-saved local MP4, "
+        f"Generate or acquire a native Grok MP4 for {scene_id}, import it as {expected_file} through operator-owned manual download/import or explicit batch upload from an already-saved local MP4, "
         "without using Codex automation to press Grok Download/Save/Export or any Chrome native download prompt, "
         "then review at least the first two seconds, motion density, source fit, and caption-safe composition."
     )
@@ -4034,8 +4250,8 @@ def _fresh_source_recovery_execution_checklist(source_recovery_plan: dict | None
                 "and phone-sized first-frame/caption review before render."
             ),
             "regenerate-direct-import": (
-                "Regenerate or acquire a clean moving MP4 through uploadEndpoint direct import, bookmarklet direct fetch, "
-                "or operator-owned already-saved local MP4 import."
+                "Regenerate or acquire a clean moving MP4 through operator-owned manual download/import "
+                "or explicit already-saved local MP4 import."
             ),
             "accept-reviewed-local-candidate": (
                 "Accept the upload-grade local candidate in the handoff review packet, then rerun source recovery and render gates."
@@ -4176,7 +4392,7 @@ def _fresh_source_intake_payload(
         },
         "sourcePolicy": {
             "paidAiApiAllowed": False,
-            "allowedFlow": "existing signed-in Grok app/web with Companion/pageAssets uploadEndpoint direct import, bookmarklet direct import, or operator-owned upload from an already-saved local MP4",
+            "allowedFlow": "existing signed-in Grok app/web browser-control with operator-owned upload/import from an already-saved local MP4",
             "disallowedFlow": "paid xAI API, paid AI services, static image slideshow, stale pre-handoff Downloads MP4 reuse, Codex automation pressing Grok Download/Save/Export, Chrome native download prompts, Downloads watcher fallback",
             "freshnessPolicy": download_freshness.get("freshnessPolicy") or "Only MP4s modified after this handoff can support fresh-source repeatability.",
         },
@@ -7586,7 +7802,7 @@ def _fresh_source_repeatability_audit(best_packet: dict | None, legacy_summary_r
     project_id = str(best_packet.get("projectId") or "").strip() if isinstance(best_packet, dict) else ""
     template = {
         "recordedAt": "",
-        "sourceFlow": "uploadEndpoint direct import from operator-owned already-saved MP4 batch",
+        "sourceFlow": "operator-owned manual download/import or explicit already-saved MP4 batch upload",
         "topic": "",
         "finalVideoPath": final_video_path,
         "finalVideoSha256": final_video_sha256,
@@ -8109,7 +8325,6 @@ def _goal_readiness_audit(
 
     source_pipeline_status = source_pipeline_status or {}
     grok_status = source_pipeline_status.get("grok") if isinstance(source_pipeline_status.get("grok"), dict) else {}
-    companion_status = grok_status.get("companionDirectImport") if isinstance(grok_status.get("companionDirectImport"), dict) else {}
     bookmarklet_status = grok_status.get("bookmarkletDirectImport") if isinstance(grok_status.get("bookmarkletDirectImport"), dict) else {}
     latest_handoff = grok_status.get("latestHandoff") if isinstance(grok_status.get("latestHandoff"), dict) else {}
     proof_monitor_url = str(grok_status.get("proofMonitorUrl") or "").strip()
@@ -8118,11 +8333,12 @@ def _goal_readiness_audit(
 
     artifact_ready = bool(best_summary.get("topTierReady"))
     top_tier_packet_count = sum(1 for item in packets if (item.get("summary") or {}).get("topTierReady"))
-    direct_import_surface_ready = (
-        companion_status.get("uploadEndpointDriven") is True
-        or bookmarklet_status.get("uploadEndpointDriven") is True
+    browser_handoff_surface_ready = bool(
+        grok_status.get("nextAction")
+        or latest_handoff
+        or proof_monitor_url
+        or observed_post_url
     )
-    companion_operator_ready = companion_status.get("operatorReady") is True
     bookmarklet_operator_ready = bookmarklet_status.get("operatorReady") is True
     live_grok_direct_import_proven = bool(
         production_summary.get("liveSignedInGrokDirectImportProof") is True
@@ -8147,26 +8363,26 @@ def _goal_readiness_audit(
         _goal_requirement(
             "A-quality-cause-remediation",
             "A) quality cause remediation",
-            "pass" if direct_import_surface_ready and zero_paid else "partial",
-            "Final library audit exposes no-paid policy, direct-import Grok path, Pexels support role, and local adapter readiness.",
-            [] if direct_import_surface_ready and zero_paid else ["Re-run quality diagnosis after provider policy or source rail changes."],
+            "pass" if browser_handoff_surface_ready and zero_paid else "partial",
+            "Final library audit exposes no-paid policy, browser-control Grok handoff, Pexels support role, and local adapter readiness.",
+            [] if browser_handoff_surface_ready and zero_paid else ["Re-run quality diagnosis after provider policy or source rail changes."],
         ),
         _goal_requirement(
             "B-dashboard-production-flow",
             "B) real dashboard production flow",
-            "pass" if direct_import_surface_ready and live_grok_direct_import_proven else "partial" if direct_import_surface_ready else "missing",
-            "Scene upload/Pexels/Grok/local source rails exist and audit reports Companion/bookmarklet direct import as the primary Grok handoff.",
+            "pass" if browser_handoff_surface_ready and live_grok_direct_import_proven else "partial" if browser_handoff_surface_ready else "missing",
+            "Scene upload/Pexels/Grok/local source rails exist and audit reports browser-control plus operator-owned local MP4 import as the primary Grok handoff.",
             []
-            if (companion_operator_ready or bookmarklet_operator_ready) and live_grok_direct_import_proven
+            if (browser_handoff_surface_ready or bookmarklet_operator_ready) and live_grok_direct_import_proven
             else [
                 item
                 for item in [
                     None
-                    if companion_operator_ready or bookmarklet_operator_ready
-                    else "Run the no-extension Grok bookmarklet/console direct import in the existing Chrome profile, or load the Video Studio Grok Companion unpacked extension.",
+                    if browser_handoff_surface_ready or bookmarklet_operator_ready
+                    else "Use browser-control against the existing signed-in Chrome/Grok tab, then have the operator import the local MP4 through Downloads import or explicit batch upload.",
                     None
                     if live_grok_direct_import_proven
-                    else "Capture live signed-in Chrome/Grok Import MP4 proof through uploadEndpoint and scene queue advancement.",
+                    else "Capture live signed-in Chrome/Grok generation proof plus local MP4 import/review advancement.",
                 ]
                 if item
             ],
@@ -8318,7 +8534,7 @@ def _goal_readiness_audit(
         platform_analytics=platform_analytics,
         goal_complete=goal_complete,
     )
-    return {
+    result = {
         "goalComplete": goal_complete,
         "overallStatus": overall_status,
         "operatorDecision": operator_decision,
@@ -8349,6 +8565,8 @@ def _goal_readiness_audit(
         "remainingGaps": all_remaining_gaps,
         "completionPolicy": "Do not close the broad Video Studio operating-system Goal from artifact readiness, final-library audit pass, or Grok direct-import proof alone. Artifact gates only prove a candidate packet; broad completion also requires fresh-source repeatability, phone-sized human review, and live platform analytics.",
     }
+    result["gateSystem"] = build_final_readiness_gate_system(result)
+    return result
 
 
 def _sanitize_grok_observed_post_url(value: object) -> str:
@@ -8651,9 +8869,9 @@ def _grok_handoff_browser_generation_summary(handoff_dir: Path, scene_summaries:
         "proofOnly": True,
         "doesNotSatisfyFreshSourceProof": True,
         "operatorAction": (
-            "Generate Grok browser posts, then use Video Studio Companion/pageAssets uploadEndpoint direct import "
-            "or an already-saved local MP4 import to create native MP4 files in the handoff incoming folder. "
-            "Do not use Grok Download/Save/Export or any Chrome native download prompt."
+            "Generate Grok browser posts, then have the operator save/download the MP4 and import the local file "
+            "through Downloads import or explicit batch upload. Do not use Grok Download/Save/Export or any "
+            "Chrome native download prompt from Codex automation."
         ),
     }
     if not proof_path.exists():
@@ -8738,8 +8956,8 @@ def _grok_handoff_browser_generation_summary(handoff_dir: Path, scene_summaries:
             "but this is not native MP4 import or review acceptance proof."
         ),
         "operatorAction": (
-            "Use the generated Grok post pages as provenance, then direct-import the native MP4s through the Companion/pageAssets uploadEndpoint "
-            "or operator-owned manual batch upload from an already-saved local MP4 into the handoff incoming folder before review acceptance, render, or upload decisions. "
+            "Use the generated Grok post pages as provenance, then import operator-owned local MP4 files into the "
+            "handoff incoming folder through Downloads import or explicit batch upload before review acceptance, render, or upload decisions. "
             "Codex automation must not press Grok Download/Save/Export or any Chrome native download prompt."
         ),
     }
@@ -8887,13 +9105,13 @@ def _grok_handoff_replacement_action(scene_id: str, review: dict, candidate_pool
         return (
             f"Review existing local replacement candidate(s) for {scene_id}: {names}. "
             "If one passes first-2s hook, AI-slop/source-fit, caption-safe, and scene-assembly review, "
-            "record that review before render. If none pass, regenerate/import only through Companion/pageAssets "
-            "uploadEndpoint direct import or operator-owned manual batch upload from an already-saved local MP4."
+            "record that review before render. If none pass, regenerate and import only through operator-owned "
+            "manual download/import or explicit batch upload from an already-saved local MP4."
         )
     if review.get("nextRetryPrompt"):
         return (
-            f"Regenerate {scene_id} from the stored retry prompt, import only through Companion/pageAssets "
-            "uploadEndpoint direct import or operator-owned manual batch upload from an already-saved local MP4, then rerun first-2s hook, "
+            f"Regenerate {scene_id} from the stored retry prompt, import only through operator-owned manual "
+            "download/import or explicit batch upload from an already-saved local MP4, then rerun first-2s hook, "
             "AI-slop/source-fit, caption-safe, and scene-assembly review."
         )
     return (
@@ -8931,8 +9149,8 @@ def _latest_grok_handoff_operator_decision(
                     "but native MP4 imports are still missing; browser post proof alone cannot support render or upload."
                 ),
                 "nextAction": (
-                    "Use the Video Studio Companion/pageAssets uploadEndpoint direct import for the generated posts, "
-                    "or operator-owned manual batch upload from already saved MP4s; do not press Grok Download/Save/Export or any Chrome native download prompt from Codex automation. "
+                    "Use operator-owned manual download/import or explicit batch upload from already saved MP4s for the generated posts; "
+                    "do not press Grok Download/Save/Export or any Chrome native download prompt from Codex automation. "
                     "Then import each native MP4, run preflight, and review/accept every scene."
                 ),
             }
@@ -9132,7 +9350,7 @@ def _latest_grok_handoff_summary(context: dict | None = None) -> dict:
         status = "browser-generated-waiting-import"
         operator_action = (
             "Grok browser posts were generated, but native MP4 files are not in the handoff incoming folder. "
-            "Use Companion/pageAssets uploadEndpoint direct import or operator-owned manual batch upload from an already-saved local MP4; "
+            "Use operator-owned manual download/import or explicit batch upload from an already-saved local MP4; "
             "do not press Grok Download/Save/Export or any Chrome native download prompt from Codex automation. Then run import preflight and review acceptance."
         )
     else:
@@ -9723,16 +9941,15 @@ def _source_recovery_direct_import_runway(project_id: str, scene_id: str, scene_
             "direct MP4 asset tab",
         ],
         "allowedRoutes": [
-            "Companion/pageAssets uploadEndpoint direct import",
-            "observed-post console direct import",
-            "bookmarklet direct fetch",
+            "operator-owned manual download/import",
+            "explicit manual MP4 upload",
             "operator-owned already-saved local MP4 import",
         ],
         "operatorAction": (
-            f"Open the signed-in Grok post for {scene_id}, run the observed-post console direct-import snippet, "
-            f"and verify {expected_file_name} through the proof monitor before scene review."
+            f"Open the signed-in Grok post for {scene_id}, have the operator save/download the MP4, "
+            f"and import {expected_file_name} locally before scene review."
             if post_ready
-            else f"Generate {scene_id} from the recovery prompt, then import through uploadEndpoint direct import; stop if Grok requires Download/Save/Export or a Chrome native download prompt."
+            else f"Generate {scene_id} from the recovery prompt, then use operator-owned local MP4 import; stop if Grok requires Codex to automate Download/Save/Export or a Chrome native download prompt."
         ),
     }
 
@@ -9898,8 +10115,8 @@ def _source_recovery_plan(
             recommended_lane = "regenerate-direct-import"
             status = "direct-import-regeneration-needed"
             operator_action = (
-                f"Regenerate or acquire {scene_id} through uploadEndpoint direct import, bookmarklet direct fetch, "
-                "or an already-saved local MP4 import. Native browser download prompts remain blocked."
+                f"Regenerate or acquire {scene_id} through operator-owned manual download/import "
+                "or explicit already-saved local MP4 import. Native browser download prompts remain blocked."
             )
 
         scene_summary = scene_summaries.get(scene_id) or {}
@@ -10040,8 +10257,6 @@ def _source_pipeline_status(report: dict) -> dict:
     packet_summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
     stock_curation = _stock_candidate_curation_summary(report)
     stock_curation_missing_scenes = stock_curation.get("missingScenes") or []
-    companion_readiness = _existing_chrome_companion_readiness()
-    companion_operator_ready = companion_readiness.get("operatorReady") is True
     latest_handoff_context = _latest_grok_handoff_context()
     latest_handoff_summary = _latest_grok_handoff_summary(latest_handoff_context)
     proof_monitor_url = _grok_direct_import_proof_monitor_url(latest_handoff_context)
@@ -10065,11 +10280,11 @@ def _source_pipeline_status(report: dict) -> dict:
         "allowedForGoalCompletion": False,
         "blocksIfPromptAppears": True,
         "forbiddenActions": ["Grok Download", "Grok Save", "Grok Export", "Chrome native download prompt", "Downloads watcher fallback"],
-        "allowedAlternatives": ["Companion/pageAssets uploadEndpoint direct import", "bookmarklet direct fetch", "already-saved local MP4 import"],
+        "allowedAlternatives": ["browser-control generation proof plus operator-owned local MP4 import", "explicit manual MP4 upload", "already-saved local MP4 import"],
         "reason": "Native browser download prompts wait for operator clicks and cannot be canceled repeatably by the production system.",
         "operatorAction": (
             "Do not use Chrome/Grok Download/Save/Export or any native download prompt from Codex automation. "
-            "If uploadEndpoint direct import cannot fetch the MP4/blob, mark the source flow blocked/not repeatable and close the prompt manually outside automation."
+            "If the operator cannot save/download the MP4 and import it locally, mark the source flow blocked/not repeatable and close the prompt manually outside automation."
         ),
     }
     observed_post_download_script_url = (
@@ -10081,15 +10296,10 @@ def _source_pipeline_status(report: dict) -> dict:
     proof_monitor_hint = f" Proof monitor: {proof_monitor_url}"
     observed_post_hint = f" Observed Grok post: {observed_post_url}" if observed_post_url else ""
     grok_next_action = (
-        "Use the Chrome Companion direct-import path only: generate the Grok MP4 in the existing signed-in Chrome profile, then let the companion uploadEndpoint import it into Video Studio without opening Chrome's native download prompt. Do not fall back to Download/Save/Export, a Downloads watcher, or any prompt that waits for operator clicks."
-        if companion_operator_ready
-        else "Use the no-extension bookmarklet/console direct-import fallback in the existing signed-in Chrome/Grok tab, or load the Video Studio Grok Companion unpacked extension, so uploadEndpoint imports the MP4 without opening Chrome's native download prompt. If a native prompt is required, mark the flow blocked/not repeatable."
+        "Use browser-control against the existing signed-in Chrome/Grok tab to fill and generate the Grok MP4. "
+        "After generation proof exists, the operator downloads/saves the MP4 and imports it through local Downloads import or explicit batch upload. "
+        "Do not let Codex click Chrome/Grok Download/Save/Export or treat a native prompt as repeatable automation."
     ) + proof_monitor_hint + observed_post_hint
-    companion_operator_action = (
-        "Load the Video Studio Grok Companion in the existing signed-in Chrome profile, generate the scene MP4, and use the local uploadEndpoint import path. Do not use any browser download fallback."
-        if companion_operator_ready
-        else f"Open chrome://extensions in the existing Chrome profile, enable Developer mode if needed, choose Load unpacked, and select {companion_readiness.get('loadUnpackedPath')}. Then use Import MP4."
-    )
     pexels_next_action = (
         "Complete Pexels candidate curation before claiming top-tier quality: record candidateCount>=2, source page/creator, and selectedCandidateSummary for "
         + (", ".join(stock_curation_missing_scenes) or "each selected stock scene")
@@ -10101,7 +10311,7 @@ def _source_pipeline_status(report: dict) -> dict:
         "paidApiPolicy": {
             "paidAiApiAllowed": False,
             "disallowedByDefault": ["grok-api", "veo", "runway", "imagen", "elevenlabs", "openai-tts"],
-            "allowedAutomation": "operator-approved Grok app/web browser handoff and local companion direct import only; no xAI API call or credential storage",
+            "allowedAutomation": "operator-approved Grok app/web browser handoff plus operator-owned local MP4 import only; no xAI API call or credential storage",
         },
         "grok": {
             "mode": "operator-approved-browser-handoff",
@@ -10118,19 +10328,6 @@ def _source_pipeline_status(report: dict) -> dict:
                 else ""
             ),
             "latestHandoff": latest_handoff_summary,
-            "companionDirectImport": {
-                "available": True,
-                "operatorReady": companion_operator_ready,
-                "setupRequired": companion_readiness.get("setupRequired") is True,
-                "installedInExistingProfile": companion_readiness.get("companionInstalled") is True,
-                "uploadEndpointDriven": True,
-                "avoidsChromeDownloadPrompt": True,
-                "sourceKind": "companion-direct-fetch",
-                "qualityNote": "original-download-source; companion-direct-fetch",
-                "fallback": "no native browser download fallback; only already-saved local MP4 import outside Codex automation",
-                "operatorAction": companion_operator_action,
-                "chromeProfile": companion_readiness,
-            },
             "bookmarkletDirectImport": {
                 "available": True,
                 "operatorReady": True,
@@ -10145,8 +10342,8 @@ def _source_pipeline_status(report: dict) -> dict:
                     "bookmarklet-post-direct-video-fetch",
                     "bookmarklet-post-blob-direct-fetch",
                 ],
-                "qualityNote": "bookmarklet direct fetch; no-browser-download-prompt",
-                "operatorAction": "Open the Grok tab in the existing signed-in Chrome profile and run the Video Studio bookmarklet/console fallback so fetchable MP4/blob video candidates upload directly to the local uploadEndpoint. Do not use Chrome/Grok Download/Save/Export.",
+                "qualityNote": "legacy debug fallback only; no production success without operator-owned local MP4 import and review",
+                "operatorAction": "Use only when browser-control is unavailable and the operator explicitly wants a debug recovery attempt. Production proof still requires operator-owned local MP4 import and Video Studio review.",
             },
             "dashboardControls": ["패킷 준비", "승인 자동 생성", "다음 씬 자동 생성", "승인 재개", "Grok 검수", "Grok 렌더"],
         },
@@ -10409,7 +10606,7 @@ def _blocked_pipeline_next_actions(
                 "detail": f"{first_scene_id} does not yet prove Grok app/web or local Wan/LTX/Hunyuan hero footage.",
                 "operatorAction": (
                     "Use the Grok app/web handoff path first: copy the scene prompt, generate the MP4 in the signed-in Grok UI, "
-                    "then import it via Companion/pageAssets uploadEndpoint direct import or operator-owned already-saved MP4 "
+                    "then have the operator save/download and import it via Downloads import or explicit already-saved MP4 "
                     "batch upload before accepting the clip in Grok 검수. Do not press Grok Download/Save/Export or any "
                     "Chrome native download prompt from Codex automation. Use a local Wan/LTX/Hunyuan adapter only when "
                     "Grok output is unavailable."
@@ -10444,8 +10641,8 @@ def _blocked_pipeline_next_actions(
             ),
             "operatorAction": (
                 f"Replace at least {missing_count} stock/support scene(s) with accepted Grok/local/direct/owned moving MP4 "
-                "through Companion/pageAssets uploadEndpoint direct import, bookmarklet/direct fetch, or operator-owned "
-                "already-saved MP4 batch import. Do not press Grok Download/Save/Export, open direct MP4 asset tabs, "
+                "through operator-owned manual download/import or explicit already-saved MP4 batch import. Do not press "
+                "Grok Download/Save/Export, open direct MP4 asset tabs, "
                 "or rely on Chrome native download prompts or Downloads watcher fallback. Rerender and run "
                 "finalize-render with requireTopTier=true."
             ),
@@ -10482,8 +10679,8 @@ def _blocked_pipeline_next_actions(
             detail_parts.append(f"sourceRecovery={recovery_detail}")
         operator_action = (
             "Replace or rewrite the failed scene clips before upload. Use accepted Grok/local/direct/owned moving MP4s "
-            "through uploadEndpoint direct import, bookmarklet/direct fetch, or operator-owned already-saved MP4 batch "
-            "import only. Keep Chrome/Grok Download/Save/Export, native download prompts, and Downloads watcher fallback blocked."
+            "through operator-owned manual download/import or explicit already-saved MP4 batch import only. "
+            "Keep Chrome/Grok Download/Save/Export, native download prompts, and Downloads watcher fallback blocked."
         )
         if recovery_items:
             lane_text = "; ".join(
@@ -10704,11 +10901,17 @@ def _write_blocked_quality_audit(
             "movingClipPriority": checks.get("movingClipPriority") or {},
             "sourceMotionEvidence": checks.get("sourceMotionEvidence") or {},
             "captionSafePresets": checks.get("captionSafePresets") or {},
+            "aiSlopVisualFit": checks.get("aiSlopVisualFit") or {},
+            "stockAiClipFit": checks.get("stockAiClipFit") or {},
             "ttsNarrationEvidence": checks.get("ttsNarrationEvidence") or {},
+            "voicePolicyCompliance": checks.get("voicePolicyCompliance") or {},
             "captionLayoutReview": checks.get("captionLayoutReview") or {},
+            "captionDensityAndSafeZone": checks.get("captionDensityAndSafeZone") or {},
             "assetReuseDiversity": checks.get("assetReuseDiversity") or {},
             "freeAssetProvenance": checks.get("freeAssetProvenance") or {},
             "stockCandidateCuration": checks.get("stockCandidateCuration") or {},
+            "bgmAssetRotation": checks.get("bgmAssetRotation") or {},
+            "bgmSoundQuality": checks.get("bgmSoundQuality") or {},
             "publishReadinessGate": checks.get("publishReadinessGate") or {},
             "channelReadinessGate": checks.get("channelReadinessGate") or {},
             "uploadReviewGate": checks.get("uploadReviewGate") or {},
@@ -10730,6 +10933,7 @@ def _write_blocked_quality_audit(
             "nextActionKeys": [item.get("key") for item in next_actions],
         },
     }
+    _attach_quality_gate_fields(audit)
     audit_path = output_path.parent / "blocked-quality-audit.json"
     audit_path.write_text(json.dumps(audit, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return audit_path

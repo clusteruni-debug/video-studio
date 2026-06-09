@@ -175,6 +175,18 @@ def _resolved_source(project_root: Path, relative_path: str | None) -> Path | No
     return candidate if candidate.exists() else None
 
 
+def _is_reusable_visual_source(visual_asset: dict, source_path: Path | None) -> bool:
+    if not source_path:
+        return False
+    source_origin = str(visual_asset.get("sourceOrigin") or "").strip()
+    provider = str(visual_asset.get("provider") or "").strip()
+    return (
+        source_origin in {"uploaded", "grok-handoff"}
+        or provider == "upload"
+        or visual_asset.get("sourceRecoveryReplacement") is True
+    )
+
+
 def build_local_media_plan(
     manifest: dict,
     manifest_path: Path | str,
@@ -195,10 +207,11 @@ def build_local_media_plan(
     for scene in manifest["scenes"]:
         visual_asset = _asset_lookup(manifest, scene["sceneId"], "visual")
         audio_asset = _asset_lookup(manifest, scene["sceneId"], "audio")
-        uploaded_visual = visual_asset.get("sourceOrigin") == "uploaded" and _resolved_source(
+        uploaded_visual = _resolved_source(
             resolved_project_root,
             visual_asset.get("sourcePath"),
         )
+        uploaded_visual = uploaded_visual if _is_reusable_visual_source(visual_asset, uploaded_visual) else None
         selected_stock_visual = visual_asset.get("sourceOrigin") == "selected-stock" and visual_asset.get("sourceUrl")
         uploaded_audio_asset = audio_asset.get("sourceOrigin") == "uploaded" and _resolved_source(
             resolved_project_root,
@@ -293,7 +306,8 @@ def generate_local_visual_asset(
     source_visual = _resolved_source(resolved_project_root, visual_asset.get("sourcePath"))
     scene_cache_dir = resolved_project_root / scene["cacheDir"]
 
-    if visual_asset.get("sourceOrigin") == "uploaded" and source_visual:
+    if _is_reusable_visual_source(visual_asset, source_visual):
+        source_origin = str(visual_asset.get("sourceOrigin") or visual_asset.get("provider") or "uploaded")
         return MediaGenerationResult(
             sceneId=scene["sceneId"],
             sceneTitle=scene["title"],
@@ -302,7 +316,7 @@ def generate_local_visual_asset(
             outputKind=scene["visualKind"],
             status="uploaded",
             outputPath=str(source_visual),
-            detail=f"uploaded asset will be used: {source_visual}",
+            detail=f"{source_origin} asset will be used: {source_visual}",
             attempted=False,
             succeeded=None,
         )

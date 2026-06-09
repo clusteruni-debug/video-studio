@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 
 from worker.bridge.templates import operating_template_for
+from worker.quality_gate_system import build_render_gate_system
 from worker.render.motion import zoompan_filter
 from worker.render.transitions import gradient_source_filter
 from worker.runtime.tools import probe_tool
@@ -30,7 +31,56 @@ logger = logging.getLogger(__name__)
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 FRAME_SIZE = "1080x1920"
 FRAME_RATE = "30"
-VIDEO_FILTER = "fps=30,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,format=yuv420p"
+SCENE_SCALE_CROP_FILTER = (
+    "fps=30,"
+    "scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,"
+    "crop=1080:1920"
+)
+SCENE_VISUAL_POLISH_FILTER = "unsharp=3:3:0.28:3:3:0.10,eq=contrast=1.025:saturation=1.030:gamma=1.010"
+FINAL_VISUAL_POLISH_FILTER = "fps=30,scale=1080:1920:flags=lanczos,unsharp=3:3:0.18:3:3:0.06,eq=contrast=1.010:saturation=1.010:gamma=1.005,format=yuv420p"
+VIDEO_FILTER = f"{SCENE_SCALE_CROP_FILTER},{SCENE_VISUAL_POLISH_FILTER},format=yuv420p"
+H264_RENDER_ARGS = [
+    "-c:v", "libx264",
+    "-preset", "medium",
+    "-crf", "18",
+    "-profile:v", "high",
+    "-level", "4.2",
+    "-pix_fmt", "yuv420p",
+]
+QUALITY_RATCHET_REQUIRED_FIELDS = (
+    "previousBaseline",
+    "rejectionCause",
+    "changedLever",
+    "expectedVisibleImprovement",
+    "actualProof",
+    "nextRatchet",
+)
+QUALITY_RATCHET_VIEWER_FACING_TERMS = (
+    "source",
+    "asset",
+    "storyboard",
+    "script",
+    "hook",
+    "caption",
+    "subtitle",
+    "tts",
+    "voice",
+    "audio",
+    "bgm",
+    "layout",
+    "edit",
+    "cut",
+    "pacing",
+    "transition",
+    "render",
+    "filter",
+    "sharp",
+    "contrast",
+    "color",
+    "grok",
+    "gemini",
+    "stock",
+)
 SCENE_COLORS = ["#183153", "#3f5c7a", "#7c4d3a", "#556b2f", "#5f4b8b", "#7b3f61"]
 DEFAULT_MOTION_PRESET = "none"
 DEFAULT_TRANSITION_TYPE = "fade"
@@ -70,6 +120,7 @@ FREE_AUDIO_STOCK_PROVIDERS = {
     "local-sfx",
 }
 FREE_NARRATION_PROVIDERS = {"edge-tts", "windows-speech", "windows-tts", "edge"}
+DRAFT_ONLY_NARRATION_PROVIDERS = {"windows-speech", "windows-tts"}
 LOCAL_ORIGINAL_VIDEO_INTENTS = {"wan", "ltx-video", "hunyuan-video"}
 GROK_SOURCE_PROVENANCE_ACCEPTABLE_STATUSES = {
     "browser-native-original-download",
@@ -161,6 +212,58 @@ SHORTS_CAPTION_MAX_COMPACT_CHARS = {
     "center-short": 22,
     "lower-info": 34,
 }
+SHORTS_CAPTION_MIN_SECONDS_BY_COMPACT_CHAR = {
+    "top-hook": 1 / 9.0,
+    "center-short": 1 / 10.0,
+    "lower-info": 1 / 11.0,
+}
+SHORTS_CAPTION_READING_SLACK_SEC = 0.18
+REFERENCE_EDIT_GRAMMAR_POLICY = {
+    "source": "short-form reference extraction",
+    "firstHookWindowSec": 2.0,
+    "targetAverageCutSec": 3.0,
+    "maxUnjustifiedHoldSec": 3.2,
+    "requiredTerms": (
+        "hook/first-frame",
+        "cut rhythm/pacing",
+        "caption safe-zone",
+        "platform reference",
+    ),
+}
+REFERENCE_EDIT_GRAMMAR_TERMS = (
+    "shorts",
+    "reels",
+    "tiktok",
+    "reference",
+    "레퍼런스",
+    "쇼츠",
+    "릴스",
+    "틱톡",
+    "hook",
+    "first frame",
+    "first-frame",
+    "first two",
+    "first 2",
+    "첫",
+    "훅",
+    "cut",
+    "pacing",
+    "rhythm",
+    "beat",
+    "tempo",
+    "컷",
+    "템포",
+    "리듬",
+    "전환",
+    "caption",
+    "subtitle",
+    "safe zone",
+    "safe-zone",
+    "safezone",
+    "자막",
+    "세이프",
+    "세이프존",
+)
 PRODUCTION_META_HARD_TERMS = (
     "tts",
     "b-roll",
@@ -377,6 +480,35 @@ def _required_narration_chars(content_template: str, scene_id: str, first_scene_
     if scene_id == first_scene_id:
         return 24
     return 40
+
+
+def _short_voiceover_callout_approved(
+    scene: dict,
+    content_template: str,
+    narration_length: int,
+    subtitle_length: int,
+    duration_sec: float,
+) -> bool:
+    """Allow deliberately short action callouts when the clip is too short for full narration."""
+    if content_template not in SHORTFORM_TIGHT_NARRATION_TEMPLATES:
+        return False
+    if not (0 < duration_sec <= 4.5):
+        return False
+    if narration_length < 8 or subtitle_length < 4:
+        return False
+    style = _normalized_audio_design_mode(
+        scene.get("voiceoverStyle")
+        or scene.get("voiceover_style")
+        or scene.get("narrationStyle")
+        or scene.get("narration_style")
+        or scene.get("calloutStyle")
+        or scene.get("callout_style")
+    )
+    layout_key = _normalized_audio_design_mode(scene.get("layoutVariantKey") or scene.get("layout_variant_key"))
+    return style in {"short-action-callout", "short-callout", "action-callout"} or layout_key in {
+        "routine-action-command",
+        "short-action-callout",
+    }
 
 
 def _normalized_audio_design_mode(value: object) -> str:
@@ -672,6 +804,65 @@ def _check(status: str, detail: str) -> dict:
     return {"status": status, "detail": detail}
 
 
+def _quality_ratchet_field_present(value: object) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, dict):
+        return any(_quality_ratchet_field_present(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_quality_ratchet_field_present(item) for item in value)
+    return value not in (None, "", False)
+
+
+def _quality_ratchet_text(value: object) -> str:
+    if isinstance(value, dict):
+        return " ".join(_quality_ratchet_text(item) for item in value.values())
+    if isinstance(value, list):
+        return " ".join(_quality_ratchet_text(item) for item in value)
+    return str(value or "")
+
+
+def _build_quality_ratchet_review(manifest: dict) -> dict:
+    raw = manifest.get("qualityRatchet") or manifest.get("qualityIterationRatchet") or {}
+    if not isinstance(raw, dict):
+        raw = {}
+    required = bool(
+        manifest.get("qualityRatchetRequired") is True
+        or manifest.get("qualityIteration")
+        or raw
+    )
+    missing_fields = [
+        field
+        for field in QUALITY_RATCHET_REQUIRED_FIELDS
+        if not _quality_ratchet_field_present(raw.get(field))
+    ]
+    changed_lever_text = _quality_ratchet_text(raw.get("changedLever")).lower()
+    viewer_facing_lever = any(term in changed_lever_text for term in QUALITY_RATCHET_VIEWER_FACING_TERMS)
+    issues: list[str] = []
+    if missing_fields:
+        issues.append(f"missingFields={missing_fields}")
+    if required and not viewer_facing_lever:
+        issues.append("changedLever must name a viewer-facing video lever")
+    status = "pass"
+    if required and (missing_fields or not viewer_facing_lever):
+        status = "fail"
+    return {
+        "required": required,
+        "status": status,
+        "requiredFields": list(QUALITY_RATCHET_REQUIRED_FIELDS),
+        "missingFields": missing_fields,
+        "viewerFacingLever": viewer_facing_lever,
+        "viewerFacingTerms": [
+            term
+            for term in QUALITY_RATCHET_VIEWER_FACING_TERMS
+            if term in changed_lever_text
+        ],
+        "qualityIteration": manifest.get("qualityIteration") or "",
+        "payload": raw,
+        "issues": issues,
+    }
+
+
 def _text_present(value: object) -> bool:
     return bool(str(value or "").strip())
 
@@ -736,7 +927,7 @@ def _caption_layout_reviewed(caption_preset: str, quality_review_note: str) -> b
     return bool(quality_review_note) and any(term in lowered for term in CAPTION_LAYOUT_TERMS)
 
 
-def _caption_density_issue(caption_preset: str, subtitle_text: str) -> str:
+def _caption_density_issue(caption_preset: str, subtitle_text: str, duration_sec: float = 0.0) -> str:
     """Return a publish-blocking reason when burned-in Shorts text is too dense."""
     preset = str(caption_preset or "").strip()
     if preset == "none" or not subtitle_text.strip():
@@ -749,8 +940,8 @@ def _caption_density_issue(caption_preset: str, subtitle_text: str) -> str:
     if len(visible_lines) > 2:
         return f"{preset} caption has too many lines ({len(visible_lines)}/2)"
     korean_count = sum(1 for char in subtitle_text if "\uac00" <= char <= "\ud7a3" or "\u3131" <= char <= "\u318e")
+    compact_length = _compact_text_length(subtitle_text)
     if korean_count > len(subtitle_text) * 0.3:
-        compact_length = _compact_text_length(subtitle_text)
         max_compact = SHORTS_CAPTION_MAX_COMPACT_CHARS.get(preset)
         if max_compact and compact_length > max_compact:
             return f"{preset} caption is too dense ({compact_length}/{max_compact} compact chars)"
@@ -759,7 +950,31 @@ def _caption_density_issue(caption_preset: str, subtitle_text: str) -> str:
         max_words = {"top-hook": 9, "center-short": 8, "lower-info": 12}.get(preset)
         if max_words and word_count > max_words:
             return f"{preset} caption is too dense ({word_count}/{max_words} words)"
+    if duration_sec > 0:
+        min_seconds_per_char = SHORTS_CAPTION_MIN_SECONDS_BY_COMPACT_CHAR.get(preset)
+        if min_seconds_per_char:
+            required_duration = compact_length * min_seconds_per_char
+            if required_duration > duration_sec + SHORTS_CAPTION_READING_SLACK_SEC:
+                return (
+                    f"{preset} caption reads too fast "
+                    f"({compact_length} compact chars in {duration_sec:.1f}s; needs {required_duration:.1f}s)"
+                )
     return ""
+
+
+def _reference_edit_grammar_terms(*values: object) -> list[str]:
+    """Extract concrete short-form reference grammar terms from review notes."""
+    text = " ".join(str(value or "") for value in values).strip().lower()
+    if not text:
+        return []
+    compact = re.sub(r"[\s_]+", "", text)
+    hits: list[str] = []
+    for term in REFERENCE_EDIT_GRAMMAR_TERMS:
+        term_lower = term.lower()
+        normalized = re.sub(r"[\s_]+", "", term_lower)
+        if term_lower in text or (normalized and normalized in compact):
+            hits.append(term)
+    return sorted(set(hits))
 
 
 def _manual_visual_verdict_status(value: object) -> str:
@@ -1214,6 +1429,7 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
     subtitle_only_narration_scenes: list[str] = []
     missing_narration_scenes: list[str] = []
     thin_narration_scenes: list[str] = []
+    short_voiceover_callout_scenes: list[str] = []
     production_meta_narration_scenes: list[str] = []
     production_meta_subtitle_scenes: list[str] = []
     production_meta_terms_by_scene: dict[str, list[str]] = {}
@@ -1230,6 +1446,11 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
     caption_density_issues_by_scene: dict[str, str] = {}
     caption_layout_review_scenes: list[str] = []
     missing_caption_layout_review_scenes: list[str] = []
+    scene_duration_by_id: dict[str, float] = {}
+    long_hold_scene_ids: list[str] = []
+    short_form_reference_scenes: list[str] = []
+    missing_reference_edit_grammar_scenes: list[str] = []
+    reference_edit_terms_by_scene: dict[str, list[str]] = {}
     repeated_visual_asset_scenes: list[str] = []
     free_asset_provenance_scenes: list[str] = []
     missing_free_asset_provenance_scenes: list[str] = []
@@ -1420,6 +1641,11 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
             or ""
         ).strip()
         selected_candidate_summary = str(scene.get("selectedCandidateSummary") or "").strip()
+        source_recovery_replacement_ready = (
+            visual_asset.get("sourceRecoveryReplacement") is True
+            and bool(str(visual_asset.get("sourceRecoveryAcceptanceSha256") or "").strip())
+            and bool(str(visual_asset.get("acceptedReplacementSha256") or "").strip())
+        )
         source_provenance = (
             selected_candidate.get("sourceProvenance")
             if isinstance(selected_candidate.get("sourceProvenance"), dict)
@@ -1447,13 +1673,13 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
         grok_source_curation_issues: list[str] = []
         if is_grok_handoff_source:
             grok_source_curation_scenes.append(scene_id)
-            if grok_candidate_count < 2:
+            if grok_candidate_count < 2 and not source_recovery_replacement_ready:
                 grok_source_curation_issues.append("candidateCount<2")
                 missing_grok_candidate_comparison_scenes.append(scene_id)
             if not selected_file_name:
                 grok_source_curation_issues.append("selectedFileName")
                 missing_grok_selected_file_scenes.append(scene_id)
-            if len(selected_candidate_summary) < 24:
+            if len(selected_candidate_summary) < 24 and not source_recovery_replacement_ready:
                 grok_source_curation_issues.append("selectedCandidateSummary")
                 if scene_id not in missing_grok_candidate_comparison_scenes:
                     missing_grok_candidate_comparison_scenes.append(scene_id)
@@ -1596,6 +1822,38 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
         narration_meta_terms = _production_meta_terms(narration_text)
         subtitle_meta_terms = _production_meta_terms(subtitle_text)
         caption_duration = _scene_caption_duration(scene)
+        try:
+            scene_duration = float(scene.get("durationSec") if scene.get("durationSec") is not None else scene.get("duration_sec") or 0)
+        except (TypeError, ValueError):
+            scene_duration = 0.0
+        if scene_duration > 0:
+            scene_duration_by_id[scene_id] = scene_duration
+        edit_beat_note = str(
+            scene.get("editBeatNote")
+            or scene.get("cutPacingNote")
+            or scene.get("shortFormEditNote")
+            or scene.get("referenceEditNote")
+            or ""
+        ).strip()
+        if (
+            scene_duration > float(REFERENCE_EDIT_GRAMMAR_POLICY["maxUnjustifiedHoldSec"])
+            and not edit_beat_note
+        ):
+            long_hold_scene_ids.append(scene_id)
+            caveats.append(f"long hold without edit beat note ({scene_duration:.1f}s)")
+        reference_terms = _reference_edit_grammar_terms(
+            platform_comparison_note,
+            quality_review_note,
+            layout_variant_note,
+            hook_note,
+            edit_beat_note,
+        )
+        if reference_terms:
+            short_form_reference_scenes.append(scene_id)
+            reference_edit_terms_by_scene[scene_id] = reference_terms
+        else:
+            missing_reference_edit_grammar_scenes.append(scene_id)
+            caveats.append("missing concrete reference edit grammar: hook/cut rhythm/caption safe-zone/platform reference")
         min_chars = _required_narration_chars(content_template, scene_id, first_scene_id)
         narration_min_chars_by_scene[scene_id] = min_chars
         if narration_text and audio_design_mode == "no-voice":
@@ -1603,7 +1861,16 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
         audio_design_modes_by_scene[scene_id] = audio_design_mode
         if narration_text:
             narration_scenes.append(scene_id)
-            if narration_length < min_chars:
+            short_callout_approved = _short_voiceover_callout_approved(
+                scene,
+                content_template,
+                narration_length,
+                subtitle_length,
+                scene_duration,
+            )
+            if short_callout_approved:
+                short_voiceover_callout_scenes.append(scene_id)
+            if narration_length < min_chars and not short_callout_approved:
                 thin_narration_scenes.append(scene_id)
                 caveats.append(f"thin narration for TTS ({narration_length}/{min_chars})")
             if narration_meta_terms:
@@ -1688,7 +1955,7 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
                 caveats.append("missing explicit stock/AI clip fit verdict")
         if caption_preset != "none" and subtitle_text:
             captioned_scene_ids.append(scene_id)
-            density_issue = _caption_density_issue(caption_preset, subtitle_text)
+            density_issue = _caption_density_issue(caption_preset, subtitle_text, caption_duration)
             if density_issue:
                 caption_density_issue_scenes.append(scene_id)
                 caption_density_issues_by_scene[scene_id] = density_issue
@@ -1741,6 +2008,7 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
                 "narrationTextLength": narration_length,
                 "subtitleTextLength": subtitle_length,
                 "requiredNarrationTextLength": min_chars,
+                "shortVoiceoverCalloutApproved": scene_id in short_voiceover_callout_scenes,
                 "audioDesignMode": audio_design_mode,
                 "voiceoverRequiredNoVoice": scene_id in voiceover_required_no_voice_scenes,
                 "visualLedNoVoiceApproved": visual_led_no_voice_approved,
@@ -1781,6 +2049,7 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
                 "grokSourceCuration": {
                     "required": is_grok_handoff_source,
                     "ready": is_grok_handoff_source and not grok_source_curation_issues,
+                    "sourceRecoveryReplacement": source_recovery_replacement_ready,
                     "candidateCount": grok_candidate_count,
                     "selectedFileName": selected_file_name,
                     "selectedCandidateSummaryReady": len(selected_candidate_summary) >= 24,
@@ -1835,6 +2104,30 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
             and not repeated_visual_asset_scenes
         )
     )
+    average_scene_duration_sec = (
+        round(sum(scene_duration_by_id.values()) / len(scene_duration_by_id), 2)
+        if scene_duration_by_id
+        else 0.0
+    )
+    reference_edit_grammar_issues: list[str] = []
+    if missing_reference_edit_grammar_scenes:
+        reference_edit_grammar_issues.append(
+            f"missing reference edit grammar scenes={missing_reference_edit_grammar_scenes}"
+        )
+    if long_hold_scene_ids:
+        reference_edit_grammar_issues.append(
+            f"long holds above {REFERENCE_EDIT_GRAMMAR_POLICY['maxUnjustifiedHoldSec']}s without beat notes={long_hold_scene_ids}"
+        )
+    if (
+        len(scenes) >= 4
+        and average_scene_duration_sec > float(REFERENCE_EDIT_GRAMMAR_POLICY["targetAverageCutSec"])
+    ):
+        reference_edit_grammar_issues.append(
+            f"average scene duration {average_scene_duration_sec:.2f}s exceeds {REFERENCE_EDIT_GRAMMAR_POLICY['targetAverageCutSec']}s reference pacing"
+        )
+    if not first_scene_hook_ready:
+        reference_edit_grammar_issues.append("first scene lacks explicit first-two-second hook treatment")
+    reference_edit_grammar_ready = not reference_edit_grammar_issues
     first_scene_id = str(first_scene.get("sceneId") or "scene-01")
     thumbnail_first_frame_ready = first_scene_id in thumbnail_review_scenes and first_scene_hook_ready
     min_original_scene_count = 1 if len(scenes) <= 1 else max(2, (len(scenes) + 1) // 2)
@@ -1909,6 +2202,7 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
             "subtitleOnlyNarrationScenes": subtitle_only_narration_scenes,
             "missingNarrationScenes": missing_narration_scenes,
             "thinNarrationScenes": thin_narration_scenes,
+            "shortVoiceoverCalloutScenes": short_voiceover_callout_scenes,
             "productionMetaNarrationScenes": production_meta_narration_scenes,
             "productionMetaSubtitleScenes": production_meta_subtitle_scenes,
             "productionMetaTermsByScene": production_meta_terms_by_scene,
@@ -1929,6 +2223,15 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
             "captionLayoutReviewScenes": caption_layout_review_scenes,
             "missingCaptionLayoutReviewScenes": missing_caption_layout_review_scenes,
             "captionPresetCounts": caption_preset_counts,
+            "referenceEditGrammarPolicy": REFERENCE_EDIT_GRAMMAR_POLICY,
+            "referenceEditGrammarReady": reference_edit_grammar_ready,
+            "referenceEditGrammarIssues": reference_edit_grammar_issues,
+            "referenceEditTermsByScene": reference_edit_terms_by_scene,
+            "shortFormReferenceScenes": short_form_reference_scenes,
+            "missingReferenceEditGrammarScenes": missing_reference_edit_grammar_scenes,
+            "longHoldSceneIds": long_hold_scene_ids,
+            "averageSceneDurationSec": average_scene_duration_sec,
+            "sceneDurationById": scene_duration_by_id,
             "repeatedVisualAssetScenes": repeated_visual_asset_scenes,
             "freeAssetProvenanceScenes": free_asset_provenance_scenes,
             "missingFreeAssetProvenanceScenes": missing_free_asset_provenance_scenes,
@@ -2140,9 +2443,11 @@ def _build_publish_readiness(
     placeholder_bgm_reasons = production_summary.get("placeholderBgmAssetReasons") or {}
     template_source_review = production_review.get("templateSourceReview") or {}
     cut_density_ready = production_summary.get("shortsCutDensityReady") is True
+    reference_edit_grammar_ready = production_summary.get("referenceEditGrammarReady") is True
     ai_slop_status = check_status("aiSlopVisualFit")
     stock_ai_fit_status = check_status("stockAiClipFit")
     thumbnail_strength_status = check_status("thumbnailFirstFrameStrength")
+    quality_ratchet_status = check_status("qualityRatchet")
 
     add_criterion(
         "imageFallback",
@@ -2191,6 +2496,14 @@ def _build_publish_readiness(
         check_detail("cutDensityPacing"),
         "Use at least four distinct moving clips for short-form operating templates unless a slower visual-led edit is explicitly approved.",
         False,
+    )
+    add_criterion(
+        "referenceEditGrammar",
+        "Reference edit grammar reflected",
+        "pass" if reference_edit_grammar_ready else "fail",
+        check_detail("referenceEditGrammar"),
+        "Translate the reference pass into concrete edit grammar: first-two-second hook, 2-3s cut rhythm, caption safe-zone, and platform comparison notes.",
+        True,
     )
     add_criterion(
         "aiSlopVisualFit",
@@ -2259,6 +2572,14 @@ def _build_publish_readiness(
         check_detail("templateSourcePlan"),
         "Match the selected Korean YouTube template with an intentional source mix, free asset plan, and layout proof.",
         False,
+    )
+    add_criterion(
+        "qualityRatchet",
+        "Quality iteration ratchet evidence",
+        "fail" if quality_ratchet_status == "fail" else "pass",
+        check_detail("qualityRatchet"),
+        "Record previousBaseline, rejectionCause, changedLever, expectedVisibleImprovement, actualProof, and nextRatchet before treating a quality iteration as improved.",
+        quality_ratchet_status == "fail",
     )
 
     passed = sum(1 for item in criteria if item["status"] == "pass")
@@ -2382,6 +2703,7 @@ def _build_channel_readiness(
         and not production_summary.get("captionSparsePlan")
         and not production_summary.get("longTopHookScenes")
     )
+    reference_edit_grammar_ready = production_summary.get("referenceEditGrammarReady") is True
     visual_verdict_ready = total_scenes > 0 and len(visual_verdict_scenes) == total_scenes and not failed_visual_verdict
     asset_diversity_ready = not production_summary.get("repeatedVisualAssetScenes")
     free_asset_provenance_ready = (
@@ -2471,6 +2793,7 @@ def _build_channel_readiness(
             f"subtitleOnlyNarrationScenes={production_summary.get('subtitleOnlyNarrationScenes') or []}, "
             f"missingNarrationScenes={production_summary.get('missingNarrationScenes') or []}, "
             f"thinNarrationScenes={production_summary.get('thinNarrationScenes') or []}, "
+            f"shortVoiceoverCalloutScenes={production_summary.get('shortVoiceoverCalloutScenes') or []}, "
             f"noVoiceAudioDesignScenes={production_summary.get('noVoiceAudioDesignScenes') or []}, "
             f"voiceoverRequiredNoVoiceScenes={production_summary.get('voiceoverRequiredNoVoiceScenes') or []}, "
             f"visualLedNoVoiceApprovedScenes={production_summary.get('visualLedNoVoiceApprovedScenes') or []}, "
@@ -2503,6 +2826,20 @@ def _build_channel_readiness(
             f"longTopHookScenes={production_summary.get('longTopHookScenes') or []}"
         ),
         "Record caption layout review, avoid one long hook plus empty caption plan, and keep lower-info y<=1536 / right-side danger zone clear.",
+        True,
+    )
+    add_criterion(
+        "referenceEditGrammar",
+        "Reference edit grammar is reflected in the edit",
+        "pass" if reference_edit_grammar_ready else "fail",
+        (
+            f"ready={reference_edit_grammar_ready}, "
+            f"avgSceneDurationSec={production_summary.get('averageSceneDurationSec')}, "
+            f"missingReferenceEditGrammarScenes={production_summary.get('missingReferenceEditGrammarScenes') or []}, "
+            f"longHoldSceneIds={production_summary.get('longHoldSceneIds') or []}, "
+            f"issues={production_summary.get('referenceEditGrammarIssues') or []}"
+        ),
+        "Apply researched Shorts/Reels/TikTok grammar as render data: first-two-second hook, 2-3s cut rhythm, caption safe-zone, and platform comparison evidence.",
         True,
     )
     add_criterion(
@@ -2618,7 +2955,14 @@ def _build_channel_readiness(
         status = "needs-quality-review"
     elif not visual_verdict_ready:
         status = "needs-visual-verdict"
-    elif not narration_ready or not caption_layout_ready or not asset_diversity_ready or not free_asset_provenance_ready or not template_source_ready:
+    elif (
+        not narration_ready
+        or not caption_layout_ready
+        or not reference_edit_grammar_ready
+        or not asset_diversity_ready
+        or not free_asset_provenance_ready
+        or not template_source_ready
+    ):
         status = "needs-top-tier-evidence"
     else:
         status = "channel-ready"
@@ -2661,6 +3005,7 @@ def _build_channel_readiness(
             "firstSceneHookReady": first_hook_ready,
             "narrationReady": narration_ready,
             "captionLayoutReady": caption_layout_ready,
+            "referenceEditGrammarReady": reference_edit_grammar_ready,
             "visualVerdictReady": visual_verdict_ready,
             "assetDiversityReady": asset_diversity_ready,
             "freeAssetProvenanceReady": free_asset_provenance_ready,
@@ -2757,6 +3102,7 @@ def _build_upload_review(
         and not production_summary.get("captionSparsePlan")
         and not production_summary.get("longTopHookScenes")
     )
+    reference_edit_grammar_ready = production_summary.get("referenceEditGrammarReady") is True
     visual_verdict_ready = total_scenes > 0 and len(visual_verdict_scenes) == total_scenes and not failed_visual_verdict
     asset_diversity_ready = not production_summary.get("repeatedVisualAssetScenes")
     free_asset_provenance_ready = (
@@ -2834,6 +3180,14 @@ def _build_upload_review(
         True,
     )
     add_criterion(
+        "referenceEditGrammar",
+        "Reference edit grammar reflected",
+        "pass" if reference_edit_grammar_ready else "fail",
+        check_detail("referenceEditGrammar"),
+        "Do not upload until researched reference grammar is visible in render data: first-two-second hook, 2-3s cut rhythm, safe-zone captions, and platform comparison.",
+        True,
+    )
+    add_criterion(
         "outputAudioSpec",
         "1080x1920 / 30fps / audio stream",
         check_status("outputSpec"),
@@ -2849,6 +3203,7 @@ def _build_upload_review(
             f"subtitleOnlyNarrationScenes={production_summary.get('subtitleOnlyNarrationScenes') or []}, "
             f"missingNarrationScenes={production_summary.get('missingNarrationScenes') or []}, "
             f"thinNarrationScenes={production_summary.get('thinNarrationScenes') or []}, "
+            f"shortVoiceoverCalloutScenes={production_summary.get('shortVoiceoverCalloutScenes') or []}, "
             f"noVoiceAudioDesignScenes={production_summary.get('noVoiceAudioDesignScenes') or []}, "
             f"voiceoverRequiredNoVoiceScenes={production_summary.get('voiceoverRequiredNoVoiceScenes') or []}, "
             f"visualLedNoVoiceApprovedScenes={production_summary.get('visualLedNoVoiceApprovedScenes') or []}, "
@@ -3040,6 +3395,7 @@ def _build_upload_review(
             "platformComparisonReady": platform_comparison_ready,
             "narrationReady": narration_ready,
             "captionLayoutReady": caption_layout_ready,
+            "referenceEditGrammarReady": reference_edit_grammar_ready,
             "visualVerdictReady": visual_verdict_ready,
             "assetDiversityReady": asset_diversity_ready,
             "freeAssetProvenanceReady": free_asset_provenance_ready,
@@ -3082,6 +3438,11 @@ def _build_top_tier_readiness(
     hero_evidence_ready = channel_summary.get("heroOriginalityEvidenceReady") is True
     narration_ready = channel_summary.get("narrationReady") is True or upload_summary.get("narrationReady") is True
     caption_layout_ready = channel_summary.get("captionLayoutReady") is True or upload_summary.get("captionLayoutReady") is True
+    reference_edit_grammar_ready = (
+        channel_summary.get("referenceEditGrammarReady") is True
+        or upload_summary.get("referenceEditGrammarReady") is True
+        or production_summary.get("referenceEditGrammarReady") is True
+    )
     visual_verdict_ready = channel_summary.get("visualVerdictReady") is True or upload_summary.get("visualVerdictReady") is True
     asset_diversity_ready = channel_summary.get("assetDiversityReady") is True or upload_summary.get("assetDiversityReady") is True
     free_asset_provenance_ready = (
@@ -3204,6 +3565,13 @@ def _build_top_tier_readiness(
         (checks.get("captionDensityAndSafeZone") or {}).get("status") == "pass",
         (checks.get("captionDensityAndSafeZone") or {}).get("detail") or "caption density check missing",
         "Shorten burned-in captions and keep lower captions in the lower-mid Shorts safe zone, not the bottom UI area.",
+    )
+    add_criterion(
+        "referenceEditGrammar",
+        "Reference edit grammar reflected",
+        reference_edit_grammar_ready and (checks.get("referenceEditGrammar") or {}).get("status") == "pass",
+        (checks.get("referenceEditGrammar") or {}).get("detail") or f"referenceEditGrammarReady={reference_edit_grammar_ready}",
+        "Apply researched short-form reference grammar before top-tier review: first-two-second hook, 2-3s cut rhythm, caption safe-zone, and platform comparison evidence.",
     )
     add_criterion(
         "manualVisualVerdict",
@@ -3366,13 +3734,33 @@ def _build_top_tier_readiness(
 
 
 def _audio_asset_has_narration_voice(asset: dict) -> bool:
-    provider = str(asset.get("provider") or "").strip()
+    provider = str(asset.get("provider") or "").strip().lower()
     kind = str(asset.get("kind") or "").strip()
     if provider in FREE_NARRATION_PROVIDERS:
         return kind != "fallback-tone"
     if provider == "upload" and kind in {"uploaded-audio", "voiceover", "native"}:
         return bool(str(asset.get("sourcePath") or asset.get("outputPath") or "").strip())
     return False
+
+
+def _is_live_channel_strict_manifest(manifest: dict) -> bool:
+    project_id = str(
+        manifest.get("projectId")
+        or manifest.get("project_id")
+        or ""
+    ).strip().lower()
+    render_purpose = str(
+        manifest.get("renderPurpose")
+        or manifest.get("render_purpose")
+        or ""
+    ).strip().lower()
+    if project_id.startswith("live-channel-"):
+        return True
+    if "live-channel" in render_purpose or render_purpose in {"grok-final-handoff", "grok-final"}:
+        return True
+    return _truthy_metadata(manifest.get("grokMainSourceRequired")) and _truthy_metadata(
+        manifest.get("qualityGateRequired")
+    )
 
 
 def _stream_duration_seconds(stream: dict) -> float | None:
@@ -3491,6 +3879,16 @@ def write_render_quality_report(
         for asset in audio_assets
         if str(asset.get("provider") or "") == "fallback-sine" or str(asset.get("kind") or "") == "fallback-tone"
     })
+    strict_live_channel = _is_live_channel_strict_manifest(manifest)
+    draft_only_voice_scene_ids = sorted({
+        audio_scene_id(asset)
+        for asset in audio_assets
+        if strict_live_channel
+        and audio_scene_id(asset) in narration_scene_ids
+        and str(asset.get("provider") or "").strip().lower() in DRAFT_ONLY_NARRATION_PROVIDERS
+        and _audio_asset_has_narration_voice(asset)
+    })
+    production_summary["draftOnlyVoiceoverScenes"] = draft_only_voice_scene_ids
     missing_narration_audio_scenes = sorted(narration_scene_ids - narration_audio_scene_ids)
     narration_status = "pass"
     if production_summary["missingNarrationScenes"] or production_summary["thinNarrationScenes"]:
@@ -3503,6 +3901,8 @@ def write_render_quality_report(
         narration_status = "fail"
     elif fallback_tone_scene_ids or missing_narration_audio_scenes:
         narration_status = "fail"
+    elif draft_only_voice_scene_ids:
+        narration_status = "fail"
     caption_layout_status = (
         "pass"
         if not production_summary["missingCaptionLayoutReviewScenes"]
@@ -3511,6 +3911,7 @@ def write_render_quality_report(
         else "fail"
     )
     caption_density_status = "pass" if not production_summary["captionDensityIssueScenes"] else "fail"
+    reference_edit_grammar_status = "pass" if production_summary.get("referenceEditGrammarReady") else "fail"
     asset_diversity_status = "pass" if not production_summary["repeatedVisualAssetScenes"] else "fail"
     free_asset_provenance_status = (
         "pass"
@@ -3537,6 +3938,7 @@ def write_render_quality_report(
         if not production_summary["missingGrokSourceCurationScenes"]
         else "fail"
     )
+    quality_ratchet = _build_quality_ratchet_review(manifest)
 
     checks = {
         "outputSpec": _check(
@@ -3656,10 +4058,12 @@ def write_render_quality_report(
             narration_status,
             (
                 f"audioProviders={audio_providers}, "
+                f"strictLiveChannel={strict_live_channel}, "
                 f"narrationScenes={production_summary['narrationScenes']}, "
                 f"subtitleOnlyNarrationScenes={production_summary['subtitleOnlyNarrationScenes']}, "
                 f"missingNarrationScenes={production_summary['missingNarrationScenes']}, "
                 f"thinNarrationScenes={production_summary['thinNarrationScenes']}, "
+                f"shortVoiceoverCalloutScenes={production_summary.get('shortVoiceoverCalloutScenes') or []}, "
                 f"noVoiceAudioDesignScenes={production_summary['noVoiceAudioDesignScenes']}, "
                 f"voiceoverRequiredNoVoiceScenes={production_summary.get('voiceoverRequiredNoVoiceScenes') or []}, "
                 f"visualLedNoVoiceApprovedScenes={production_summary.get('visualLedNoVoiceApprovedScenes') or []}, "
@@ -3672,6 +4076,7 @@ def write_render_quality_report(
                 f"requiredChars={production_summary['narrationMinCharsByScene']}, "
                 f"narrationAudioScenes={sorted(narration_audio_scene_ids)}, "
                 f"missingNarrationAudioScenes={missing_narration_audio_scenes}, "
+                f"draftOnlyVoiceoverScenes={draft_only_voice_scene_ids}, "
                 f"fallbackToneScenes={fallback_tone_scene_ids}"
             ),
         ),
@@ -3700,6 +4105,18 @@ def write_render_quality_report(
                 f"policy={production_summary['captionSafeZonePolicy']}, "
                 f"maxCompactChars={production_summary['captionMaxCompactChars']}, "
                 f"issues={production_summary['captionDensityIssuesByScene']}"
+            ),
+        ),
+        "referenceEditGrammar": _check(
+            reference_edit_grammar_status,
+            (
+                f"policy={production_summary.get('referenceEditGrammarPolicy')}, "
+                f"ready={production_summary.get('referenceEditGrammarReady')}, "
+                f"avgSceneDurationSec={production_summary.get('averageSceneDurationSec')}, "
+                f"shortFormReferenceScenes={production_summary.get('shortFormReferenceScenes') or []}, "
+                f"missing={production_summary.get('missingReferenceEditGrammarScenes') or []}, "
+                f"longHolds={production_summary.get('longHoldSceneIds') or []}, "
+                f"issues={production_summary.get('referenceEditGrammarIssues') or []}"
             ),
         ),
         "assetReuseDiversity": _check(
@@ -3761,6 +4178,16 @@ def write_render_quality_report(
                 f"recommended={production_review['templateSourceReview']['recommendedFixes']}"
             ),
         ),
+        "qualityRatchet": _check(
+            quality_ratchet["status"],
+            (
+                f"required={quality_ratchet['required']}, "
+                f"qualityIteration={quality_ratchet['qualityIteration']}, "
+                f"missingFields={quality_ratchet['missingFields']}, "
+                f"viewerFacingLever={quality_ratchet['viewerFacingLever']}, "
+                f"viewerFacingTerms={quality_ratchet['viewerFacingTerms']}"
+            ),
+        ),
     }
     publish_readiness = _build_publish_readiness(checks, production_review, local_media_summary)
     channel_readiness = _build_channel_readiness(publish_readiness, production_review, local_media_summary)
@@ -3820,11 +4247,13 @@ def write_render_quality_report(
         "productionReview": production_review,
         "operatingTemplate": (production_review.get("templateSourceReview") or {}).get("operatingTemplate"),
         "sourceMotionEvidence": source_motion_evidence,
+        "qualityRatchet": quality_ratchet,
         "publishReadiness": publish_readiness,
         "channelReadiness": channel_readiness,
         "uploadReview": upload_review,
         "topTierReadiness": top_tier_readiness,
         "checks": checks,
+        "gateSystem": build_render_gate_system(checks),
     }
     report_path = render_dir / "render-quality-report.json"
     write_text(report_path, json.dumps(report, ensure_ascii=False, indent=2))
@@ -4040,8 +4469,7 @@ def create_visual_clip_from_poster(
                 "-y",
                 "-i", str(poster_path),
                 "-vf", vf,
-                "-c:v", "libx264",
-                "-pix_fmt", "yuv420p",
+                *H264_RENDER_ARGS,
                 "-an",
                 str(output_path),
             ],
@@ -4057,8 +4485,7 @@ def create_visual_clip_from_poster(
                 "-t", f"{duration_sec:.2f}",
                 "-i", str(poster_path),
                 "-vf", VIDEO_FILTER,
-                "-c:v", "libx264",
-                "-pix_fmt", "yuv420p",
+                *H264_RENDER_ARGS,
                 "-an",
                 str(output_path),
             ],
@@ -4261,8 +4688,7 @@ def create_scene_clip(
                     "-i", str(audio_path),
                     "-vf", f"{motion_filter},format=yuv420p",
                     "-t", f"{duration_sec:.2f}",
-                    "-c:v", "libx264",
-                    "-pix_fmt", "yuv420p",
+                    *H264_RENDER_ARGS,
                     "-c:a", "aac",
                     str(clip_path),
                 ],
@@ -4290,8 +4716,7 @@ def create_scene_clip(
             "-map", "1:a:0",
             "-t", f"{duration_sec:.2f}",
             "-vf", VIDEO_FILTER,
-            "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
+            *H264_RENDER_ARGS,
             "-c:a", "aac",
             str(clip_path),
         ],

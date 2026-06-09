@@ -1,0 +1,36 @@
+{
+  "incompetech-the-show-must-be-go.mp3": {
+    "provider": "local-bgm",
+    "sourceProvider": "incompetech",
+    "title": "The Show Must Be Go",
+    "artist": "Kevin MacLeod",
+    "creator": "Kevin MacLeod",
+    "sourceUrl": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/The%20Show%20Must%20Be%20Go.mp3",
+    "sourceLicense": "Creative Commons Attribution 3.0 Unported",
+    "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+    "attributionRequired": true,
+    "attribution": "The Show Must Be Go Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 3.0 License. http://creativecommons.org/licenses/by/3.0/",
+    "mood": "energetic",
+    "kind": "bgm",
+    "templateFamilies": ["ranking_list", "live_recap", "news_explainer"],
+    "downloadDate": "2026-06-08",
+    "editNotes": "Use for opener momentum or list countdowns; keep voiceover clearly above the brass hits."
+  },
+  "incompetech-hot-swing.mp3": {
+    "provider": "local-bgm",
+    "sourceProvider": "incompetech",
+    "title": "Hot Swing",
+    "artist": "Kevin MacLeod",
+    "creator": "Kevin MacLeod",
+    "sourceUrl": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Hot%20Swing.mp3",
+    "sourceLicense": "Creative Commons Attribution 3.0 Unported",
+    "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+    "attributionRequired": true,
+    "attribution": "Hot Swing Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 3.0 License. http://creativecommons.org/licenses/by/3.0/",
+    "mood": "energetic",
+    "kind": "bgm",
+    "templateFamilies": ["ranking_list", "live_recap", "authentic_vlog"],
+    "downloadDate": "2026-06-08",
+    "editNotes": "Use as a short rhythmic lift; avoid overusing on serious topics."
+  }
+}

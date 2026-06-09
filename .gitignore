@@ -15,3 +15,6 @@ reference/
 HEdbg0vaEAASMCQ.jpg
 .claude/skills/
 .cache/
+
+# BGM audio binaries (re-downloadable via assets/bgm/*/sources.json sourceUrl; metadata tracked)
+assets/bgm/**/*.mp3

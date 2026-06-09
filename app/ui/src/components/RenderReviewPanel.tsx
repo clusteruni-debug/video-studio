@@ -12,6 +12,7 @@ import type {
   PexelsReplacementResearch,
   ProductionReviewScene,
   PublishPacketResult,
+  QualityGateSystem,
   RenderQualityCheck,
   SourceRecoveryAcceptanceMaterializeResult,
   SourceRecoveryRerenderPlanResult,
@@ -448,6 +449,79 @@ function goalReadinessLabel(goalComplete: boolean | undefined, overallStatus: st
   return `strict gate ${overallStatus}`;
 }
 
+function gateSystemClass(status: string | undefined): string {
+  if (status === "pass" || status === "ready" || status === "complete" || status === "upload") return "pass";
+  if (status === "blocked" || status === "fail" || status === "missing" || status === "rerender") return "fail";
+  return "warn";
+}
+
+function QualityGateSystemPanel({
+  title,
+  gateSystem,
+}: {
+  title: string;
+  gateSystem?: QualityGateSystem | null;
+}) {
+  if (!gateSystem) return null;
+  const phaseStates = gateSystem.phaseStates ?? [];
+  const blockingKey = gateSystem.blockingPhaseKey || "none";
+  const renderSummary = gateSystem.renderQualitySummary;
+  const finalSummary = gateSystem.finalReadinessSummary;
+  const contractSummary = gateSystem.contractSummary;
+  const iterationSummary = gateSystem.qualityIterationSummary;
+  const failedRenderKeys = renderSummary?.failedOrMissingKeys ?? [];
+  const warnRenderKeys = renderSummary?.warnKeys ?? [];
+  const blockingFinalKeys = finalSummary?.blockingGateKeys ?? [];
+  const contractKeys = contractSummary?.requiredContractKeys ?? [];
+
+  return (
+    <div>
+      <span>{title}</span>
+      <div className="render-library-inline-panel">
+        <p className={gateSystemClass(gateSystem.status)}>
+          {gateSystem.surface || "gate-system"}: {gateSystem.status || "unchecked"} / blocking phase {blockingKey}
+        </p>
+        {gateSystem.systemVersion ? <p>system: {gateSystem.systemVersion}</p> : null}
+        {phaseStates.slice(0, 6).map((phase) => (
+          <p key={phase.phaseKey || phase.source || phase.status} className={gateSystemClass(phase.status)}>
+            {phase.phaseKey || "phase"}: {phase.status || "unchecked"}
+            {phase.blocking ? " / blocks" : ""}
+            {phase.detail ? ` - ${phase.detail}` : ""}
+          </p>
+        ))}
+        {contractSummary ? (
+          <p>
+            contracts {contractSummary.requiredContractCount ?? contractKeys.length}: {compactListLabel(contractKeys, "0")}
+          </p>
+        ) : null}
+        {renderSummary ? (
+          <p className={failedRenderKeys.length ? "fail" : warnRenderKeys.length ? "warn" : "pass"}>
+            render QA {renderSummary.checkCount ?? 0}: fail/missing {compactListLabel(failedRenderKeys, "0")} / warn{" "}
+            {compactListLabel(warnRenderKeys, "0")}
+          </p>
+        ) : null}
+        {finalSummary ? (
+          <p className={blockingFinalKeys.length ? "fail" : "pass"}>
+            final readiness {finalSummary.gateCount ?? 0}: blocking {compactListLabel(blockingFinalKeys, "0")} / pre-upload{" "}
+            {finalSummary.preUploadReady ? "ready" : "blocked"}
+          </p>
+        ) : null}
+        {iterationSummary ? (
+          <>
+            <p className={iterationSummary.requiresMutationResolution ? "fail" : "warn"}>
+              iteration {iterationSummary.iterationCount ?? 0}: {iterationSummary.nextRequiredActionStatus || "unchecked"}
+              {iterationSummary.latestStage ? ` / ${iterationSummary.latestStage}` : ""}
+            </p>
+            {iterationSummary.observedFailure ? <p>failure: {iterationSummary.observedFailure}</p> : null}
+            {iterationSummary.nextRequiredActionSummary ? <p>next mutation: {iterationSummary.nextRequiredActionSummary}</p> : null}
+            {iterationSummary.evidencePaths?.length ? <p>evidence: {compactListLabel(iterationSummary.evidencePaths, "0")}</p> : null}
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function stockCurationClass(curation: StockCandidateCurationEvidence | null | undefined): string {
   if (curation?.ready === true) return "pass";
   return "warn";
@@ -721,11 +795,12 @@ export function FinalVideoLibraryPanel({ autoLoad = false }: { autoLoad?: boolea
   const latestHandoffLiveFailCategories = latestGrokHandoff?.liveFailCategories ?? [];
   const grokHandoffSelection = libraryAudit?.sourcePipelineStatus?.grok?.handoffSelection ?? null;
   const grokNativeDownloadPromptPolicy = libraryAudit?.sourcePipelineStatus?.grok?.nativeDownloadPromptPolicy ?? null;
-  const grokDirectImport = libraryAudit?.sourcePipelineStatus?.grok?.companionDirectImport ?? null;
-  const grokDirectImportReady =
-    grokDirectImport?.operatorReady === true &&
-    grokDirectImport?.setupRequired !== true &&
-    grokDirectImport?.avoidsChromeDownloadPrompt === true;
+  const grokBrowserHandoffReady = Boolean(
+    libraryAudit?.sourcePipelineStatus?.grok?.nextAction ||
+    grokProofMonitorUrl ||
+    grokObservedPostUrl ||
+    latestGrokHandoff?.available,
+  );
   const stockCuration = libraryAudit?.sourcePipelineStatus?.pexels?.candidateCuration ?? null;
   const stockCurationMissing = stockCuration?.missingScenes ?? [];
   const pexelsReplacementResearch = libraryAudit?.sourcePipelineStatus?.pexels?.replacementResearch ?? null;
@@ -982,7 +1057,7 @@ export function FinalVideoLibraryPanel({ autoLoad = false }: { autoLoad?: boolea
               </span>
               <span className={(libraryCounts.uploadReady ?? 0) > 0 ? "pass" : "warn"}>upload {libraryCounts.uploadReady ?? 0}</span>
               <span className={(libraryCounts.topTierReady ?? 0) > 0 ? "pass" : "warn"}>top-tier {libraryCounts.topTierReady ?? 0}</span>
-              <span className={grokDirectImportReady ? "pass" : "warn"}>Grok direct import</span>
+              <span className={grokBrowserHandoffReady ? "pass" : "warn"}>Grok browser-control</span>
               {grokNativeDownloadPromptPolicy ? (
                 <span className={grokNativeDownloadPromptPolicy.blocksIfPromptAppears ? "fail" : "warn"}>
                   native download prompt {grokNativeDownloadPromptPolicy.status || "policy"}
@@ -1046,13 +1121,12 @@ export function FinalVideoLibraryPanel({ autoLoad = false }: { autoLoad?: boolea
                 ) : null}
               </div>
               <div>
-                <span>Grok import path</span>
-                {grokDirectImport ? (
+                <span>Grok browser-control import path</span>
                   <>
                     <p>
-                      {grokDirectImportReady
-                        ? "direct import avoids Chrome native download prompt"
-                        : "setup required before direct import"}
+                      {grokBrowserHandoffReady
+                        ? "browser-control handoff is available; production success still requires operator-owned local MP4 import/review"
+                        : "browser-control handoff status unavailable"}
                     </p>
                     {grokNativeDownloadPromptPolicy ? (
                       <p className={grokNativeDownloadPromptPolicy.blocksIfPromptAppears ? "fail" : "warn"}>
@@ -1060,19 +1134,11 @@ export function FinalVideoLibraryPanel({ autoLoad = false }: { autoLoad?: boolea
                         {grokNativeDownloadPromptPolicy.reason ? ` - ${grokNativeDownloadPromptPolicy.reason}` : ""}
                       </p>
                     ) : null}
-                    {grokDirectImport.sourceKind ? <p>{grokDirectImport.sourceKind}</p> : null}
-                    {grokDirectImport.chromeProfile?.profileDetected === true ? <p>existing Chrome profile detected</p> : null}
-                    {grokDirectImport.chromeProfile?.codexExtensionInstalled === true && !grokDirectImport.installedInExistingProfile ? (
-                      <p>Codex extension is installed, but Video Studio Grok Companion is not.</p>
-                    ) : null}
-                    {grokDirectImport.chromeProfile?.remoteDebuggingListening === false ? (
-                      <p>CDP 9222 is not listening; use the companion popup/manual flow.</p>
-                    ) : null}
-                    {grokDirectImport.operatorAction ? <p>{grokDirectImport.operatorAction}</p> : null}
+                    {libraryAudit?.sourcePipelineStatus?.grok?.nextAction ? <p>{libraryAudit.sourcePipelineStatus.grok.nextAction}</p> : null}
                     {grokProofMonitorUrl ? (
                       <p>
                         <a href={grokProofMonitorUrl} target="_blank" rel="noreferrer">
-                          Open direct import proof monitor
+                          Open Grok proof monitor
                         </a>
                       </p>
                     ) : null}
@@ -1233,11 +1299,7 @@ export function FinalVideoLibraryPanel({ autoLoad = false }: { autoLoad?: boolea
                         <SourceRecoveryRerenderPlanResultDetails result={sourceRecoveryRerenderPlanResult} />
                       </div>
                     ) : null}
-                    {grokDirectImport.fallback ? <p className="warn">fallback: {grokDirectImport.fallback}</p> : null}
                   </>
-                ) : (
-                  <p>Companion direct import status unavailable.</p>
-                )}
               </div>
               <div>
                 <span>Pexels candidate curation</span>
@@ -1335,6 +1397,7 @@ export function FinalVideoLibraryPanel({ autoLoad = false }: { autoLoad?: boolea
                         ))}
                       </div>
                     ) : null}
+                    <QualityGateSystemPanel title="Unified gate system" gateSystem={goalReadiness.gateSystem ?? libraryAudit.gateSystem} />
                     {freshSourceRepeatability ? (
                       <>
                         <p className={goalReadinessClass(freshSourceRepeatability.status)}>
@@ -2289,7 +2352,7 @@ export default function RenderReviewPanel() {
                   {grokProofMonitorUrl ? (
                     <p>
                       <a href={grokProofMonitorUrl} target="_blank" rel="noreferrer">
-                        Open direct import proof monitor
+                        Open Grok proof monitor
                       </a>
                     </p>
                   ) : null}
@@ -2395,6 +2458,7 @@ export default function RenderReviewPanel() {
                           ))}
                         </div>
                       ) : null}
+                      <QualityGateSystemPanel title="Unified gate system" gateSystem={libraryGoalReadiness.gateSystem ?? libraryAudit.gateSystem} />
                       {libraryFreshSourceRepeatability ? (
                         <>
                           <p className={goalReadinessClass(libraryFreshSourceRepeatability.status)}>
@@ -2838,6 +2902,12 @@ export default function RenderReviewPanel() {
         <span><strong>{generated}</strong> stock/local</span>
         <span className={placeholders > 0 ? "danger" : ""}><strong>{placeholders}</strong> placeholder</span>
       </div>
+
+      {report?.gateSystem ? (
+        <div className="render-publish-gate-lists">
+          <QualityGateSystemPanel title="Render gate system" gateSystem={report.gateSystem} />
+        </div>
+      ) : null}
 
       <div className="render-check-grid">
         {Object.entries(checks).map(([key, check]) => (

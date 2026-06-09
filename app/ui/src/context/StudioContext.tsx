@@ -716,6 +716,22 @@ async function buildSceneAssets(scenes: Scene[]): Promise<SceneAssetPayload[]> {
         sourceLabel: scene._sfx_asset_title || fileName,
       });
     }
+    if (scene._voiceover_asset_path) {
+      const fileName = scene._voiceover_asset_name || baseNameFromPath(scene._voiceover_asset_path) || `${sceneId}-voiceover.wav`;
+      assets.push({
+        sceneId,
+        role: "audio",
+        fileName,
+        mimeType: scene._voiceover_asset_mime || audioMimeFromPath(scene._voiceover_asset_path),
+        sourcePath: scene._voiceover_asset_path,
+        provider: scene._voiceover_asset_provider || "upload",
+        sourceOrigin: scene._voiceover_asset_source_origin || "operator-owned-voiceover",
+        sourceLicense: scene._voiceover_asset_source_license || "operator-owned",
+        sourceLabel: scene._voiceover_asset_title || fileName,
+        kind: scene._voiceover_asset_kind || "voiceover",
+        operatorOwned: true,
+      });
+    }
   }
   return assets;
 }
@@ -974,7 +990,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
           ...(automationStatus ? { automationStatus } : {}),
           ...(patch.automationReplay ? { automationReplay: patch.automationReplay } : {}),
           ...(patch.automationJob ? { automationJob: patch.automationJob } : {}),
-          ...(patch.chromeCompanionExtension ? { chromeCompanionExtension: patch.chromeCompanionExtension } : {}),
+          chromeCompanionExtension: undefined,
         } satisfies GrokHandoffResult,
       });
     }
@@ -1746,7 +1762,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       dispatch({
         type: "SET_FIELD",
         field: "error",
-        value: "Grok 승인 실행+Downloads 감시는 native download prompt 함정 때문에 차단되었습니다. Companion/pageAssets direct import 또는 이미 소유한 로컬 MP4 반입만 사용하세요.",
+        value: "Grok 승인 실행+Downloads 감시는 native download prompt 함정 때문에 차단되었습니다. Browser-control generation proof 이후 operator-owned local MP4 반입 또는 explicit upload만 사용하세요.",
       });
       return null;
     },

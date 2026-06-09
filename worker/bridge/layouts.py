@@ -9,8 +9,39 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 # TTS defaults
 # ---------------------------------------------------------------------------
-DEFAULT_TTS_RATE = "+35%"
-DEFAULT_TTS_RATE_COMMENTARY = "+15%"
+DEFAULT_TTS_RATE = "+12%"
+DEFAULT_TTS_RATE_COMMENTARY = "+0%"
+
+TTS_QUALITY_CANDIDATES: list[dict[str, str]] = [
+    {
+        "key": "ko-female-natural",
+        "voice": "ko-KR-SunHiNeural",
+        "rate": "+8%",
+        "pitch": "+0Hz",
+        "label": "Korean female, natural pace",
+    },
+    {
+        "key": "ko-female-clear",
+        "voice": "ko-KR-SunHiNeural",
+        "rate": "+14%",
+        "pitch": "+0Hz",
+        "label": "Korean female, clear Shorts pace",
+    },
+    {
+        "key": "ko-male-natural",
+        "voice": "ko-KR-InJoonNeural",
+        "rate": "+8%",
+        "pitch": "+0Hz",
+        "label": "Korean male, natural pace",
+    },
+    {
+        "key": "ko-male-clear",
+        "voice": "ko-KR-InJoonNeural",
+        "rate": "+14%",
+        "pitch": "+0Hz",
+        "label": "Korean male, clear Shorts pace",
+    },
+]
 
 # ---------------------------------------------------------------------------
 # BGM mood → template mapping

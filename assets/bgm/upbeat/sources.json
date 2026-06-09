@@ -1,0 +1,36 @@
+{
+  "incompetech-carefree.mp3": {
+    "provider": "local-bgm",
+    "sourceProvider": "incompetech",
+    "title": "Carefree",
+    "artist": "Kevin MacLeod",
+    "creator": "Kevin MacLeod",
+    "sourceUrl": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Carefree.mp3",
+    "sourceLicense": "Creative Commons Attribution 3.0 Unported",
+    "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+    "attributionRequired": true,
+    "attribution": "Carefree Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 3.0 License. http://creativecommons.org/licenses/by/3.0/",
+    "mood": "upbeat",
+    "kind": "bgm",
+    "templateFamilies": ["ranking_list", "authentic_vlog", "tutorial_steps"],
+    "downloadDate": "2026-06-08",
+    "editNotes": "Use for friendly list/tutorial beats; trim to a clean phrase for Shorts."
+  },
+  "incompetech-life-of-riley.mp3": {
+    "provider": "local-bgm",
+    "sourceProvider": "incompetech",
+    "title": "Life of Riley",
+    "artist": "Kevin MacLeod",
+    "creator": "Kevin MacLeod",
+    "sourceUrl": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Life%20of%20Riley.mp3",
+    "sourceLicense": "Creative Commons Attribution 3.0 Unported",
+    "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+    "attributionRequired": true,
+    "attribution": "Life of Riley Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 3.0 License. http://creativecommons.org/licenses/by/3.0/",
+    "mood": "upbeat",
+    "kind": "bgm",
+    "templateFamilies": ["ranking_list", "live_recap", "kculture_fandom"],
+    "downloadDate": "2026-06-08",
+    "editNotes": "Use for bright recap energy; cut captions on phrase endings rather than every beat."
+  }
+}

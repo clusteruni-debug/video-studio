@@ -102,22 +102,35 @@ that explicitly require a title-card or ranking rhythm.
 
 ```
 Style: CenterShort,Pretendard,64,&H00FFFFFF,&H0000FFFF,&H00000000,&H90000000,1,0,0,0,100,100,0.2,0,1,3.5,1,5,72,170,0,1
-Style: TopHook,Pretendard,74,&H00FFFFFF,&H0000FFFF,&H00000000,&H90000000,1,0,0,0,100,100,0.2,0,1,4,1.2,8,72,170,150,1
-Style: LowerInfo,Pretendard,52,&H00FFFFFF,&H0000FFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,0.8,2,72,170,540,1
+Style: TopHook,Pretendard,78,&H00FFFFFF,&H0000FFFF,&H00000000,&H92000000,1,0,0,0,100,100,0.2,0,1,4.2,1.1,8,72,170,150,1
+Style: LowerInfo,Pretendard,58,&H00FFFFFF,&H0000FFFF,&H00000000,&H88000000,1,0,0,0,100,100,0,0,1,3.4,0.9,2,72,170,540,1
 Style: RankBadge,Pretendard,108,&H0000E6FF,&H0000FFFF,&H001A1A1A,&H80000000,1,0,0,0,100,100,0,0,1,5,1.2,7,78,170,164,1
 Style: RankTitle,Pretendard,58,&H00FFFFFF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,0,0,3,14,0,7,190,170,174,1
 Style: FactChip,Pretendard,44,&H00FFFFFF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,0,0,3,12,0,1,74,170,430,1
 Style: StoryHook,NanumMyeongjo,66,&H00F0F0F0,&H0000FFFF,&H00101010,&H90000000,0,0,0,0,100,100,1.2,0,1,3.5,1,8,92,170,188,1
-Style: StoryLower,NanumMyeongjo,48,&H00F4F4F4,&H0000FFFF,&H00101010,&H88000000,0,0,0,0,100,100,0.8,0,1,3,0.8,2,94,170,505,1
+Style: StoryLower,NanumMyeongjo,48,&H00F4F4F4,&H0000FFFF,&H00101010,&H88000000,0,0,0,0,100,100,0.8,0,1,3,0.8,2,94,170,690,1
 Style: ChapterKicker,Pretendard,38,&H0000D4FF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,1,0,3,10,0,7,74,170,150,1
 Style: ChapterTitle,Pretendard,62,&H00FFFFFF,&H0000FFFF,&H00101010,&H9A000000,1,0,0,0,100,100,0.4,0,3,12,0,7,74,170,218,1
 Style: StepChip,Pretendard,42,&H00FFFFFF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,0.4,0,3,10,0,7,74,170,155,1
+Style: RoutineStep,Pretendard,44,&H0000D4FF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,1,0,3,10,0,7,78,210,152,1
+Style: RoutineHook,Pretendard,84,&H00FFFFFF,&H0000FFFF,&H00101010,&H98000000,1,0,0,0,100,100,0.2,0,1,4.4,1.1,7,78,210,220,1
+Style: RoutineLower,Pretendard,62,&H00FFFFFF,&H0000FFFF,&H00101010,&H88000000,1,0,0,0,100,100,0,0,1,3.8,0.9,1,78,210,690,1
+Style: RoutineDetail,Pretendard,46,&H00EAEAEA,&H0000FFFF,&H00101010,&H7A000000,0,0,0,0,100,100,0,0,1,2.8,0.8,1,78,210,405,1
+Style: GrokHook,Pretendard,84,&H00FFFFFF,&H0000FFFF,&H00101010,&H8E000000,1,0,0,0,100,100,0.2,0,1,4.8,1.2,7,78,220,220,1
+Style: GrokLower,Pretendard,64,&H00FFFFFF,&H0000FFFF,&H00101010,&H86000000,1,0,0,0,100,100,0,0,1,4,1.1,1,78,220,690,1
+Style: GrokContinuity,Pretendard,68,&H00FFFFFF,&H0000FFFF,&H00141414,&HA8000000,1,0,0,0,100,100,0.2,0,3,14,0,7,78,220,220,1
+Style: GrokProof,Pretendard,46,&H00FFFFFF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,0.2,0,3,12,0,1,78,220,430,1
 ```
 
 Maximum display durations:
 - `top-hook`: 1.35s
 - `center-short`: 1.6s
 - `lower-info`: 1.8s
+
+Routine layouts must stay compact. `RoutineHook` and `RoutineLower` are not
+hero-title replacements; they exist to label a physical action without covering
+hands, phone screens, or object state changes. Increasing these sizes requires a
+phone-sized contact-sheet review and a test update.
 
 Template layout variants:
 - `rank-countdown`, `one-question-three-answers`: render a left top rank badge,
@@ -302,21 +315,168 @@ Motion assignment: cycle by scene_num % 4, no same motion for 2 consecutive scen
 
 ---
 
-## 6. FFmpeg Final Composition Command (Reference)
+## 6. FFmpeg Render Quality Floor
+
+This section is the reusable render-quality standard. It is not a one-off
+iteration note from a single candidate. A future render-quality change must
+either preserve these values or record evidence for why the standard changed.
+
+**Important**: Use `ass=` filter, NOT `subtitles=` filter, to fully apply ASS styles.
+
+### 6.1 Encoder Floor
+
+All scene clips and final composition encodes use this H.264 floor:
+
+```bash
+-c:v libx264 -preset medium -crf 18 -profile:v high -level 4.2 -pix_fmt yuv420p
+```
+
+Rules:
+- Do not fall back to FFmpeg/libx264 defaults for final candidate renders.
+- Do not raise CRF above 20 for a publish candidate unless the run records a
+  file-size or runtime reason and keeps a visual comparison artifact.
+- BGM mix and final loudness normalization may copy video streams after the
+  polished encode; they must not re-encode at a lower quality.
+
+### 6.2 Scene Clip Visual Filter
+
+All source video or static-loop scene clips use this scale/crop/polish chain:
+
+```text
+fps=30,
+scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,
+crop=1080:1920,
+unsharp=3:3:0.28:3:3:0.10,
+eq=contrast=1.025:saturation=1.030:gamma=1.010,
+format=yuv420p
+```
+
+Intent:
+- Lanczos scaling preserves more edge detail than the default scale path.
+- The scene polish is intentionally conservative. It should restore compression
+  softness without making AI face/hand artifacts harsher.
+- This filter cannot rescue a bad source. If the source looks stock-like,
+  semantically wrong, static, or artifact-heavy, fix source acceptance before
+  changing render filters.
+
+### 6.3 Final Composition Visual Filter
+
+For xfade/acrossfade composition, burn subtitles first, then apply the final
+polish:
+
+```text
+[vmerged]ass=filename='captions.ass',
+scale=1080:1920:flags=lanczos,
+fps=30,
+unsharp=3:3:0.18:3:3:0.06,
+eq=contrast=1.010:saturation=1.010:gamma=1.005,
+format=yuv420p[vout]
+```
+
+For simple concat, the final `-vf` chain is:
+
+```text
+ass=filename='captions.ass',
+fps=30,
+scale=1080:1920:flags=lanczos,
+unsharp=3:3:0.18:3:3:0.06,
+eq=contrast=1.010:saturation=1.010:gamma=1.005,
+format=yuv420p
+```
+
+Rules:
+- Subtitles are part of the final visual layer; they must be included in the
+  final render-quality review.
+- Do not apply a stronger final sharpen than the scene sharpen by default. A
+  stronger final pass often makes subtitle edges and AI artifacts look cheap.
+- Transition duration and polish are separate concerns. A bad cut rhythm is not
+  fixed by increasing sharpness.
+
+### 6.4 Reference FFmpeg Shape
+
+The actual orchestrator may build `-filter_complex`, but the final candidate
+must be equivalent to this shape:
 
 ```bash
 ffmpeg -y \
-  -f concat -safe 0 -i scene_list.txt \
-  -i mixed_audio.wav \
-  -vf "ass=subtitle.ass" \
-  -c:v libx264 -preset medium -crf 23 \
-  -c:a aac -b:a 128k \
-  -r 30 -s 1080x1920 \
-  -movflags +faststart \
+  -i scene-01.segment.mp4 -i scene-02.segment.mp4 \
+  -filter_complex "[0:v][1:v]xfade=transition=fade:duration=0.350:offset=2.850[vmerged];[vmerged]ass=filename='captions.ass',scale=1080:1920:flags=lanczos,fps=30,unsharp=3:3:0.18:3:3:0.06,eq=contrast=1.010:saturation=1.010:gamma=1.005,format=yuv420p[vout];[0:a][1:a]acrossfade=d=0.350:c1=tri:c2=tri[amerged]" \
+  -map "[vout]" -map "[amerged]" \
+  -c:v libx264 -preset medium -crf 18 -profile:v high -level 4.2 -pix_fmt yuv420p \
+  -c:a aac -movflags +faststart \
   output.mp4
 ```
 
-**Important**: Use `ass=` filter, NOT `subtitles=` filter, to fully apply ASS styles.
+### 6.5 Quality-Lift Ladder
+
+When a render feels low quality, use this order. Do not jump straight to a new
+filter value.
+
+1. Source acceptance: storyboard match, first-second physical action, no generic
+   B-roll, no AI/stock mismatch, phone-sized source review.
+2. Edit grammar: first-frame hook, 2-3s cut rhythm, no unjustified long hold,
+   captions placed away from subject and platform UI.
+3. Audio: zero-paid voice provider proof, natural rate/pitch, BGM not erased by
+   ducking, final loudness normalization.
+4. Caption layer: exact style lines, max display durations, no production meta
+   text, no oversized routine overlays.
+5. Render engine: encoder floor, Lanczos scale, scene/final polish filters.
+6. Packet evidence: ffprobe, render-quality-report, quality-audit, publish
+   packet, contact sheet, phone-sized full-watch proof when upload is claimed.
+
+If steps 1-4 are weak, a render-engine change can only create a sharper bad
+video. Record that limitation in the quality note instead of claiming success.
+
+### 6.6 Quality Ratchet
+
+The render-quality floor is only the minimum acceptable baseline. Repeated
+video creation must raise the visible quality bar. A candidate that only repeats
+the previous floor without improving a named weakness is not a quality-recovery
+iteration.
+
+Every quality iteration must record:
+- `previousBaseline`: the exact prior candidate path, SHA-256, and decision.
+- `rejectionCause`: the viewer-visible reason the prior candidate was weak,
+  such as source mismatch, weak first-second action, caption occlusion, flat
+  pacing, poor voice energy, BGM balance, compression softness, or AI artifact
+  exposure.
+- `changedLever`: the one or two levers changed in this iteration. Allowed
+  levers are source, storyboard, edit rhythm, voice, BGM, caption layout, render
+  engine, first-frame/thumbnail, and packet evidence.
+- `expectedVisibleImprovement`: what a phone-sized viewer should notice within
+  the first full watch.
+- `actualProof`: render path, SHA-256, ffprobe, contact sheet or phone-sized
+  screenshot, and the relevant audit/report path.
+- `nextRatchet`: the next specific quality bar if the candidate is still weak.
+
+Rules:
+- At least one `changedLever` must affect the viewer-facing video. Re-running
+  the same manifest through the same settings is not a quality iteration.
+- Do not change more than two major levers in one ratchet unless the previous
+  candidate was rejected as structurally unusable. Otherwise the team cannot
+  tell which change helped.
+- The next ratchet must be stricter than the previous one. Examples: stronger
+  first-second physical action, fewer source mismatches, more legible captions
+  at phone size, less TTS compression, cleaner source provenance, or a more
+  decisive thumbnail frame.
+- Automated artifact gates can certify the packet shape, but they cannot close
+  the ratchet. Human or phone-sized review decides whether the visible quality
+  actually improved.
+- If no improvement is visible, record the iteration as rejected and move the
+  next ratchet to source/storyboard or edit grammar before touching FFmpeg
+  again.
+
+Runtime enforcement:
+- `worker/render/compose_ffmpeg.py::write_render_quality_report()` fails the
+  `qualityRatchet` check whenever a manifest declares `qualityIteration` or
+  `qualityRatchetRequired=true` without all six required fields.
+- The same check requires `changedLever` to name at least one viewer-facing
+  lever such as source, storyboard, caption, TTS/audio, layout, edit pacing, or
+  render polish.
+- Episode preproduction writes `qualityRatchetRequired=true` plus a
+  `qualityRatchet` template into `preproduction-manifest.json`,
+  `asset-candidate-review.json`, and `accepted-source-map.json`, so another
+  session cannot start a new source/render loop without seeing the ratchet.
 
 ---
 
@@ -364,6 +524,118 @@ After render completion, verify these items:
 - [ ] BGM fades naturally in intro/outro
 - [ ] Fonts render without corruption, Korean displays correctly
 
+### 7.3 Render-Quality Change Evidence
+
+Any change to `worker/render/compose.py`, `worker/render/compose_ffmpeg.py`,
+`worker/render/transitions.py`, or `worker/render/subtitles.py` that claims
+visual quality improvement must include:
+
+- focused tests proving the expected FFmpeg args or ASS style lines
+- `python -m pytest -q tests/test_manual_clip_pipeline.py`
+- `npm run build` when UI/final-library behavior or published packet status is
+  part of the claim
+- one actual render using the changed path
+- ffprobe proof for 1080x1920, 30fps, H.264, AAC, and duration
+- a SHA-256 for the exact MP4
+- log or test evidence that `flags=lanczos`, `unsharp`, `eq`, and `crf 18` were
+  used
+- contact-sheet or phone-sized screenshot review for subtitle placement
+- final-library audit only as an artifact gate, never as upload approval
+
+If there is no actual render, report the change as code-ready only. If there is
+no phone-sized human full-watch, do not claim same-day upload readiness.
+
+### 7.4 Production Quality-Loop Evidence
+
+Prompt/source quality and render polish are not enough. Every candidate that
+changes subtitles, layout, voice, BGM, edit rhythm, render settings, phone
+review, or publish readiness must also update the active episode quality-loop
+ledger.
+
+The active standard is written by `POST /api/episodes/preproduction-plan` to:
+
+- `storage/episodes/<episodeId>/preproduction/quality-loop-standard.json`
+- `storage/episodes/<episodeId>/preproduction/quality-iteration-ledger.json`
+
+The unified gate-system registry is `worker/quality_gate_system.py`. The same
+`gateSystem.systemVersion` must appear on:
+
+- `quality-loop-standard.json`
+- episode `outputGate` / `promptOutputGate`
+- `render-quality-report.json`
+- final-library `goalReadiness`
+
+The active system version is
+`2026-06-08-unified-quality-gate-system-v1`. Treat `gateSystem` as the
+cross-stage index for preproduction, episode output, quality iteration,
+asset-source, render-quality, final-readiness, and post-publish analytics. The
+detailed checks remain in their existing domain payloads, but every future gate
+must be registered into this unified surface before it is considered part of
+the production loop.
+
+Every top-level `*Contract` in `quality-loop-standard.json` must also appear in
+`contractRegistry`. Episode output gates iterate that registry dynamically, so a
+new rendering, caption, audio, review, or publish standard is not active until
+it is both written as a contract and registered there. Unregistered contracts
+block output.
+
+If the ledger says `nextRequiredAction.status=apply-next-mutation`, the next
+iteration must resolve that exact iteration with `resolvesIterationId`,
+`appliedMutation`, and mutation evidence. Repeating a pass/fail note without
+applying the recorded mutation is not a valid loop.
+
+Caption/layout failures must be recorded with:
+
+- `stage`: `caption` or `layout`
+- `status`: `fail`, `blocked`, or `needs-spec-change`
+- `observedFailure`: what was wrong at phone size
+- `changedLever`: includes `caption` or `layout`
+- `nextMutation`: the next caption/layout edit, not a generic rerender
+- `gateEvidencePaths`: contact sheet, phone screenshot, or render review path
+
+Voice/audio failures must be recorded with:
+
+- `stage`: `voice`, `audio`, or `bgm`
+- `observedFailure`: pacing, pronunciation, energy, BGM ducking, or balance
+- `changedLever`: includes `voice`, `audio`, `BGM`, or `scriptDensity`
+- `nextMutation`: provider/rate/pitch/script-density/mix change
+- `gateEvidencePaths`: audio review, render-quality report, or phone review
+
+Edit-rhythm failures must be recorded with:
+
+- `stage`: `edit-rhythm`
+- `observedFailure`: weak first two seconds, long hold, or bad cut order
+- `changedLever`: includes `edit rhythm`, `first frame`, `cut order`, or source
+- `nextMutation`: cut-order/duration/first-frame/source change
+- `gateEvidencePaths`: contact sheet, timeline review, or render report
+
+Phone/publish failures must be recorded with:
+
+- `stage`: `phone-review` or `publish`
+- `observedFailure`: phone-sized viewer issue or upload readiness blocker
+- `changedLever`: the layer to fix before another publish claim
+- `nextMutation`: specific next production change
+- `gateEvidencePaths`: phone-review JSON, publish packet, or platform proof path
+
+Minimum evidence fields for a passing caption/layout iteration:
+
+- `captionPreset`
+- `layoutVariantKey`
+- `safeZoneReview`
+- `subjectOcclusionVerdict`
+- `platformUiCollisionVerdict`
+- `phoneContactSheetPath`
+- `lineBreakReview`
+
+Do not count a render as a quality improvement when subtitles still cover the
+subject, phone screen, object state change, bottom 20%, or right-side platform
+UI area. Fix the caption/layout layer first, then rerender a named candidate.
+
+Do not count a candidate as upload-ready when voice/audio, edit rhythm,
+phone-sized full-watch, fresh-source proof, or publish packet evidence is
+missing. Those layers must either pass the ledger or record a failed iteration
+with the next mutation before another candidate can be promoted.
+
 ---
 
 ## 8. CLAUDE.md Integration
@@ -372,9 +644,10 @@ This document's specs must be reflected in these files:
 
 | File | Content |
 |------|---------|
-| `worker/render/compose.py` | §6 FFmpeg composition, §5.3 Ken Burns |
-| `worker/render/subtitle.py` (new) | §2 ASS styles, §3 karaoke generation |
-| `worker/render/bgm.py` (new) | §4 BGM matching + mixing |
+| `worker/render/compose.py` | §6 FFmpeg final composition and simple concat |
+| `worker/render/compose_ffmpeg.py` | §4 BGM mixing, §5.3 Ken Burns, §6 scene clip render floor |
+| `worker/render/transitions.py` | §6 xfade/acrossfade final visual polish |
+| `worker/render/subtitles.py` | §2 ASS styles, §3 karaoke generation |
 | `worker/media/adapters.py` | §5.2 Pexels video search addition |
 | `app/ui/src/lib/constants.ts` | §2.2 Preset names synced with UI labels |
 | `shared/contracts/plan.ts` | Add bgm_mood field to Scene type |

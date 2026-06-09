@@ -119,6 +119,14 @@ export interface Scene {
   _sfx_asset_license_url?: string | null;
   _sfx_asset_attribution?: string | null;
   _sfx_asset_kind?: string | null;
+  _voiceover_asset_path?: string | null;
+  _voiceover_asset_name?: string | null;
+  _voiceover_asset_mime?: string | null;
+  _voiceover_asset_title?: string | null;
+  _voiceover_asset_provider?: string | null;
+  _voiceover_asset_source_origin?: string | null;
+  _voiceover_asset_source_license?: string | null;
+  _voiceover_asset_kind?: string | null;
   _video_url?: string | null;
   _selected_pexels_video?: PexelsVideoCandidate | null;
   _pexels_video_candidates?: PexelsVideoCandidate[];
@@ -349,12 +357,16 @@ export interface FreeAudioSidecarTemplate {
   downloadDate?: string;
   editNotes?: string;
   riskNote?: string;
+  operatorOwned?: boolean;
+  sourceOrigin?: string;
+  speaker?: string;
+  recordedAt?: string;
 }
 
 export interface FreeAudioImportPayloadTemplate {
   candidateId: string;
   sourcePath: string;
-  targetRole: "bgm" | "sfx";
+  targetRole: "bgm" | "sfx" | "voiceover";
   mood?: string;
   operatorApproved: boolean;
 }
@@ -424,7 +436,7 @@ export interface FreeAudioCandidatesResult {
 export interface FreeAudioImportResult {
   ok: boolean;
   asset?: {
-    role: "bgm" | "sfx";
+    role: "bgm" | "sfx" | "audio";
     path: string;
     sidecarPath: string;
     provider?: string;
@@ -436,6 +448,8 @@ export interface FreeAudioImportResult {
     sourceLicense?: string;
     mood?: string;
     kind?: string;
+    targetRole?: "bgm" | "sfx" | "voiceover";
+    operatorOwned?: boolean;
     importMethod?: string;
     provenanceReady?: boolean;
     operatorAction?: string;
@@ -560,6 +574,9 @@ export interface SceneAssetPayload {
   sourceAttribution?: string;
   sourceExternalId?: string;
   sourceLabel?: string;
+  sourceOrigin?: string;
+  kind?: string;
+  operatorOwned?: boolean;
   sourceGenerator?: string;
   sourceGeneratorRequestPath?: string;
   sourceGeneratorPromptPath?: string;
@@ -1404,6 +1421,55 @@ export interface FinalVideoLibraryPacket {
   nextActions?: PipelineNextAction[];
 }
 
+export interface QualityGatePhaseState {
+  phaseKey?: string;
+  status?: string;
+  blocking?: boolean;
+  detail?: string;
+  source?: string;
+  checkCount?: number;
+  statusCounts?: Record<string, number>;
+}
+
+export interface QualityGateSystem {
+  schema?: string;
+  systemVersion?: string;
+  surface?: string;
+  status?: string;
+  blockingPhaseKey?: string;
+  phaseStates?: QualityGatePhaseState[];
+  contractSummary?: {
+    requiredContractCount?: number;
+    requiredContractKeys?: string[];
+  };
+  renderQualitySummary?: {
+    checkCount?: number;
+    failedOrMissingKeys?: string[];
+    warnKeys?: string[];
+  };
+  finalReadinessSummary?: {
+    gateCount?: number;
+    blockingGateKeys?: string[];
+    goalComplete?: boolean;
+    preUploadReady?: boolean;
+  };
+  qualityIterationSummary?: {
+    iterationCount?: number;
+    nextRequiredActionStatus?: string;
+    nextRequiredActionSummary?: string;
+    latestIterationId?: string;
+    latestStage?: string;
+    latestStatus?: string;
+    changedLever?: string[];
+    observedFailure?: string;
+    nextMutation?: Record<string, unknown>;
+    appliedMutation?: Record<string, unknown>;
+    evidencePaths?: string[];
+    requiresMutationResolution?: boolean;
+  };
+  [key: string]: unknown;
+}
+
 export interface GoalReadinessRequirement {
   key?: string;
   label?: string;
@@ -1532,6 +1598,7 @@ export interface GoalReadinessAudit {
   requirements?: GoalReadinessRequirement[];
   remainingGaps?: string[];
   completionPolicy?: string;
+  gateSystem?: QualityGateSystem;
 }
 
 export interface FinalVideoLibraryAuditResult {
@@ -1552,6 +1619,7 @@ export interface FinalVideoLibraryAuditResult {
   bestPacket?: FinalVideoLibraryPacket | null;
   sourcePipelineStatus?: SourcePipelineStatus;
   goalReadiness?: GoalReadinessAudit;
+  gateSystem?: QualityGateSystem;
   packets?: FinalVideoLibraryPacket[];
   error?: string;
 }
@@ -1839,6 +1907,7 @@ export interface RenderQualityReport {
   uploadReview?: UploadReview;
   topTierReadiness?: TopTierReadiness;
   sourcePipelineStatus?: SourcePipelineStatus;
+  gateSystem?: QualityGateSystem;
 }
 
 export interface PublishReadinessCriterion {
@@ -2483,6 +2552,10 @@ export interface GrokChromeProfileProbe {
 
 export interface GrokChromeCompanionExtension {
   mode?: string;
+  primaryGenerationRail?: string;
+  role?: string;
+  requiredForGeneration?: boolean;
+  requiredForDownload?: boolean;
   usesPaidApi?: boolean;
   usesRemoteDebugging?: boolean;
   storesCredentials?: boolean;
@@ -2490,10 +2563,16 @@ export interface GrokChromeCompanionExtension {
   purpose?: string;
   extensionDir?: string;
   guideUrl?: string;
+  operatorCommandUrl?: string;
+  operatorAutostartUrl?: string;
+  operatorPrepGenerateAutostartUrl?: string;
   commandUrl?: string;
   eventEndpoint?: string;
   autostartUrl?: string;
   prepGenerateAutostartUrl?: string;
+  selectedSceneCommandUrl?: string;
+  selectedSceneAutostartUrl?: string;
+  selectedScenePrepGenerateAutostartUrl?: string;
   bookmarkletUrl?: string;
   bookmarkletGenerateUrl?: string;
   bookmarkletScriptUrl?: string;
@@ -2513,6 +2592,39 @@ export interface GrokChromeCompanionExtension {
   sceneId?: string | null;
   takeCommands?: GrokCompanionCommand[];
   operatorStillDoes?: string[];
+}
+
+export interface GrokBrowserControlPrimaryRail {
+  mode?: string;
+  primary?: boolean;
+  provider?: string;
+  source?: string;
+  requiresExistingSignedInChromeProfile?: boolean;
+  forbidNewChromeProfile?: boolean;
+  forbidEdgeFallback?: boolean;
+  usesPaidApi?: boolean;
+  usesRemoteDebugging?: boolean;
+  extensionRequiredForGeneration?: boolean;
+  companionExtensionRole?: string;
+  bookmarkletRole?: string;
+  downloadAuthority?: string;
+  autoNativeDownloadPromptAllowed?: boolean;
+  automaticDownloadClickAllowed?: boolean;
+  sceneId?: string;
+  expectedFileName?: string;
+  recommendedTakeNumber?: number | null;
+  generationObserved?: boolean;
+  observedPostUrl?: string;
+  observedAssetUrl?: string;
+  operatorNextAction?: string;
+  importEndpoints?: {
+    importDownloads?: string;
+    manualDownloadWatch?: string;
+    manualUpload?: string;
+    manualBatchUpload?: string;
+  };
+  successCriteria?: string[];
+  doNotUse?: string[];
 }
 
 export interface GrokCompanionCommand {
@@ -2558,6 +2670,9 @@ export interface GrokCompanionCommand {
 
 export interface GrokManualPrimaryPath {
   mode?: "manual-grok-app-web-primary" | string;
+  browserControlRail?: string;
+  companionExtensionRole?: string;
+  downloadAuthority?: string;
   primarySource?: string;
   usesPaidApi?: boolean;
   paidApiPolicy?: string;
@@ -2754,6 +2869,8 @@ export interface GrokMainSourceDiagnosis {
   localMp4Imported?: boolean;
   currentBlocker?: string;
   recommendedPrimaryPath?: string;
+  companionExtensionRole?: string;
+  downloadAuthority?: string;
   doNotDowngradeToStockOnly?: boolean;
 }
 
@@ -2858,6 +2975,7 @@ export interface GrokHandoffResult {
   automationJob?: GrokAutomationJobStatus | null;
   manualDownloadWatchJob?: GrokManualDownloadWatchJobStatus | null;
   chromeCompanionExtension?: GrokChromeCompanionExtension;
+  browserControlPrimaryRail?: GrokBrowserControlPrimaryRail;
   manualPrimaryPath?: GrokManualPrimaryPath;
   mainPathStatus?: GrokMainPathStatus;
   observedPostImportPlan?: GrokObservedPostImportPlan | null;
@@ -2898,6 +3016,7 @@ export interface GrokHandoffStatus {
   automationJob?: GrokAutomationJobStatus | null;
   manualDownloadWatchJob?: GrokManualDownloadWatchJobStatus | null;
   chromeCompanionExtension?: GrokChromeCompanionExtension;
+  browserControlPrimaryRail?: GrokBrowserControlPrimaryRail;
   latestExtensionEvent?: Record<string, unknown> | null;
   codexChromeObservation?: GrokCodexChromeObservation | null;
   manualPrimaryPath?: GrokManualPrimaryPath;
@@ -2941,6 +3060,7 @@ export interface GrokAutomationPlan {
   shotBible?: GrokShotBible;
   reviewChecklist?: string[];
   mainSourceGate?: GrokMainSourceGate;
+  browserControlPrimaryRail?: GrokBrowserControlPrimaryRail;
   manualPrimaryPath?: GrokManualPrimaryPath;
   mainPathStatus?: GrokMainPathStatus;
   expectedFiles?: Array<{ sceneId: string; expectedFileName: string; promptPath?: string; operatorChecklist?: string[] }>;
@@ -3414,7 +3534,7 @@ export function importFreeAudioAsset(opts: {
   sourcePath?: string;
   fileBase64?: string;
   candidateId?: string;
-  targetRole?: "bgm" | "sfx";
+  targetRole?: "bgm" | "sfx" | "voiceover";
   mood?: string;
   fileName?: string;
   provider?: string;
@@ -3431,6 +3551,10 @@ export function importFreeAudioAsset(opts: {
   editNotes?: string;
   riskNote?: string;
   templateFamilies?: string[];
+  operatorOwned?: boolean;
+  sourceOrigin?: string;
+  speaker?: string;
+  recordedAt?: string;
 }): Promise<FreeAudioImportResult> {
   return _post<FreeAudioImportResult>("/api/free-assets/import-audio", opts, 60_000);
 }

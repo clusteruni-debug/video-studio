@@ -11,6 +11,7 @@ import json
 import logging
 import base64
 import binascii
+import hashlib
 import math
 import os
 import re
@@ -103,6 +104,187 @@ GROK_VISUAL_LED_NO_VOICE_TEMPLATE_TYPES = frozenset({
     "kculture_fandom",
     "live_recap",
 })
+GROK_GENERATION_PROMPT_MAX_CHARS = 500
+GROK_GENERATION_PROMPT_RULESET_VERSION = "shot-prompt-v2-observable-motion"
+GROK_GENERATION_PROMPT_BANNED_PHRASES = (
+    "shot lock:",
+    "reject generic",
+    "reject before download",
+    "rejected because",
+    "raw footage for editing",
+    "finished social video",
+    "template family",
+    "caption-safe",
+    "caption safe",
+    "safe zone",
+    "safe-zone",
+    "checklist",
+    "glossy ad",
+    "stock montage",
+    "morphing",
+    "flicker",
+    "no captions",
+    "no logos",
+    "ai slop",
+    "stock/ad/ai montage",
+)
+GROK_OBSERVABLE_MOTION_TERMS = (
+    "walk",
+    "walks",
+    "walking",
+    "step",
+    "steps",
+    "enter",
+    "enters",
+    "leaves",
+    "open",
+    "opens",
+    "close",
+    "closes",
+    "pull",
+    "pulls",
+    "pull up",
+    "pulls up",
+    "lift",
+    "lifts",
+    "raise",
+    "raises",
+    "lowers",
+    "pour",
+    "pours",
+    "pouring",
+    "slide",
+    "slides",
+    "slides past",
+    "flip",
+    "flips",
+    "fold",
+    "folds",
+    "tap",
+    "taps",
+    "circle",
+    "circles",
+    "scroll",
+    "scrolls",
+    "pause",
+    "pauses",
+    "toggle",
+    "toggles",
+    "mark",
+    "marks",
+    "continue",
+    "continues",
+    "pass",
+    "passes",
+    "place",
+    "places",
+    "set",
+    "sets",
+    "turn",
+    "turns",
+    "switch",
+    "switches",
+    "move",
+    "moves",
+    "steam",
+    "rise",
+    "rises",
+    "rising",
+    "rolls across",
+    "streaks",
+    "streaks pass",
+    "camera follows",
+    "handheld drift",
+    "push-in",
+    "slow push",
+    "pan",
+    "tilt",
+    "drift",
+    "stir",
+    "stirs",
+    "serve",
+    "serves",
+    "type",
+    "types",
+    "write",
+    "writes",
+    "check",
+    "checks",
+    "reveal",
+    "reveals",
+    "tighten",
+    "tightens",
+    "loosen",
+    "loosens",
+    "exhales",
+    "slowing down",
+    "hands",
+    "opens a notebook",
+    "moves a pen",
+    "places a mug",
+    "light moves",
+    "lights move",
+    "lights switch",
+    "switch on",
+    "걷",
+    "돌",
+    "열",
+    "닫",
+    "붓",
+    "따르",
+    "잡",
+    "들",
+    "놓",
+    "밀",
+    "당기",
+    "움직",
+    "드러",
+    "비추",
+    "보여",
+    "흔들",
+    "들어오",
+    "나가",
+    "타이핑",
+    "기록",
+    "촬영",
+)
+GROK_ABSTRACT_OR_META_PROMPT_TERMS = (
+    "ai slop",
+    "beautiful",
+    "cinematic quality",
+    "generic stock",
+    "intent",
+    "intentional",
+    "mood",
+    "naturalistic",
+    "production",
+    "quality benchmark",
+    "release the tension",
+    "shoulder release",
+    "stock-looking",
+    "subtle posture",
+    "tension",
+    "vibe",
+    "정서",
+    "의도",
+    "분위기",
+    "어깨",
+    "긴장",
+)
+GROK_PROMPT_REPAIR_HINTS = {
+    "sceneSpecificIntent": "Replace generic hero wording with a concrete subject, place, prop, and visible event.",
+    "sourceActionCue": "Name the action in the source scene before compiling the Grok prompt.",
+    "largePhysicalMotion": "Use one large observable physical change that reads in frame one, such as open, pour, lift, slide, flip, place, enter, or switch on.",
+    "observableFirstSecondChange": "State what changes during the first second, not only the mood or purpose of the scene.",
+    "singleContinuousShot": "Ask for one continuous 4-6 second shot, not a montage or cutaway sequence.",
+    "singlePrimaryAction": "Keep one primary action plus at most one environmental motion cue.",
+    "cameraConcrete": "Specify a concrete phone-camera, handheld, locked, close, macro, pan, tilt, push, or drift camera behavior.",
+    "propContinuityAnchor": "Keep a recurring subject, prop, location, light, or palette anchor in the prompt.",
+    "minimalNegativeOnly": "Use only the short no-text/watermark negative clause; move QA rejects to review surfaces.",
+    "noAbstractIntent": "Remove mood, intent, quality, AI-slop, and production-language phrasing from the generation prompt.",
+    "visualSeedNotMeta": "Use a visual seed, not narration, TTS, captions, layout notes, or review criteria.",
+    "completeSentences": "Repair broken truncated prompt fragments before opening Grok.",
+}
 
 
 def _default_chrome_attach_instruction(port: int | None = None) -> str:
@@ -160,10 +342,9 @@ def _automation_error_state(error_text: str, port: int | None = None) -> dict:
             "browserBlocker": CHROME_DEFAULT_PROFILE_SOCKET_ABORT_BLOCKER,
             "operatorNextAction": (
                 "The default Chrome CDP connection was aborted by the host/browser. "
-                "Keep the existing signed-in Chrome profile open, load the Video Studio "
-                "Grok Companion unpacked extension there, then use the companion Prep + "
-                "Generate or Queue path for Grok-main MP4 import. Do not retry Edge/new "
-                "profile CDP as the primary path."
+                "Keep the existing signed-in Chrome profile open and use Codex/Claude browser-control "
+                "against the Grok Imagine tab; the operator then saves/downloads the MP4 and imports it locally. "
+                "Do not retry Edge/new profile CDP as the primary path."
             ),
         }
     if chrome_default_launch_error:
@@ -268,6 +449,14 @@ def _prompt_hard_limit(value: object, limit: int) -> str:
     return _strip_prompt_orphan_tail(cut)
 
 
+def _positive_generation_clause(value: object, *, fallback: str = "", limit: int = 160) -> str:
+    text = _prompt_excerpt(value, fallback=fallback, limit=limit)
+    text = re.sub(r"(?:[,;]\s*)?\b(?:no|avoid|without)\b[^.;]*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"(?:[,;]\s*)?\bkeep\.?$", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+", " ", text).strip(" ,;:-.")
+    return text or fallback
+
+
 def _grok_prompt_meta_terms(value: object) -> list[str]:
     """Detect production/meta instructions that should not seed Grok footage."""
     lowered = str(value or "").strip().lower()
@@ -284,14 +473,39 @@ def _grok_prompt_meta_terms(value: object) -> list[str]:
     return hits
 
 
+def _prompt_term_hits(text: str, terms: tuple[str, ...]) -> list[str]:
+    lowered = str(text or "").lower()
+    compact = re.sub(r"\s+", "", lowered)
+    hits: list[str] = []
+    for term in terms:
+        normalized = str(term or "").strip().lower()
+        if not normalized:
+            continue
+        ascii_like = bool(re.fullmatch(r"[a-z0-9][a-z0-9 '\-]*", normalized))
+        if ascii_like:
+            pattern = rf"(?<![a-z0-9]){re.escape(normalized)}(?![a-z0-9])"
+            matched = bool(re.search(pattern, lowered))
+        else:
+            matched = normalized in lowered or normalized.replace(" ", "") in compact
+        if matched:
+            hits.append(term)
+    return list(dict.fromkeys(hits))
+
+
+def _negative_instruction_count(text: str) -> int:
+    return len(re.findall(r"\b(?:no|avoid|without|reject|never|do not|don't)\b", str(text or "").lower()))
+
+
 def _scene_prompt_seed(item: dict) -> tuple[str, list[str]]:
     """Choose visual action text for Grok while surfacing meta narration leakage."""
     first_meta_text = ""
     first_meta_terms: list[str] = []
     for key in (
+        "visual_action",
+        "visualAction",
+        "visual_prompt",
         "grok_prompt",
         "image_prompt",
-        "visual_prompt",
         "shot_description",
         "title",
         "display_text",
@@ -424,7 +638,7 @@ def _production_profile(value: object, *, target_duration: object = "", tone: ob
             "hookFormula": "rank or result visible in the first second, then one motion beat",
             "layoutPlan": "stable rank chip near top-left plus lower-info caption only when useful",
             "captionPlan": "avoid center walls of text; use short rank labels and safe-zone lower facts",
-            "cameraPlan": "repeat the same motion grammar for each rank so the edit feels intentional",
+            "cameraPlan": "consistent handheld motion rhythm for each rank",
             "editRhythm": "3-5 second clips, no random micro-cuts inside a generated clip",
         },
         "tutorial_steps": {
@@ -575,10 +789,11 @@ def _build_shot_bible(draft_scenes: list[dict], source_prompt: object = "", prod
         "cameraLanguage": "Use restrained cinematic motion: one slow push, drift, pan, or locked macro move per clip; avoid chaotic zooms or random cuts inside a clip.",
         "productionProfile": production_profile,
         "layoutPlan": production_profile["layoutPlan"],
+        "promptRulesetVersion": GROK_GENERATION_PROMPT_RULESET_VERSION,
         "cinematicQualityFloor": (
             "Every Grok MP4 must feel like intentional raw footage selected for this exact scene: "
-            "scene-specific visible action in the first two seconds, stable subject/prop/location/palette/camera, "
-            "and no generic stock, glossy ad, or AI montage filler."
+            "one large observable physical action in the first second, one continuous 4-6s vertical shot, "
+            "stable subject/prop/location/palette/camera, and no generic stock, glossy ad, or AI montage filler."
         ),
         "antiSlopDirectives": [
             "No generic stock b-roll or pretty filler merely related to the topic.",
@@ -612,14 +827,17 @@ def _build_shot_bible(draft_scenes: list[dict], source_prompt: object = "", prod
         ],
         "promptAnchor": (
             "Continuity bible: same recurring subject/prop/location/palette/camera language across every scene; "
-            "one clean 4-6s vertical 9:16 MP4 per scene; visible motion in the first second; "
+            f"ruleset={GROK_GENERATION_PROMPT_RULESET_VERSION}; one clean 4-6s vertical 9:16 MP4 per scene; "
+            "large observable motion in the first second; "
             "leave lower-third/right-side caption safe space; no text, no logos, no watermark, no flicker, no morphing, no unrelated cutaways."
         ),
         "grokPromptRules": [
+            f"Use `{GROK_GENERATION_PROMPT_RULESET_VERSION}`: one continuous 4-6s vertical phone MP4, one large physical first-second action, concrete subject/place/prop/camera, and one continuity anchor.",
             "Describe the exact visible action, location, subject, prop, camera move, palette, and first-second motion.",
             "Never ask Grok to explain the video's intent or add text; Video Studio handles captions, BGM, TTS, and layout after import.",
             "Keep generated clips as raw footage with no baked-in captions, logos, watermarks, UI, or title cards.",
             "Prefer one continuous shot per scene; avoid asking for montage unless the template profile explicitly needs it.",
+            "Use only the minimal generation negative clause `no visible text or watermark`; keep rejection history, AI-slop wording, and QA checklists outside the prompt.",
             "Preserve caption-safe framing so subtitles can be placed later without covering the subject.",
         ],
         "reviewChecklist": [
@@ -734,6 +952,158 @@ def _scene_operator_checklist(scene_id: str, shot_bible: dict) -> list[str]:
     ]
 
 
+def _fresh_concept_text(item: dict, *keys: str, fallback: str = "", limit: int = 220) -> str:
+    for key in keys:
+        text = _short_text(item.get(key), limit=limit)
+        if text:
+            return text
+    return _short_text(fallback, limit=limit)
+
+
+def _fresh_concept_voice_requirement(item: dict) -> str:
+    text = _fresh_concept_text(
+        item,
+        "voice_requirement",
+        "voiceRequirement",
+        "voice_note",
+        "voiceNote",
+        limit=180,
+    )
+    if text:
+        return text
+    raw_required = item.get("voice_required")
+    if raw_required is None:
+        raw_required = item.get("voiceRequired")
+    if raw_required is True:
+        return "voice required; use zero-paid or operator-owned voice evidence before publish review"
+    if raw_required is False:
+        return "voice optional only with explicit visual-led no-voice approval"
+    return ""
+
+
+def _is_rejected_shoulder_release_source(value: object) -> bool:
+    text = re.sub(r"\s+", " ", str(value or "").strip().lower())
+    compact = re.sub(r"\s+", "", text)
+    if not text:
+        return False
+    has_shoulder = "shoulder" in text or "어깨" in compact
+    has_release = any(token in text for token in ("release", "relax", "tension", "tense")) or any(
+        token in compact for token in ("긴장", "풀림", "풀리는", "푸는")
+    )
+    has_office = "office" in text or "desk" in text or "worker" in text or "사무실" in compact or "직장인" in compact
+    return has_shoulder and has_release and has_office
+
+
+def _fresh_concept_scene_packet(item: dict, scene_id: str, prompt: str, prompt_quality: dict) -> dict:
+    seed, _ = _scene_prompt_seed(item)
+    source_text = " ".join(
+        str(value or "")
+        for value in [
+            seed,
+            prompt,
+            item.get("title"),
+            item.get("display_text"),
+            item.get("hook_note"),
+            item.get("continuity_note"),
+            item.get("reference_note"),
+            item.get("action_beat"),
+            item.get("visual_risk"),
+        ]
+    )
+    packet = {
+        "sceneId": scene_id,
+        "referenceNote": _fresh_concept_text(item, "reference_note", "referenceNote", "source_reference_note", "sourceReferenceNote"),
+        "actionBeat": _fresh_concept_text(item, "action_beat", "actionBeat", "hook_note", "hookNote"),
+        "visualRisk": _fresh_concept_text(item, "visual_risk", "visualRisk", "risk_note", "riskNote"),
+        "voiceRequirement": _fresh_concept_voice_requirement(item),
+        "qualityRationale": _fresh_concept_text(
+            item,
+            "quality_rationale",
+            "qualityRationale",
+            "fresh_concept_rationale",
+            "freshConceptRationale",
+            "why_easier_to_judge",
+            "whyEasierToJudge",
+            limit=260,
+        ),
+        "largeFirstSecondMotion": bool((prompt_quality.get("checks") or {}).get("firstSecondMotion")),
+        "promptQualityStatus": str(prompt_quality.get("status") or "unknown"),
+        "oldShoulderReleaseRisk": _is_rejected_shoulder_release_source(source_text),
+    }
+    required = ("referenceNote", "actionBeat", "visualRisk", "voiceRequirement", "qualityRationale")
+    packet["missing"] = [key for key in required if not packet.get(key)]
+    packet["complete"] = not packet["missing"] and not packet["oldShoulderReleaseRisk"]
+    return packet
+
+
+def _fresh_concept_packet(data: dict, scenes: list[dict]) -> dict:
+    scene_packets = [
+        scene.get("freshConcept")
+        for scene in scenes
+        if isinstance(scene, dict) and isinstance(scene.get("freshConcept"), dict)
+    ]
+    requested = data.get("freshConceptRequired") is True or data.get("fresh_concept_required") is True or bool(scene_packets)
+    if not requested:
+        return {
+            "required": False,
+            "status": "not-requested",
+            "sceneCount": len(scenes),
+            "requiredSceneCount": 3,
+            "scenes": [],
+            "missing": [],
+            "oldShoulderReleaseRisk": False,
+            "operatorAction": "Fresh concept packet was not requested for this handoff.",
+        }
+    required_scene_count = _bounded_int(
+        data.get("freshConceptSceneCount") or data.get("fresh_concept_scene_count"),
+        default=3,
+        minimum=1,
+        maximum=8,
+    )
+    missing: list[str] = []
+    if len(scenes) < required_scene_count:
+        missing.append("sceneCount")
+    incomplete_scene_ids = [
+        str(item.get("sceneId") or "")
+        for item in scene_packets
+        if not item.get("complete")
+    ]
+    if incomplete_scene_ids:
+        missing.append("sceneMetadata")
+    prompt_not_ready_scene_ids = [
+        str(item.get("sceneId") or "")
+        for item in scene_packets
+        if item.get("promptQualityStatus") != "ready"
+    ]
+    if prompt_not_ready_scene_ids:
+        missing.append("promptQuality")
+    old_risk_scene_ids = [
+        str(item.get("sceneId") or "")
+        for item in scene_packets
+        if item.get("oldShoulderReleaseRisk") is True
+    ]
+    if old_risk_scene_ids:
+        missing.append("oldShoulderReleaseConcept")
+    status = "ready" if not missing else "needs-rewrite"
+    return {
+        "required": True,
+        "status": status,
+        "sceneCount": len(scenes),
+        "requiredSceneCount": required_scene_count,
+        "scenes": scene_packets,
+        "missing": missing,
+        "incompleteSceneIds": incomplete_scene_ids,
+        "promptNotReadySceneIds": prompt_not_ready_scene_ids,
+        "oldShoulderReleaseRisk": bool(old_risk_scene_ids),
+        "oldShoulderReleaseSceneIds": old_risk_scene_ids,
+        "operatorAction": (
+            "Fresh concept packet is ready for Grok candidate generation; generate multiple MP4 takes before accepting sources."
+            if status == "ready"
+            else "Replace or complete the concept packet before spending Grok/Gemini attempts. Do not reuse the old office shoulder-release scene as the quality benchmark."
+        ),
+    }
+
+
 def _grok_first_layout_default(scene_index: int, caption_preset: str) -> dict:
     """Choose a viewer-facing Grok MP4 layout, not an internal production label."""
     if scene_index == 0 or caption_preset == "top-hook":
@@ -781,45 +1151,79 @@ def _scene_prompt_context(item: dict, index: int = 0, all_scenes: list[dict] | N
     return context
 
 
+def _scene_generation_cues(
+    item: dict,
+    scene_id: str,
+    shot_bible: dict | None,
+    production_profile: dict,
+) -> dict:
+    shot_lock = _scene_shot_lock(shot_bible, scene_id)
+    return {
+        "action": _positive_generation_clause(
+            shot_lock.get("actionLock") if shot_lock else "",
+            fallback=_scene_source_text(item),
+            limit=170,
+        ),
+        "firstMotion": _positive_generation_clause(
+            shot_lock.get("firstSecondMotionLock") if shot_lock else "",
+            fallback=_short_text(item.get("hook_note"), limit=130)
+            or _positive_generation_clause(production_profile.get("hookFormula"), limit=120)
+            or "visible motion starts immediately",
+            limit=105,
+        ),
+        "camera": _positive_generation_clause(
+            shot_lock.get("cameraLock") if shot_lock else "",
+            fallback=_positive_generation_clause(production_profile.get("cameraPlan"), limit=90)
+            or "natural phone-camera movement",
+            limit=100,
+        ),
+        "continuity": _positive_generation_clause(
+            _short_text(item.get("continuity_note"), limit=140)
+            or (shot_lock.get("identityLock") if shot_lock else ""),
+            fallback="same subject, prop, location, lighting, and palette",
+            limit=140,
+        ),
+    }
+
+
+def _continuity_instruction(value: object) -> str:
+    text = _positive_generation_clause(
+        value,
+        fallback="same subject, prop, location, lighting, and palette",
+        limit=140,
+    )
+    text = re.sub(r"\s+while\b.*$", "", text, flags=re.IGNORECASE).strip(" ,;:-.")
+    if re.match(r"^same recurring subject/key prop/location as project anchor\b", text, flags=re.IGNORECASE):
+        text = "same recurring subject, key prop, and location"
+    elif len(text) > 105:
+        text = _prompt_hard_limit(text, 105)
+    if re.match(r"^(keep|preserve|maintain|use)\b", text, flags=re.IGNORECASE):
+        return text
+    return f"Keep {text}"
+
+
 def _scene_prompt(item: dict, shot_bible: dict | None = None, index: int = 0, all_scenes: list[dict] | None = None) -> str:
-    prompt, prompt_meta_terms = _scene_prompt_seed(item)
+    prompt, _prompt_meta_terms = _scene_prompt_seed(item)
     scene_id = _scene_id(item, index)
-    scene_context = _scene_prompt_context(item, index, all_scenes)
     production_profile = {}
     if isinstance(shot_bible, dict) and isinstance(shot_bible.get("productionProfile"), dict):
         production_profile = shot_bible["productionProfile"]
-    suffix = [
-        "raw footage for editing, not a finished social video; vertical 9:16 MP4, 4-6s continuous shot, visible motion first second.",
-        "Keep the lower third and right edge caption-safe.",
-        "No captions, no logos, no watermark, no UI, no text, no title cards, no narration, no unrelated cutaways.",
-    ]
-    if prompt_meta_terms:
-        suffix.append(
-            "Rewrite required before generation: replace production-meta wording with a concrete visible subject, action, place, prop, and camera move."
-        )
-    if shot_bible:
-        suffix.append(f"Template family: {production_profile.get('family') or 'news-or-explainer'}.")
-        if scene_context:
-            suffix.extend(scene_context[:1])
-        suffix.extend(_shot_lock_prompt_lines(shot_bible, scene_id))
-        if scene_context:
-            suffix.extend(scene_context[1:3])
-        suffix.extend([
-            "Continuity: same recurring subject, prop, location, palette, and camera.",
-            f"Camera: {_prompt_excerpt(production_profile.get('cameraPlan') or 'restrained documentary movement', limit=64)}.",
-        ])
-    if scene_context:
-        suffix.extend(scene_context[3:] if shot_bible else scene_context)
-    if shot_bible:
-        suffix.append(
-            f"Layout: {_prompt_excerpt(shot_bible.get('layoutPlan') or production_profile.get('layoutPlan') or 'safe-zone lower captions only', limit=72)}."
-        )
-    return _prompt_join([prompt, *suffix], max_chars=1050)
+    cues = _scene_generation_cues(item, scene_id, shot_bible, production_profile)
+    visible_action = _positive_generation_clause(prompt, fallback=cues["action"], limit=170)
+    first_motion = cues["firstMotion"]
+    camera = cues["camera"]
+    continuity = cues["continuity"]
+    return _prompt_join([
+        f"{visible_action}; first second: {first_motion}",
+        f"Vertical 9:16 phone MP4, 4-6 seconds, one continuous shot, {camera}",
+        f"{_continuity_instruction(continuity)}; leave an uncluttered lower-right background; no visible text or watermark",
+    ], max_chars=GROK_GENERATION_PROMPT_MAX_CHARS)
 
 
 def _scene_prompt_quality(prompt: str, scene: dict, shot_bible: dict | None = None) -> dict:
     text = str(prompt or "")
     lowered = text.lower()
+    scene_id = str(scene.get("sceneId") or scene.get("scene_id") or "")
     source_text, source_meta_terms = _scene_prompt_seed(scene)
     source_lowered = source_text.lower()
     source_words = re.findall(r"[A-Za-z0-9가-힣][A-Za-z0-9가-힣'-]*", source_text)
@@ -829,6 +1233,7 @@ def _scene_prompt_quality(prompt: str, scene: dict, shot_bible: dict | None = No
         r"reaches?|looks?|passes?|tightens?|loosens?|twists?|untwists?|"
         r"moves?|slides?|reveals?|rises?|rising|steams?|steaming|exhales?|runs?|drifts?|push(?:es|ing)?|"
         r"pans?|tilts?|handheld|motion|enters?|leaves?|lifts?|places?|types?|writes?|points?|"
+        r"circles?|scrolls?|pauses?|toggles?|marks?|taps?|swipes?|continues?|"
         r"cuts?|stirs?|serves?|records?|films?|zooms?)\b"
     )
     korean_action_terms = (
@@ -849,49 +1254,178 @@ def _scene_prompt_quality(prompt: str, scene: dict, shot_bible: dict | None = No
         "cinematic product reveal",
     }
     requires_shot_lock = isinstance(shot_bible, dict) and bool(shot_bible.get("shotLocks"))
+    banned_prompt_terms = [
+        phrase for phrase in GROK_GENERATION_PROMPT_BANNED_PHRASES
+        if phrase in lowered
+    ]
+    broken_prompt_fragments = [
+        phrase for phrase in (
+            "in the first.",
+            "; first.",
+            " first.",
+            "so the edit feels.",
+            "so the edit feels ",
+        )
+        if phrase in lowered
+    ]
+    combined_visual_text = f"{text} {source_text}"
+    observable_motion_terms = _prompt_term_hits(combined_visual_text, GROK_OBSERVABLE_MOTION_TERMS)
+    source_observable_motion_terms = _prompt_term_hits(source_text, GROK_OBSERVABLE_MOTION_TERMS)
+    prompt_observable_motion_terms = _prompt_term_hits(text, GROK_OBSERVABLE_MOTION_TERMS)
+    abstract_intent_terms = _prompt_term_hits(combined_visual_text, GROK_ABSTRACT_OR_META_PROMPT_TERMS)
+    negative_instruction_count = _negative_instruction_count(text)
+    has_duration = bool(re.search(r"\b4\s*(?:-|to)\s*6\s*seconds?\b", lowered)) or "4-6s" in lowered
+    has_minimal_negative = "no visible text" in lowered and "watermark" in lowered
+    has_composition_room = (
+        "lower-right" in lowered
+        or ("lower" in lowered and "right" in lowered and ("uncluttered" in lowered or "open" in lowered))
+    )
+    has_single_continuous_shot = (
+        "one continuous shot" in lowered
+        and not any(term in lowered for term in ("montage", "cutaway sequence", "random cuts", "jump cuts"))
+    )
+    has_camera_concrete = any(
+        term in lowered
+        for term in (
+            "phone",
+            "camera",
+            "handheld",
+            "locked",
+            "macro",
+            "close",
+            "slow push",
+            "push-in",
+            "pan",
+            "tilt",
+            "drift",
+        )
+    )
+    has_continuity = (
+        "keep" in lowered
+        and any(token in lowered for token in ("same", "consistent", "recurring", "subject", "prop", "location", "palette"))
+    )
+    has_prop_continuity_anchor = (
+        has_continuity
+        and any(token in lowered for token in ("subject", "prop", "location", "palette", "lighting", "light", "cup", "desk", "counter", "backpack", "stall"))
+    )
+    camera_only_motion_terms = {"handheld drift", "slow push", "push-in", "pan", "tilt", "drift", "camera follows"}
+    source_physical_motion_terms = [
+        term for term in source_observable_motion_terms
+        if term not in camera_only_motion_terms
+    ]
+    prompt_physical_motion_terms = [
+        term for term in prompt_observable_motion_terms
+        if term not in camera_only_motion_terms
+    ]
+    if source_meta_terms:
+        source_physical_motion_terms = []
+        prompt_physical_motion_terms = []
+    primary_action_count = len(source_physical_motion_terms)
+    has_single_primary_action = primary_action_count <= 8
+    has_large_physical_motion = bool(source_physical_motion_terms or prompt_physical_motion_terms)
+    has_first_second = "first second" in lowered or "first 2" in lowered or "first two" in lowered
+    has_observable_first_second_change = has_first_second and bool(source_physical_motion_terms or prompt_physical_motion_terms)
+    has_minimal_negative_only = (
+        has_minimal_negative
+        and negative_instruction_count <= 2
+        and not any(term in lowered for term in ("reject", "do not", "avoid", "without", "never", "no captions", "no logos"))
+    )
+    has_no_abstract_intent = not abstract_intent_terms
     checks = {
         "sceneSpecificIntent": not generic_source,
         "sourceActionCue": source_has_action,
         "specificAction": source_has_action,
-        "verticalMp4": "9:16" in lowered and "mp4" in lowered,
-        "firstSecondMotion": "first second" in lowered or "first 2" in lowered or "first two" in lowered,
-        "captionSafe": "caption" in lowered and ("lower" in lowered or "right" in lowered or "safe" in lowered),
-        "continuity": "continuity" in lowered or "same recurring" in lowered or "consistent subject" in lowered,
-        "negativeText": all(token in lowered for token in ("no captions", "no logos", "no watermark")),
-        "rawFootage": "raw footage" in lowered or "not a finished social video" in lowered,
-        "templateAware": "template family" in lowered or "narrative shape" in lowered,
+        "verticalMp4": "9:16" in lowered and ("mp4" in lowered or "video" in lowered),
+        "duration4to6": has_duration,
+        "firstSecondMotion": has_first_second,
+        "largePhysicalMotion": has_large_physical_motion,
+        "observableFirstSecondChange": has_observable_first_second_change,
+        "singleContinuousShot": has_single_continuous_shot,
+        "singlePrimaryAction": has_single_primary_action,
+        "cameraConcrete": has_camera_concrete,
+        "propContinuityAnchor": has_prop_continuity_anchor,
+        "concise": len(text) <= GROK_GENERATION_PROMPT_MAX_CHARS + 20,
+        "positiveShotInstruction": not banned_prompt_terms,
+        "completeSentences": not broken_prompt_fragments,
+        "compositionRoom": has_composition_room,
+        "continuity": has_continuity,
+        "minimalNegativeText": has_minimal_negative,
+        "minimalNegativeOnly": has_minimal_negative_only,
+        "noAbstractIntent": has_no_abstract_intent,
+        "captionSafe": has_composition_room,
+        "negativeText": has_minimal_negative,
+        "rawFootage": has_single_continuous_shot and ("phone" in lowered or "camera" in lowered),
+        "templateAware": not banned_prompt_terms,
         "visualSeedNotMeta": not source_meta_terms,
-        "shotLock": (not requires_shot_lock) or "shot lock" in lowered,
-        "antiSlop": (not requires_shot_lock) or (
-            "anti-slop" in lowered
-            or "reject generic stock" in lowered
-            or "generic stock/ad/ai montage" in lowered
-        ),
+        "shotLock": (not requires_shot_lock) or bool(_scene_shot_lock(shot_bible, scene_id)),
+        "antiSlop": not banned_prompt_terms,
     }
-    weak_source = generic_source or not source_has_action or bool(source_meta_terms)
-    missing = [name for name, ok in checks.items() if not ok]
+    weak_source = generic_source or not source_has_action or bool(source_meta_terms) or not has_large_physical_motion
+    required_checks = (
+        "sceneSpecificIntent",
+        "sourceActionCue",
+        "verticalMp4",
+        "duration4to6",
+        "firstSecondMotion",
+        "largePhysicalMotion",
+        "observableFirstSecondChange",
+        "singleContinuousShot",
+        "singlePrimaryAction",
+        "cameraConcrete",
+        "propContinuityAnchor",
+        "concise",
+        "positiveShotInstruction",
+        "compositionRoom",
+        "continuity",
+        "minimalNegativeText",
+        "minimalNegativeOnly",
+        "noAbstractIntent",
+        "visualSeedNotMeta",
+        "completeSentences",
+    )
+    missing = [name for name in required_checks if not checks.get(name)]
     score = max(0, 100 - len(missing) * 8 - (12 if weak_source else 0))
+    repair_hints = {
+        name: GROK_PROMPT_REPAIR_HINTS.get(name, "Rewrite this prompt field before Grok generation.")
+        for name in missing
+    }
     return {
         "score": score,
         "status": "ready" if score >= 85 and not missing and not weak_source else "needs-rewrite",
         "missing": missing,
+        "requiredChecks": list(required_checks),
+        "rulesetVersion": GROK_GENERATION_PROMPT_RULESET_VERSION,
+        "repairHints": repair_hints,
+        "bannedPromptTerms": banned_prompt_terms,
+        "brokenPromptFragments": broken_prompt_fragments,
+        "observableMotionTerms": observable_motion_terms,
+        "sourceObservableMotionTerms": source_observable_motion_terms,
+        "promptObservableMotionTerms": prompt_observable_motion_terms,
+        "sourcePhysicalMotionTerms": source_physical_motion_terms,
+        "promptPhysicalMotionTerms": prompt_physical_motion_terms,
+        "abstractIntentTerms": abstract_intent_terms,
+        "negativeInstructionCount": negative_instruction_count,
+        "primaryActionCount": primary_action_count,
         "weakSourcePrompt": weak_source,
         "productionMetaTerms": source_meta_terms,
         "sourceWordCount": source_word_count,
         "sourcePrompt": source_text,
         "checks": checks,
+        "standard": "concise-positive-shot-v1",
         "qualityFloor": (
-            "Prompt source must name a scene-specific visible action before the shared production suffix. "
-            "The packaged prompt must also define first-second motion, continuity, caption-safe framing, "
-            "negative text/logo/watermark constraints, and a template-aware layout role. "
-            "Production-intent, TTS, caption, layout, or checklist notes cannot be used as the visual seed."
+            "Prompt source must name a scene-specific visible action. The generated Grok prompt must be "
+            f"a concise positive shot instruction under `{GROK_GENERATION_PROMPT_RULESET_VERSION}`: one large "
+            "observable physical change in the first second, one continuous vertical 9:16 4-6 second phone MP4, "
+            "concrete camera behavior, continuity/prop anchors, simple lower-right composition room, and only "
+            "minimal no-text/watermark negative language. Mood, intent, AI-slop, production, TTS, caption, layout, "
+            "checklist, or rejection notes cannot be used as the visual seed or copied into the generation prompt."
         ),
         "operatorAction": (
-            "Rewrite the scene Grok prompt with concrete subject + visible action + place/prop/camera cue "
-            "and remove production-intent/TTS/caption meta wording "
-            "before generating in Grok."
+            "Rewrite the scene Grok prompt as 1-3 short positive shot sentences with concrete subject + "
+            "place + prop + one large first-second physical action + camera cue, then remove mood/intent/"
+            "AI-slop/TTS/caption/rejection meta wording before generating in Grok."
             if weak_source or missing
-            else "Prompt is specific enough for Grok handoff; still reject weak MP4 output in the review packet."
+            else "Prompt is concise enough for Grok handoff; still reject weak MP4 output in the review packet."
         ),
     }
 
@@ -899,31 +1433,39 @@ def _scene_prompt_quality(prompt: str, scene: dict, shot_bible: dict | None = No
 def _scene_take_prompts(scene: dict, source_scene: dict | None = None, shot_bible: dict | None = None) -> list[dict]:
     """Build deliberate Grok generation takes so operators can curate real MP4 candidates."""
     base_prompt = str(scene.get("prompt") or "").strip()
-    scene_id = str(scene.get("sceneId") or "scene")
     source = source_scene if isinstance(source_scene, dict) else scene
+    scene_id = str(scene.get("sceneId") or scene.get("scene_id") or _scene_id(source, 0))
     production_profile = {}
     if isinstance(shot_bible, dict) and isinstance(shot_bible.get("productionProfile"), dict):
         production_profile = shot_bible["productionProfile"]
-    family = str(production_profile.get("family") or "short-form").strip() or "short-form"
-    continuity_anchor = ""
-    if isinstance(shot_bible, dict):
-        continuity_anchor = _prompt_excerpt(shot_bible.get("promptAnchor"), limit=180)
-    shot_lock_context = _prompt_hard_limit(" ".join(_shot_lock_prompt_lines(shot_bible, scene_id)), 520)
+    cues = _scene_generation_cues(source, scene_id, shot_bible, production_profile)
+    take_action_source = re.sub(r"\s+(?:in|within) the first second\.?$", "", str(cues.get("action") or ""), flags=re.IGNORECASE).strip(" ,;.")
+    take_action = _positive_generation_clause(take_action_source, fallback=str(cues.get("action") or ""), limit=100)
+    take_motion = _positive_generation_clause(cues.get("firstMotion"), fallback="visible motion starts immediately", limit=65)
+    take_camera = _positive_generation_clause(cues.get("camera"), fallback="natural phone-camera movement", limit=90)
+    take_continuity = _positive_generation_clause(
+        cues.get("continuity"),
+        fallback="same subject, prop, location, lighting, and palette",
+        limit=140,
+    )
     specs = [
         {
             "takeNumber": 1,
             "label": "continuity-master",
-            "focus": "Cleanest continuity take: use the exact scene action, subject, prop, location, palette, and camera language from the shot bible.",
+            "focus": "Cleanest continuity take with the exact subject, prop, location, palette, and camera language.",
+            "promptFocus": "",
         },
         {
             "takeNumber": 2,
             "label": "motion-first",
-            "focus": "Alternate take focused on first-second motion: make the subject, prop, light, hand, or camera movement readable immediately without adding extra cuts.",
+            "focus": "Make the subject, prop, light, hand, or camera movement readable immediately without extra cuts.",
+            "promptFocus": "Motion-first take: make first-second movement unmistakable.",
         },
         {
             "takeNumber": 3,
-            "label": "caption-safe-composition",
-            "focus": "Alternate take focused on layout: keep the important face, hands, prop, and motion above the lower third and away from the right-side Shorts UI danger zone.",
+            "label": "clean-composition",
+            "focus": "Keep the important face, hands, prop, and movement clear with an uncluttered lower-right background.",
+            "promptFocus": "Composition take: keep face, hands, key prop, and motion clear.",
         },
     ]
     takes: list[dict] = []
@@ -932,12 +1474,15 @@ def _scene_take_prompts(scene: dict, source_scene: dict | None = None, shot_bibl
         if take_number == 1:
             prompt = base_prompt
         else:
+            prompt_base = _prompt_join([
+                f"{take_action}; first second: {take_motion}",
+                f"Vertical 9:16 phone MP4, 4-6 seconds, one continuous shot, {take_camera}",
+            ], max_chars=420)
             prompt = _prompt_join([
-                base_prompt,
-                f"Take {take_number} focus ({spec['label']}): {spec['focus']}",
-                f"Keep the {family} template family and the same story beat; vary emphasis only.",
-                continuity_anchor,
-            ], max_chars=1240)
+                prompt_base,
+                spec["promptFocus"],
+                f"{_continuity_instruction(take_continuity)}; leave an uncluttered lower-right background; no visible text or watermark",
+            ], max_chars=GROK_GENERATION_PROMPT_MAX_CHARS)
         takes.append({
             "takeNumber": take_number,
             "label": spec["label"],
@@ -994,32 +1539,17 @@ def _scene_rejection_summary(decision: dict) -> str:
 
 def _scene_retry_prompt(scene: dict, shot_bible: dict | None, decision: dict) -> str:
     scene_id = str(scene.get("sceneId") or "scene")
-    base_prompt = str(scene.get("prompt") or "").strip()
-    attempt = _scene_retry_attempt(decision)
-    rejection_summary = _scene_rejection_summary(decision)
-    continuity_anchor = ""
-    negative_prompts = ""
+    base_prompt = _prompt_hard_limit(scene.get("prompt"), 95)
+    production_profile = {}
     if isinstance(shot_bible, dict):
-        continuity_anchor = _short_text(shot_bible.get("promptAnchor"), limit=260)
-        negative_prompts = ", ".join(str(item) for item in shot_bible.get("negativePrompts") or [])
-    shot_lock_lines = _shot_lock_prompt_lines(shot_bible, scene_id)
-    parts = [
-        f"Regenerate attempt {attempt} for {scene_id}.",
-        "Use the same scene intent, but fix the rejected Grok clip instead of repeating the same composition.",
-        f"Original scene prompt: {base_prompt}",
-        f"Rejected because: {rejection_summary}.",
-        *shot_lock_lines,
-        "Output one continuous 4-6 second vertical 9:16 MP4 with visible motion in the first two seconds.",
-        "Keep the subject, key prop, location, lighting, palette, and camera language consistent with the other clips.",
-        "Leave caption-safe space; do not place the main subject across the lower third or right-side Shorts UI danger zone.",
-        "No captions, no logos, no watermark, no baked-in text, no UI, no flicker, no morphing, no random extra subjects.",
-        "If the previous attempt looked static, generic, stock-like, or unrelated, change the camera move and framing while preserving continuity.",
-    ]
-    if continuity_anchor:
-        parts.append(continuity_anchor)
-    if negative_prompts:
-        parts.append(f"Negative prompt list: {negative_prompts}.")
-    return " ".join(part for part in parts if part)
+        production_profile = shot_bible.get("productionProfile") if isinstance(shot_bible.get("productionProfile"), dict) else {}
+    cues = _scene_generation_cues(scene, scene_id, shot_bible, production_profile)
+    return _prompt_join([
+        base_prompt,
+        f"Fresh retry: first second must clearly show {cues['firstMotion']}",
+        f"Vertical 9:16 phone MP4, 4-6 seconds, one continuous shot, {cues['camera']}",
+        f"{_continuity_instruction(cues['continuity'])}; leave an uncluttered lower-right background; no visible text or watermark",
+    ], max_chars=GROK_GENERATION_PROMPT_MAX_CHARS)
 
 
 def _handoff_dir(project_id: str) -> Path:
@@ -1310,8 +1840,8 @@ _AUTOMATION_REPLAY_FIELDS = {
 
 _NATIVE_GROK_DOWNLOAD_PROMPT_BLOCKER = (
     "Chrome/Grok Download/Save/Export automation and Downloads watcher fallback are disabled. "
-    "Native download prompts can stall until the operator clicks them; use Companion/pageAssets "
-    "direct import or explicit local MP4 upload/import instead."
+    "Native download prompts can stall until the operator clicks them; use operator-owned manual "
+    "download/import or explicit local MP4 upload/import instead."
 )
 
 
@@ -1878,11 +2408,19 @@ def _next_missing_or_rejected_scene(
     manifest: dict,
     assets: list[dict] | None = None,
 ) -> dict | None:
-    assets = assets if assets is not None else _match_downloaded_assets(handoff_dir, manifest)
+    assets = assets if assets is not None else _apply_source_recovery_render_replacements(
+        handoff_dir,
+        _match_downloaded_assets(handoff_dir, manifest),
+    )
     ready_asset_by_scene_id = {
         str(item.get("sceneId")): item
         for item in assets
         if isinstance(item, dict) and item.get("status") == "ready" and item.get("sceneId")
+    }
+    source_recovery_replaced_scene_ids = {
+        str(item.get("sceneId"))
+        for item in assets
+        if isinstance(item, dict) and item.get("sourceRecoveryReplacement") is True and item.get("sceneId")
     }
     review_decisions = manifest.get("reviewDecisions") if isinstance(manifest.get("reviewDecisions"), dict) else {}
     rejected_scene_ids = {
@@ -1895,7 +2433,11 @@ def _next_missing_or_rejected_scene(
             continue
         scene_id = str(scene.get("sceneId") or "")
         asset = ready_asset_by_scene_id.get(scene_id)
-        if asset is None or scene_id in rejected_scene_ids or _grok_asset_needs_replacement(asset, manifest):
+        if (
+            asset is None
+            or (scene_id in rejected_scene_ids and scene_id not in source_recovery_replaced_scene_ids)
+            or _grok_asset_needs_replacement(asset, manifest)
+        ):
             return scene
     return None
 
@@ -1905,7 +2447,10 @@ def _scene_queue_status(
     manifest: dict,
     assets: list[dict] | None = None,
 ) -> dict:
-    assets = assets if assets is not None else _match_downloaded_assets(handoff_dir, manifest)
+    assets = assets if assets is not None else _apply_source_recovery_render_replacements(
+        handoff_dir,
+        _match_downloaded_assets(handoff_dir, manifest),
+    )
     ready_scene_ids = {
         str(item.get("sceneId"))
         for item in assets
@@ -1917,10 +2462,16 @@ def _scene_queue_status(
         if _grok_asset_needs_replacement(item, manifest)
     )
     review_decisions = manifest.get("reviewDecisions") if isinstance(manifest.get("reviewDecisions"), dict) else {}
+    source_recovery_replaced_scene_ids = {
+        str(item.get("sceneId"))
+        for item in assets
+        if isinstance(item, dict) and item.get("sourceRecoveryReplacement") is True and item.get("sceneId")
+    }
     rejected_scene_ids = sorted(
         str(scene_id)
         for scene_id, decision in review_decisions.items()
         if isinstance(decision, dict) and decision.get("accepted") is False
+        and str(scene_id) not in source_recovery_replaced_scene_ids
     )
     scene_ids = [
         str(scene.get("sceneId") or f"scene-{index + 1:02d}")
@@ -1984,18 +2535,72 @@ def _normalize_take_number(value: object, default: int = 1) -> int:
         return default
 
 
-def _recommended_take_number(scene: dict | None) -> int:
+def _take_prompt_items(scene: dict | None) -> list[dict]:
     if not isinstance(scene, dict):
-        return 1
-    # Take 2 is the production default because it prioritizes first-second
-    # visible motion, which is the strongest Grok-main quality signal.
-    for preferred in (2, 1):
-        if _select_take_prompt(scene, preferred):
-            return preferred
+        return []
     takes = scene.get("takePrompts") if isinstance(scene.get("takePrompts"), list) else []
-    for item in takes:
-        if isinstance(item, dict):
-            return _normalize_take_number(item.get("takeNumber"))
+    return [item for item in takes if isinstance(item, dict)]
+
+
+def _take_prompt_by_number(scene: dict | None, take_number: object) -> dict | None:
+    normalized_take = _normalize_take_number(take_number)
+    for item in _take_prompt_items(scene):
+        if _normalize_take_number(item.get("takeNumber")) == normalized_take:
+            return item
+    return None
+
+
+def _take_prompt_quality(item: dict | None) -> dict:
+    if not isinstance(item, dict):
+        return {}
+    prompt_quality = item.get("promptQuality")
+    return prompt_quality if isinstance(prompt_quality, dict) else {}
+
+
+def _take_prompt_quality_score(item: dict | None) -> int:
+    score = _take_prompt_quality(item).get("score")
+    try:
+        return int(float(score))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _take_prompt_quality_ready(item: dict | None) -> bool:
+    return str(_take_prompt_quality(item).get("status") or "").strip() == "ready"
+
+
+def _recommended_take_prompt(scene: dict | None) -> dict | None:
+    items = _take_prompt_items(scene)
+    if not items:
+        return None
+
+    motion_first = _take_prompt_by_number(scene, 2)
+    if _take_prompt_quality_ready(motion_first):
+        return motion_first
+
+    ready_items = [item for item in items if _take_prompt_quality_ready(item)]
+    if ready_items:
+        fallback_order = {3: 0, 1: 1}
+        return sorted(
+            ready_items,
+            key=lambda item: (
+                -_take_prompt_quality_score(item),
+                fallback_order.get(_normalize_take_number(item.get("takeNumber")), 10),
+                _normalize_take_number(item.get("takeNumber")),
+            ),
+        )[0]
+
+    for preferred in (2, 1):
+        item = _take_prompt_by_number(scene, preferred)
+        if item:
+            return item
+    return items[0]
+
+
+def _recommended_take_number(scene: dict | None) -> int:
+    recommended = _recommended_take_prompt(scene)
+    if recommended:
+        return _normalize_take_number(recommended.get("takeNumber"))
     return 1
 
 
@@ -2217,8 +2822,8 @@ def _codex_chrome_native_host_probe() -> dict:
         operator_action = (
             "Codex Chrome native host is installed, but Video Studio does not use it as the Grok production bridge "
             "and this bridge process cannot drive the Codex Chrome plugin directly. Use the existing signed-in "
-            "Chrome profile for Grok generation, then use the Video Studio Grok Companion, observed-post runner, "
-            "Downloads watcher, or batch MP4 upload for this packet."
+            "Chrome profile for Grok generation, then use operator-owned manual download/import or batch MP4 upload "
+            "for this packet."
         )
     elif manifest_exists and not host_exists:
         status = "host-executable-missing"
@@ -2430,7 +3035,28 @@ def _extension_event_log_path(handoff_dir: Path) -> Path:
     return handoff_dir / "extension-events.jsonl"
 
 
-def _latest_extension_event(handoff_dir: Path) -> dict | None:
+COMPANION_CONTROL_EVENT_TYPES = {
+    "autostart-fill",
+    "autostart-generate",
+    "autostart-download",
+    "background-autostart-fill",
+    "background-autostart-generate",
+    "background-autostart-download",
+    "auto-queue-fill",
+    "auto-queue-generate",
+    "background-candidate-download",
+    "companion-direct-import",
+    "companion-blob-direct-import",
+}
+COMPANION_BLOCKING_STATUSES = {"blocked", "failed"}
+
+
+def _latest_extension_event(
+    handoff_dir: Path,
+    *,
+    event_types: set[str] | None = None,
+    scene_id: str | None = None,
+) -> dict | None:
     path = _extension_event_log_path(handoff_dir)
     if not path.exists():
         return None
@@ -2444,6 +3070,13 @@ def _latest_extension_event(handoff_dir: Path) -> dict | None:
         except json.JSONDecodeError:
             continue
         if isinstance(event, dict):
+            event_type = str(event.get("eventType") or "")
+            if event_types is not None and event_type not in event_types:
+                continue
+            if scene_id:
+                event_scene_id = str(event.get("sceneId") or "")
+                if event_scene_id and event_scene_id != scene_id:
+                    continue
             return event
     return None
 
@@ -2533,6 +3166,111 @@ def _companion_connection_status(latest_event: dict | None) -> dict:
     }
 
 
+def _companion_blocker_action(event: dict) -> str:
+    detail = str(event.get("detail") or "")
+    current_url = str(event.get("currentUrl") or "")
+    lowered = f"{detail} {current_url}".lower()
+    if "receiving end does not exist" in lowered or "content-script-not-ready" in lowered:
+        return (
+            "Reload the unpacked Video Studio Grok Companion extension, open https://grok.com/imagine "
+            "in that same signed-in Chrome profile, then load the current scene command again."
+        )
+    if "imagine-surface" in lowered or "general-chat" in lowered or "/c/" in lowered:
+        return "Open Grok Imagine, not a normal /c chat thread, then rerun Prep + Generate for the current scene."
+    if "video-mode" in lowered:
+        return "Switch Grok Imagine to video mode first; do not treat a text/image composer as generation-ready."
+    if "direct-import" in lowered or "uploadendpoint" in lowered:
+        return "Use the direct-import or manual batch upload path for the generated MP4; do not click Chrome download fallback."
+    return "Fix the latest Companion control failure, then rerun the current scene command from Grok Imagine."
+
+
+def _companion_live_event_summary(latest_control: dict | None) -> dict:
+    if not latest_control:
+        return {
+            "status": "not-seen",
+            "blocked": False,
+            "blocker": "",
+            "eventType": "",
+            "eventStatus": "",
+            "sceneId": "",
+            "currentUrl": "",
+            "detail": "",
+            "operatorAction": "Run Prep + Generate from an active Grok Imagine composer; the latest control event will appear here.",
+        }
+    event_type = str(latest_control.get("eventType") or "")
+    event_status = str(latest_control.get("status") or "")
+    current_url = str(latest_control.get("currentUrl") or "")
+    redirected_to_chat = "/c/" in current_url.lower()
+    blocked = event_status in COMPANION_BLOCKING_STATUSES or redirected_to_chat
+    blocker = ""
+    if redirected_to_chat:
+        blocker = "grok-imagine-redirected-to-chat"
+    elif blocked:
+        blocker = event_type or event_status
+    return {
+        "status": "blocked" if blocked else "observed",
+        "blocked": blocked,
+        "blocker": blocker,
+        "eventType": event_type,
+        "eventStatus": event_status,
+        "sceneId": str(latest_control.get("sceneId") or ""),
+        "currentUrl": current_url,
+        "detail": str(latest_control.get("detail") or ""),
+        "operatorAction": (
+            _companion_blocker_action(latest_control)
+            if blocked
+            else "Continue the current Grok Imagine queue, then direct-import or manually upload the generated MP4."
+        ),
+        "event": latest_control,
+    }
+
+
+def _companion_run_readiness(handoff_dir: Path, connection: dict, scene_id: str | None = None) -> dict:
+    latest_control = _latest_extension_event(
+        handoff_dir,
+        event_types=COMPANION_CONTROL_EVENT_TYPES,
+        scene_id=scene_id,
+    )
+    connected = bool(connection.get("connected"))
+    base = {
+        "mode": "browser-extension-semi-auto",
+        "usesPaidApi": False,
+        "usesRemoteDebugging": False,
+        "sceneId": scene_id or "",
+        "connected": connected,
+        "connectionStatus": str(connection.get("status") or ""),
+        "readyForPrepGenerate": False,
+        "state": "not-seen",
+        "hardBlocker": "",
+        "operatorAction": str(connection.get("operatorAction") or ""),
+        "lastControlEvent": latest_control or {},
+    }
+    if not connected:
+        base["state"] = "companion-not-connected"
+        return base
+    if not latest_control:
+        base.update({
+            "readyForPrepGenerate": True,
+            "state": "connected-awaiting-first-control-event",
+            "operatorAction": "Use Prep + Generate on the current Grok Imagine scene; status will record fill/generate proof.",
+        })
+        return base
+    event_status = str(latest_control.get("status") or "")
+    if event_status in COMPANION_BLOCKING_STATUSES:
+        base.update({
+            "state": "latest-control-blocked",
+            "hardBlocker": str(latest_control.get("eventType") or ""),
+            "operatorAction": _companion_blocker_action(latest_control),
+        })
+        return base
+    base.update({
+        "readyForPrepGenerate": True,
+        "state": "latest-control-ok",
+        "operatorAction": "Continue the current Grok Imagine queue, then direct-import or manually upload the generated MP4.",
+    })
+    return base
+
+
 def _sanitize_observed_grok_url(value: object) -> str:
     raw = str(value or "").strip()
     if not raw:
@@ -2555,14 +3293,24 @@ def _sanitize_observed_grok_url(value: object) -> str:
     return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
 
 
+_CODEX_CHROME_GENERATED_STATUSES = {"generated", "generated-export-pending", "post-created"}
+
+
+def _is_generated_codex_chrome_observation(value: object) -> bool:
+    return (
+        isinstance(value, dict)
+        and str(value.get("status") or "").strip() in _CODEX_CHROME_GENERATED_STATUSES
+    )
+
+
 def _latest_codex_chrome_observation(manifest: dict) -> dict | None:
     latest = manifest.get("latestCodexChromeObservation")
-    if isinstance(latest, dict):
+    if _is_generated_codex_chrome_observation(latest):
         return latest
     observations = manifest.get("codexChromeObservations")
     if isinstance(observations, list):
         for item in reversed(observations):
-            if isinstance(item, dict):
+            if _is_generated_codex_chrome_observation(item):
                 return item
     return None
 
@@ -3008,6 +3756,92 @@ def _attach_inline_bookmarklet_payloads(
     return payload
 
 
+def _browser_control_primary_rail(
+    project_id: str,
+    manifest: dict,
+    next_scene: dict | None = None,
+    *,
+    generation_observation: dict | None = None,
+    manual_primary_path: dict | None = None,
+) -> dict:
+    scene = next_scene if isinstance(next_scene, dict) else None
+    current_scene = (
+        manual_primary_path.get("currentScene")
+        if isinstance(manual_primary_path, dict) and isinstance(manual_primary_path.get("currentScene"), dict)
+        else {}
+    )
+    scene_id = str(
+        (scene or {}).get("sceneId")
+        or current_scene.get("sceneId")
+        or ""
+    ).strip()
+    expected_file = str(
+        (scene or {}).get("expectedFileName")
+        or current_scene.get("expectedFileName")
+        or (f"{scene_id}.grok.mp4" if scene_id else "")
+    ).strip()
+    recommended_take_number = (
+        _recommended_take_number(scene)
+        if scene is not None
+        else current_scene.get("recommendedTakeNumber")
+    )
+    download_import = _download_import_actions(project_id, manifest, scene)
+    observed_generated = _is_generated_codex_chrome_observation(generation_observation)
+    operator_next_action = (
+        f"Use the existing signed-in Chrome/Grok tab under Codex or Claude browser-control to generate {scene_id or 'the next scene'}"
+        f"{(' take ' + str(recommended_take_number)) if recommended_take_number else ''}; "
+        f"then the operator downloads/saves {expected_file or 'the MP4'} and imports it through local Downloads import or batch upload."
+    )
+    if observed_generated:
+        operator_next_action = (
+            f"Generation is already observed for {scene_id or 'the scene'} in the signed-in Chrome/Grok session; "
+            f"the remaining step is operator-owned MP4 download/save for {expected_file or 'the MP4'} followed by local import/upload."
+        )
+    return {
+        "mode": "existing-signed-in-chrome-browser-control-primary",
+        "primary": True,
+        "provider": "grok-web",
+        "source": "codex-or-claude-chrome-browser-control",
+        "requiresExistingSignedInChromeProfile": True,
+        "forbidNewChromeProfile": True,
+        "forbidEdgeFallback": True,
+        "usesPaidApi": False,
+        "usesRemoteDebugging": False,
+        "extensionRequiredForGeneration": False,
+        "bookmarkletRole": "fallback-only-when-browser-control-tool-is-unavailable",
+        "downloadAuthority": "operator-owned-manual-download-or-local-upload",
+        "autoNativeDownloadPromptAllowed": False,
+        "automaticDownloadClickAllowed": False,
+        "sceneId": scene_id,
+        "expectedFileName": expected_file,
+        "recommendedTakeNumber": recommended_take_number if scene_id else None,
+        "generationObserved": observed_generated,
+        "observedPostUrl": str((generation_observation or {}).get("postUrl") or "").strip(),
+        "observedAssetUrl": str((generation_observation or {}).get("videoUrl") or "").strip(),
+        "operatorNextAction": operator_next_action,
+        "importEndpoints": {
+            "importDownloads": download_import.get("endpoint"),
+            "manualDownloadWatch": download_import.get("manualWatchEndpoint"),
+            "manualUpload": download_import.get("manualUploadEndpoint"),
+            "manualBatchUpload": download_import.get("manualBatchUploadEndpoint"),
+        },
+        "successCriteria": [
+            "Codex or Claude controls the existing signed-in Chrome/Grok tab, not a new Chrome profile.",
+            "Prompt fill/generate happens only on Grok Imagine or a verified Grok generation surface, never /c chat as success.",
+            "The operator owns Grok Download/Save/Export and any native Chrome prompt.",
+            "Video Studio imports a local MP4 from Downloads or explicit batch upload.",
+            "The review packet accepts the candidate before render.",
+        ],
+        "doNotUse": [
+            "Do not launch Edge, Chrome for Testing, or a new Chrome profile for the production Grok rail.",
+            "Do not treat companion extension heartbeat or autostart proof as generation success.",
+            "Do not click Grok Download/Save/Export from Codex automation.",
+            "Do not call xAI/Grok paid APIs or paid video APIs.",
+            "Do not accept https://grok.com/c/* chat threads as an Imagine/generation surface.",
+        ],
+    }
+
+
 def _chrome_companion_summary(
     project_id: str,
     handoff_dir: Path,
@@ -3025,20 +3859,47 @@ def _chrome_companion_summary(
     )
     selected_scene_id = str(scene.get("sceneId") or "") if isinstance(scene, dict) else None
     recommended_take_number = _recommended_take_number(scene)
+    queue_command_url = _extension_command_url(project_id)
+    queue_autostart_url = _extension_autostart_url(project_id)
+    queue_prep_generate_autostart_url = _extension_autostart_url(project_id, None, "prep-generate")
+    selected_scene_command_url = _extension_command_url(project_id, selected_scene_id, recommended_take_number)
+    selected_scene_autostart_url = _extension_autostart_url(project_id, selected_scene_id, "fill-prompt", recommended_take_number)
+    selected_scene_prep_generate_url = _extension_autostart_url(project_id, selected_scene_id, "prep-generate", recommended_take_number)
+    latest_control_event = _latest_extension_event(
+        handoff_dir,
+        event_types=COMPANION_CONTROL_EVENT_TYPES,
+        scene_id=selected_scene_id,
+    )
+    live_event_summary = _companion_live_event_summary(latest_control_event)
+    companion_connection = _companion_connection_status(_latest_extension_event(handoff_dir))
     return {
-        "mode": "existing-logged-in-chrome-extension",
+        "mode": "fallback-only-existing-logged-in-chrome-extension",
+        "status": live_event_summary.get("status") if live_event_summary.get("status") != "not-seen" else companion_connection.get("status"),
+        "liveBlocker": live_event_summary.get("blocker") or "",
+        "liveEventSummary": live_event_summary,
+        "operatorAction": live_event_summary.get("operatorAction") or companion_connection.get("operatorAction"),
+        "primaryGenerationRail": "existing-signed-in-chrome-browser-control",
+        "role": "fallback-diagnostic-only",
+        "requiredForGeneration": False,
+        "requiredForDownload": False,
         "usesPaidApi": False,
         "usesRemoteDebugging": False,
         "storesCredentials": False,
         "opensEdge": False,
-        "purpose": "Use a manually loaded local Chrome extension inside the operator's already signed-in Chrome/SuperGrok profile.",
+        "purpose": "Fallback helper only. The primary Grok rail is direct browser-control of the existing signed-in Chrome/Grok tab plus operator-owned local MP4 import.",
         "extensionDir": str(_chrome_companion_extension_dir()),
         "profileProbe": _chrome_profile_probe_with_packet_context(handoff_dir),
         "guideUrl": _chrome_companion_guide_url(project_id, selected_scene_id),
         "recommendedTakeNumber": recommended_take_number,
-        "commandUrl": _extension_command_url(project_id, selected_scene_id, recommended_take_number),
-        "autostartUrl": _extension_autostart_url(project_id, selected_scene_id, "fill-prompt", recommended_take_number),
-        "prepGenerateAutostartUrl": _extension_autostart_url(project_id, selected_scene_id, "prep-generate", recommended_take_number),
+        "operatorCommandUrl": queue_command_url,
+        "operatorAutostartUrl": queue_autostart_url,
+        "operatorPrepGenerateAutostartUrl": queue_prep_generate_autostart_url,
+        "commandUrl": queue_command_url,
+        "autostartUrl": queue_autostart_url,
+        "prepGenerateAutostartUrl": queue_prep_generate_autostart_url,
+        "selectedSceneCommandUrl": selected_scene_command_url,
+        "selectedSceneAutostartUrl": selected_scene_autostart_url,
+        "selectedScenePrepGenerateAutostartUrl": selected_scene_prep_generate_url,
         "bookmarkletUrl": _bookmarklet_url(project_id, selected_scene_id, False, recommended_take_number),
         "bookmarkletGenerateUrl": _bookmarklet_url(project_id, selected_scene_id, True, recommended_take_number),
         "bookmarkletScriptUrl": _bookmarklet_script_url(project_id, selected_scene_id, False, recommended_take_number),
@@ -3049,14 +3910,14 @@ def _chrome_companion_summary(
         "eventEndpoint": _extension_event_url(project_id),
         "bookmarkletEventEndpoint": _bookmarklet_event_url(project_id),
         "sceneId": selected_scene_id,
+        "runReadiness": _companion_run_readiness(handoff_dir, companion_connection, selected_scene_id),
         "takeCommands": _scene_take_commands(project_id, selected_scene_id, scene) if selected_scene_id and isinstance(scene, dict) else [],
         **_extension_queue_payload(project_id, handoff_dir, manifest, assets=assets, queue_status=scene_queue),
         "operatorStillDoes": [
-            "Load the unpacked extension once in the existing Chrome profile.",
-            "Open Grok Imagine in that same Chrome profile.",
-            "Run the extension from the toolbar, then review the prompt before generation if Grok UI changes.",
-            "If the extension is not loaded, use the bookmarklet/console fallback from the guide page in the current Grok tab.",
-            "Confirm or download the generated MP4; Video Studio imports from Downloads/incoming afterward.",
+            "Use Codex/Claude browser-control against the existing signed-in Chrome/Grok tab as the primary generation path.",
+            "Keep the extension only as a fallback helper when browser-control is unavailable or for diagnostic event proof.",
+            "Operator owns Grok Download/Save/Export and any native Chrome prompt.",
+            "Video Studio imports local MP4s from Downloads or explicit batch upload after the operator saves them.",
         ],
     }
 
@@ -3071,7 +3932,11 @@ def _extension_command_payload(
     scene_id = str(scene.get("sceneId") or "")
     expected_file_name = str(scene.get("expectedFileName") or f"{scene_id}.grok.mp4")
     base_prompt = str(scene.get("prompt") or "")
-    selected_take = _select_take_prompt(scene, take_number)
+    selected_take = (
+        _select_take_prompt(scene, take_number)
+        if take_number is not None
+        else _recommended_take_prompt(scene)
+    )
     selected_take_number = _normalize_take_number(selected_take.get("takeNumber") if selected_take else take_number)
     decision = _scene_review_decision(manifest, scene_id)
     retry_prompt = ""
@@ -3134,6 +3999,33 @@ def _extension_command_payload(
         },
     }
     return _attach_inline_bookmarklet_payloads(payload, project_id)
+
+
+def _prompt_quality_command_block(payload: dict, *, allow_weak_prompt: bool = False) -> dict | None:
+    prompt_quality = payload.get("promptQuality") if isinstance(payload.get("promptQuality"), dict) else {}
+    if allow_weak_prompt or prompt_quality.get("status") == "ready":
+        return None
+    scene_id = str(payload.get("sceneId") or "")
+    take_number = payload.get("takeNumber")
+    return {
+        "ok": False,
+        "status": "blocked-prompt-quality",
+        "error": "Prompt quality gate blocked Grok generation; rewrite the scene prompt before filling or generating in Grok Imagine.",
+        "projectId": payload.get("projectId"),
+        "sceneId": scene_id,
+        "takeNumber": take_number,
+        "takeLabel": payload.get("takeLabel"),
+        "promptQuality": prompt_quality,
+        "promptQualityStatus": prompt_quality.get("status") or "unknown",
+        "operatorAction": (
+            prompt_quality.get("operatorAction")
+            or "Rewrite the scene Grok prompt with concrete subject, place, prop, first-second physical action, and camera cue."
+        ),
+        "debugOverride": (
+            "Only for diagnostics: append allowWeakPrompt=true to the command URL. "
+            "Do not use the override for production candidate generation."
+        ),
+    }
 
 
 def _bookmarklet_javascript(project_id: str, command: dict, auto_generate: bool) -> str:
@@ -3281,6 +4173,12 @@ def _bookmarklet_javascript(project_id: str, command: dict, auto_generate: bool)
     if (!/\\bgrok\\.com$/i.test(location.hostname) && !/\\.grok\\.com$/i.test(location.hostname)) {{
       alert("Open this bookmarklet on grok.com/imagine, not on the guide page.");
       report("bookmarklet-start", "failed", "not-on-grok");
+      return;
+    }}
+    if (command.promptQuality && command.promptQuality.status && command.promptQuality.status !== "ready") {{
+      const missing = Array.isArray(command.promptQuality.missing) ? command.promptQuality.missing.join(", ") : command.promptQuality.status;
+      alert(`Video Studio blocked this Grok prompt before generation. Rewrite promptQuality: ${{missing}}`);
+      report("bookmarklet-prompt-quality", "blocked", missing);
       return;
     }}
     if (!promptText.trim()) {{
@@ -3652,6 +4550,12 @@ def _bookmarklet_queue_javascript(
       report("bookmarklet-queue-start", "failed", "not-on-grok");
       return;
     }
+    if (command.promptQuality && command.promptQuality.status && command.promptQuality.status !== "ready") {
+      const missing = Array.isArray(command.promptQuality.missing) ? command.promptQuality.missing.join(", ") : command.promptQuality.status;
+      alert(`Video Studio blocked this Grok queue prompt before generation. Rewrite promptQuality: ${missing}`);
+      report("bookmarklet-queue-prompt-quality", "blocked", missing);
+      return;
+    }
     if (!sceneId || !promptText.trim()) {
       alert("Video Studio did not provide a Grok scene prompt.");
       report("bookmarklet-queue-start", "failed", "missing-scene-or-prompt");
@@ -3705,7 +4609,7 @@ def _bookmarklet_queue_javascript(
     }
     if (!importResult) {
       report("bookmarklet-queue-direct-import", "stopped-no-download-fallback", "direct import did not complete; no Download/Save/Export or anchor download was clicked", candidate && candidate.href || "");
-      alert(`Grok prompt was generated for ${sceneId}, but Video Studio did not direct-import the MP4. It did not click Download/Save/Export or open Chrome's approval dialog. Use Companion direct import or the no-extension batch upload path, then run queue again.`);
+      alert(`Grok prompt was generated for ${sceneId}, but Video Studio did not import the MP4. It did not click Download/Save/Export or open Chrome's approval dialog. Use operator-owned local MP4 import or explicit batch upload, then run queue again if needed.`);
       return;
     }
     if (importResult.allReady) {
@@ -3991,7 +4895,7 @@ def _observed_post_download_javascript(project_id: str, command: dict, wait_seco
     }
     if (!importResult) {
       report("bookmarklet-post-download", "stopped-no-download-fallback", "direct import did not complete; no browser download or save control was clicked", candidate && candidate.href || "");
-      alert(`Video Studio did not direct-import ${sceneId}. It did not click Download/Save or open Chrome's approval dialog. Use the Companion direct import path or a separate manual upload if needed.`);
+      alert(`Video Studio did not import ${sceneId}. It did not click Download/Save or open Chrome's approval dialog. Use operator-owned local MP4 import or a separate manual upload if needed.`);
       return;
     }
     alert(`Video Studio imported or detected progress for ${sceneId}. Open the review packet before render.`);
@@ -4041,7 +4945,7 @@ def _normalize_open_targets(value: object, default: tuple[str, ...]) -> list[str
         elif target in {"observed-asset-manual-runway", "manual-observed-asset", "grok-manual-asset-runway"}:
             targets.append("observed-asset-manual-runway")
         elif target in {"observed-asset-runway", "asset-tab-runway", "grok-asset-runway"}:
-            targets.extend(["chrome-extensions", "observed-post-download", "observed-asset-manual-runway"])
+            targets.extend(["observed-post", "observed-asset-manual-runway"])
         elif target in {"worksheet", "grok"}:
             targets.append(target)
 
@@ -4156,6 +5060,20 @@ def _open_handoff_targets(
             } if target == "grok-prep-generate" else {}),
             **({
                 "sceneId": prep_scene_id,
+                "requiresCompanionExtension": False,
+                "requiresCompanionReload": False,
+                "requiresExistingSignedInChrome": True,
+                "browserControlPrimary": True,
+                "autostartAction": "none",
+                "expectedFileName": str((generation_observation or {}).get("expectedFileName") or ""),
+                "postInstruction": (
+                    "Use this Grok post in the existing signed-in Chrome profile under Codex/Claude "
+                    "browser-control. The operator owns Download/Save/Export; Video Studio imports "
+                    "only the local MP4 afterward."
+                ),
+            } if target == "observed-post" else {}),
+            **({
+                "sceneId": prep_scene_id,
                 "requiresCompanionExtension": True,
                 "requiresCompanionReload": True,
                 "autostartAction": "download-visible-video",
@@ -4186,11 +5104,13 @@ def _open_handoff_targets(
                 "requiresOperatorClick": True,
                 "usesPaidApi": False,
                 "storesCredentials": False,
+                "browserControlPrimary": True,
+                "requiresCompanionExtension": False,
                 "expectedFileName": str((generation_observation or {}).get("expectedFileName") or ""),
                 "manualRunwayInstruction": (
-                    "Use the local runway page only as an operator-owned manual fallback when the "
-                    "Chrome companion is stale. Codex automation must not click the observed Grok "
-                    "MP4 link, Download, Save, Export, or any browser approval dialog."
+                    "Use the local runway page as the operator-owned import fallback after browser-control "
+                    "generation. Codex automation must not click the observed Grok MP4 link, Download, "
+                    "Save, Export, or any browser approval dialog."
                 ),
             } if target == "observed-asset-manual-runway" else {}),
         })
@@ -6003,7 +6923,7 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
     scenes = [scene for scene in (manifest.get("scenes") or []) if isinstance(scene, dict)]
     shot_bible = manifest.get("shotBible") if isinstance(manifest.get("shotBible"), dict) else {}
     required_count = manifest.get("minGrokMainScenes") or max(1, (len(scenes) + 1) // 2)
-    assets = _match_downloaded_assets(handoff_dir, manifest)
+    assets = _apply_source_recovery_render_replacements(handoff_dir, _match_downloaded_assets(handoff_dir, manifest))
     scene_queue = _scene_queue_status(handoff_dir, manifest, assets)
     replacement_scene_ids = [
         str(item)
@@ -6063,7 +6983,7 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
         <div class="runway-card">
           <strong>Required next action</strong>
           <span>Generate two fresh Grok MP4 takes</span>
-          <p class="muted">Use Companion/pageAssets direct import or operator-owned manual batch upload, not a browser-observed currentSrc/cache copy.</p>
+          <p class="muted">Use existing signed-in Chrome browser-control, then operator-owned manual download/import or batch upload. Do not use a browser-observed currentSrc/cache copy.</p>
         </div>
         <div class="runway-card">
           <strong>Review rule</strong>
@@ -6092,9 +7012,6 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
         queue_inline_url = str(command_payload.get("bookmarkletQueueInlineUrl") or queue_inline_url)
         queue_console_snippet = str(command_payload.get("bookmarkletQueueInlineConsoleSnippet") or queue_console_snippet)
     companion_probe = _chrome_profile_probe_with_packet_context(handoff_dir)
-    companion_ready = companion_probe.get("anyVideoStudioCompanion") is True
-    codex_only = companion_probe.get("codexExtensionIsNotCompanion") is True
-    companion_status = str(companion_probe.get("status") or "unknown")
     companion_profile = " ".join(
         item
         for item in (
@@ -6105,17 +7022,6 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
         )
         if item
     ) or "signed-in Chrome profile"
-    companion_action = str(companion_probe.get("operatorAction") or "")
-    companion_class = "good" if companion_ready else "block" if codex_only else "warn"
-    companion_label = (
-        "Video Studio Companion detected"
-        if companion_ready
-        else "Codex extension only - load Video Studio Companion"
-        if codex_only
-        else "Video Studio Companion not detected"
-    )
-    companion_guide_url = _chrome_companion_guide_url(project_id, next_scene_id or (str(scenes[0].get("sceneId") or "scene-01") if scenes else "scene-01"))
-    companion_dir = str(_chrome_companion_extension_dir())
     automation_status = _read_automation_status(handoff_dir) or {}
     cdp_blocker = str(automation_status.get("browserBlocker") or automation_status.get("error") or "").strip()
     cdp_profile_mode = str(automation_status.get("browserProfileMode") or "").strip()
@@ -6169,7 +7075,6 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
         if str(item).strip()
     ) or "<li>Microsoft Edge</li><li>new Chrome profile</li>"
     codex_profiles = ", ".join(str(item) for item in companion_probe.get("codexExtensionProfileDirectories") or []) or "none"
-    companion_profiles = ", ".join(str(item) for item in companion_probe.get("videoStudioCompanionProfileDirectories") or []) or "none"
     chrome_profile_alignment_panel = f"""
     <section class="panel profile-align {escape(profile_alignment_class)}">
       <h2>Chrome profile alignment</h2>
@@ -6194,19 +7099,18 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
       <table>
         <tbody>
           <tr><th>Codex extension profiles</th><td>{escape(codex_profiles)}</td></tr>
-          <tr><th>Video Studio companion profiles</th><td>{escape(companion_profiles)}</td></tr>
-          <tr><th>Control route</th><td>{escape(str(profile_alignment.get("controlRoute") or "native-mp4-watcher-or-companion"))}</td></tr>
+          <tr><th>Control route</th><td>{escape(str(profile_alignment.get("controlRoute") or "existing-signed-in-chrome-browser-control"))}</td></tr>
           <tr><th>Do not open</th><td><ul class="source-list">{do_not_open_items}</ul></td></tr>
         </tbody>
       </table>
-      <p class="muted">{escape(str(profile_alignment.get("operatorAction") or companion_action or "Use the existing signed-in Chrome profile, save native Grok MP4s, then import through Video Studio."))}</p>
+      <p class="muted">{escape(str(profile_alignment.get("operatorAction") or "Use the existing signed-in Chrome profile, save native Grok MP4s, then import through Video Studio."))}</p>
     </section>
     """
     native_blocker = "Generate the next Grok scene and save the native app/web MP4."
     if replacement_scene_id:
         native_blocker = (
-            f"Replace {replacement_scene_id} with two fresh Grok MP4 takes through Companion/pageAssets direct import "
-            "or operator-owned manual batch upload; the current local file is proof-only or below the source-quality floor."
+            f"Replace {replacement_scene_id} with two fresh Grok MP4 takes through existing signed-in Chrome browser-control "
+            "plus operator-owned manual download/import or batch upload; the current local file is proof-only or below the source-quality floor."
         )
     elif next_scene_id:
         native_blocker = (
@@ -6225,7 +7129,7 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
         <div class="runway-card">
           <strong>Current blocker</strong>
           <span>{escape(native_blocker)}</span>
-          <p class="muted">CDP/default-profile automation is secondary. Native local MP4 export/import is the main path.</p>
+          <p class="muted">Extension and isolated CDP automation are fallback only. Existing signed-in Chrome browser-control plus local MP4 import is the main path.</p>
         </div>
         <div class="runway-card">
           <strong>Watched folders</strong>
@@ -6339,7 +7243,7 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
                 "prompt": str(scene.get("prompt") or ""),
                 "promptQuality": scene.get("promptQuality"),
             }]
-        recommended_take = _select_take_prompt(scene, 2) or _select_take_prompt(scene, 1) or {}
+        recommended_take = _recommended_take_prompt(scene) or {}
         recommended_take_number = _normalize_take_number(
             recommended_take.get("takeNumber") if isinstance(recommended_take, dict) else 1
         )
@@ -6354,6 +7258,27 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
             if str(item).strip()
         ]
         operator_rules_html = "".join(f"<li>{escape(item)}</li>" for item in operator_rules[:6])
+        fresh_scene = scene.get("freshConcept") if isinstance(scene.get("freshConcept"), dict) else {}
+        fresh_scene_text = "\n".join(
+            f"- {label}: {value}"
+            for label, value in [
+                ("Reference", fresh_scene.get("referenceNote") if fresh_scene else ""),
+                ("Action beat", fresh_scene.get("actionBeat") if fresh_scene else ""),
+                ("Visual risk", fresh_scene.get("visualRisk") if fresh_scene else ""),
+                ("Voice", fresh_scene.get("voiceRequirement") if fresh_scene else ""),
+                ("Why easier to judge", fresh_scene.get("qualityRationale") if fresh_scene else ""),
+            ]
+            if str(value or "").strip()
+        )
+        fresh_scene_html = ""
+        if fresh_scene_text:
+            fresh_scene_html = f"""
+                <div>
+                  <strong>Fresh concept notes</strong>
+                  <p class="muted">{escape(str(fresh_scene.get("actionBeat") or ""))}</p>
+                  <p class="muted">{escape(str(fresh_scene.get("visualRisk") or ""))}</p>
+                </div>
+            """
         take_cards: list[str] = []
         for take in take_prompts:
             if not isinstance(take, dict):
@@ -6379,6 +7304,9 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
                 "Anti-slop reject if:",
                 anti_slop_text,
                 "",
+                "Fresh concept notes:",
+                fresh_scene_text or "- No fresh concept notes were provided for this scene.",
+                "",
                 "Grok prompt:",
                 prompt,
                 "",
@@ -6386,7 +7314,7 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
                 hard_reject_text,
                 "",
                 "After generation:",
-                "- Use Companion/pageAssets direct import first; if that fails, use only operator-owned manual batch upload.",
+                "- Operator downloads/saves the MP4, then uses local import or manual batch upload.",
                 "- Keep at least two candidate MP4s for this scene before Video Studio approval.",
                 "- Do not use a browser currentSrc/cache/proxy clip as the final Grok-main source.",
             ])
@@ -6411,12 +7339,13 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
               <div class="reject-grid">
                 <div>
                   <strong>Source import rule</strong>
-                  <p class="muted">Use Companion/pageAssets direct import or operator-owned manual batch upload, then keep two takes as Video Studio candidates.</p>
+                  <p class="muted">Use operator-owned local MP4 import or manual batch upload, then keep two takes as Video Studio candidates.</p>
                 </div>
                 <div>
                   <strong>Reject before import</strong>
                   <ul>{hard_reject_html}</ul>
                 </div>
+                {fresh_scene_html}
               </div>
               <textarea class="prompt-packet" readonly>{escape(prompt_packet)}</textarea>
               <textarea readonly>{escape(prompt)}</textarea>
@@ -6507,11 +7436,11 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
     <p>Project: {escape(project_id)}. Generate these clips in order in the signed-in Grok app/web session. Video Studio handles captions, BGM, TTS/no-voice audio design, candidate review, and render; do not bake text or explanatory intent into Grok clips.</p>
     <section class="panel readiness">
       <h2>Grok-main readiness</h2>
-      <p>Grok can be the main footage source only when this queue can receive direct-imported or operator-uploaded Grok MP4 files. The Codex Chrome extension alone is not the Video Studio Grok Companion.</p>
+      <p>Grok can be the main footage source only when browser-control generation proof is followed by operator-owned local MP4 import and review. Extension heartbeat or surface-only proof is not generation/import success.</p>
       <div class="readiness-grid">
-        <div class="readiness-card {escape(companion_class)}">
-          <strong>Video Studio Companion</strong>
-          <span>{escape(companion_label)}</span>
+        <div class="readiness-card warn">
+          <strong>Existing Chrome/Grok</strong>
+          <span>browser-control primary</span>
           <p class="muted">Profile: {escape(companion_profile)}</p>
         </div>
         <div class="readiness-card {escape(cdp_class)}">
@@ -6525,19 +7454,14 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
           <p class="muted">{escape(watch_detail)}</p>
         </div>
       </div>
-      <div class="row-actions">
-        <a href="{escape(companion_guide_url, quote=True)}" target="_blank" rel="noreferrer">Open Companion guide</a>
-        <button type="button" data-copy="{escape(companion_dir)}">Copy Companion folder</button>
-        <button type="button" data-copy="{escape(companion_action)}">Copy readiness action</button>
-      </div>
-      <p class="muted">{escape(companion_action or 'Load the Video Studio Grok Companion in the signed-in Chrome profile, or use the queue runner/bookmarklet fallback from the Grok tab.')}</p>
+      <p class="muted">Use Codex/Claude browser-control on the existing signed-in Grok Imagine tab. The operator owns MP4 download/save and Video Studio local import.</p>
     </section>
     {grok_source_state_panel}
     {chrome_profile_alignment_panel}
     {replacement_stop_panel}
     <section class="panel runway">
       <h2>Grok-main runway</h2>
-      <p>Use this page as the production lane for Grok hero footage. Grok should output raw vertical MP4 clips only; Video Studio owns captions, BGM, layout, review, and render. If the Chrome Companion is not connected, open the signed-in Grok tab and run the self-contained queue runner below.</p>
+      <p>Use this page as the production lane for Grok hero footage. Grok should output raw vertical MP4 clips only; Video Studio owns captions, BGM, layout, review, and render. Use the queue runner only as a debug fallback when browser-control is unavailable.</p>
       <div class="runway-grid">
         <div class="runway-card">
           <strong>Next scene</strong>
@@ -6556,10 +7480,10 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
         </div>
       </div>
       <div class="row-actions">
-        <a href="{escape(queue_inline_url, quote=True)}">Queue Fill+Generate+Direct Import</a>
+        <a href="{escape(queue_inline_url, quote=True)}">Queue Fill+Generate fallback</a>
         <button type="button" data-copy="{escape(queue_console_snippet)}">Copy queue console runner</button>
       </div>
-      <p class="muted">Run the queue from <strong>grok.com/imagine</strong>, not from this page. It fills the next missing scene prompt, tries Generate, then direct-imports a fetchable MP4/blob to the local uploadEndpoint. If direct import fails, it stops without clicking Download/Save/Export; manual batch upload remains operator-owned.</p>
+      <p class="muted">Run the queue from <strong>grok.com/imagine</strong>, not from this page, only as fallback. Production success still requires observed generation plus operator-owned local MP4 import/review; Codex must not click Download/Save/Export.</p>
     </section>
     <section class="panel">
       <h2>Run order</h2>
@@ -6567,7 +7491,7 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
         <li>Open each row in order and generate at least two candidate 4-6 second vertical MP4 takes before accepting a Grok-main scene. Recommended first pass is <strong>Take 2 / motion-first</strong>.</li>
         <li>Keep the production rhythm as <strong>scene-grouped 2-take batches</strong>: scene-01 take A/B, scene-02 take A/B, and so on. The operator-owned manual batch upload/import path expects <code>sceneGroupedTakeSize=2</code>.</li>
         <li>If a row prompt reads like production intent, narration, TTS, caption, layout, or checklist notes, rewrite it into visible action before generating.</li>
-        <li>Direct-import or manually batch-upload every viable candidate take, not only the first pass. Exact file names help but are not required.</li>
+        <li>Manually import or batch-upload every viable candidate take, not only the first pass. Exact file names help but are not required.</li>
         <li>In Video Studio, select generated MP4 files with <strong>Grok MP4 일괄 반입</strong> grouped by scene row: all scene-01 takes first, then all scene-02 takes, and so on.</li>
         <li>In the review packet, record the candidate comparison note before approving. Accept at least {escape(str(required_count))}/{escape(str(len(scenes)))} Grok clips before rendering Grok-main.</li>
       </ol>
@@ -6694,6 +7618,22 @@ def _write_operator_worksheet(handoff_dir: Path, manifest: dict) -> Path:
         if isinstance(item, dict)
     )
     target_selection = manifest.get("grokTargetSelection") if isinstance(manifest.get("grokTargetSelection"), dict) else {}
+    fresh_concept = manifest.get("freshConceptPacket") if isinstance(manifest.get("freshConceptPacket"), dict) else {}
+    fresh_concept_block = ""
+    if fresh_concept.get("required") is True:
+        fresh_scene_items = "".join(
+            f"<li><strong>{escape(str(item.get('sceneId') or 'scene'))}</strong>: "
+            f"{escape(str(item.get('actionBeat') or ''))} / risk: {escape(str(item.get('visualRisk') or ''))} / "
+            f"voice: {escape(str(item.get('voiceRequirement') or ''))}</li>"
+            for item in fresh_concept.get("scenes") or []
+            if isinstance(item, dict)
+        )
+        fresh_concept_block = f"""
+      <h3>Fresh concept packet</h3>
+      <p><strong>Status:</strong> {escape(str(fresh_concept.get("status") or "unknown"))}</p>
+      <p><strong>Operator action:</strong> {escape(str(fresh_concept.get("operatorAction") or ""))}</p>
+      <ul>{fresh_scene_items}</ul>
+        """
     auto_expanded = ", ".join(str(item) for item in target_selection.get("autoExpandedSceneIds") or [])
     auto_expansion_note = (
         f"<p><strong>Auto-expanded Grok scenes:</strong> {escape(auto_expanded)}</p>"
@@ -6714,6 +7654,19 @@ def _write_operator_worksheet(handoff_dir: Path, manifest: dict) -> Path:
             f"<li>{escape(str(item))}</li>"
             for item in scene.get("operatorChecklist") or []
         )
+        fresh_scene = scene.get("freshConcept") if isinstance(scene.get("freshConcept"), dict) else {}
+        fresh_scene_block = ""
+        if fresh_scene:
+            fresh_scene_block = f"""
+          <h3>Fresh concept notes</h3>
+          <ul>
+            <li><strong>Reference:</strong> {escape(str(fresh_scene.get("referenceNote") or ""))}</li>
+            <li><strong>Action beat:</strong> {escape(str(fresh_scene.get("actionBeat") or ""))}</li>
+            <li><strong>Visual risk:</strong> {escape(str(fresh_scene.get("visualRisk") or ""))}</li>
+            <li><strong>Voice:</strong> {escape(str(fresh_scene.get("voiceRequirement") or ""))}</li>
+            <li><strong>Why easier to judge:</strong> {escape(str(fresh_scene.get("qualityRationale") or ""))}</li>
+          </ul>
+            """
         take_prompts = scene.get("takePrompts") if isinstance(scene.get("takePrompts"), list) else []
         if not take_prompts:
             take_prompts = [{
@@ -6768,6 +7721,7 @@ def _write_operator_worksheet(handoff_dir: Path, manifest: dict) -> Path:
           </div>
           <h3>Operator review before download</h3>
           <ul>{checklist}</ul>
+          {fresh_scene_block}
         </section>
         """)
     html = f"""<!doctype html>
@@ -6819,6 +7773,7 @@ def _write_operator_worksheet(handoff_dir: Path, manifest: dict) -> Path:
       <p><strong>Negative prompts:</strong> {escape(negative_prompts)}</p>
       <p><strong>Grok target selection:</strong> {escape(str(target_selection.get("mode") or ""))} / minimum {escape(str(target_selection.get("minGrokMainScenes") or ""))}/{escape(str(target_selection.get("sourceMixTotalScenes") or ""))}</p>
       {auto_expansion_note}
+      {fresh_concept_block}
       <h3>Scene intents</h3>
       <ul>{scene_intents}</ul>
       <h3>Global review checklist</h3>
@@ -6974,7 +7929,7 @@ def _write_review_packet(handoff_dir: Path, manifest: dict) -> Path:
     incoming_dir = str(manifest.get("incomingDir") or handoff_dir / "incoming")
     shot_bible = manifest.get("shotBible") if isinstance(manifest.get("shotBible"), dict) else {}
     production_profile = shot_bible.get("productionProfile") if isinstance(shot_bible.get("productionProfile"), dict) else {}
-    assets = _match_downloaded_assets(handoff_dir, manifest)
+    assets = _apply_source_recovery_render_replacements(handoff_dir, _match_downloaded_assets(handoff_dir, manifest))
     asset_by_scene = {
         str(item.get("sceneId")): item
         for item in assets
@@ -6986,6 +7941,22 @@ def _write_review_packet(handoff_dir: Path, manifest: dict) -> Path:
         for item in shot_bible.get("reviewChecklist") or []
     )
     target_selection = manifest.get("grokTargetSelection") if isinstance(manifest.get("grokTargetSelection"), dict) else {}
+    fresh_concept = manifest.get("freshConceptPacket") if isinstance(manifest.get("freshConceptPacket"), dict) else {}
+    fresh_concept_block = ""
+    if fresh_concept.get("required") is True:
+        fresh_scene_items = "".join(
+            f"<li><strong>{escape(str(item.get('sceneId') or 'scene'))}</strong>: "
+            f"{escape(str(item.get('actionBeat') or ''))} / risk: {escape(str(item.get('visualRisk') or ''))} / "
+            f"voice: {escape(str(item.get('voiceRequirement') or ''))}</li>"
+            for item in fresh_concept.get("scenes") or []
+            if isinstance(item, dict)
+        )
+        fresh_concept_block = f"""
+      <h3>Fresh concept packet</h3>
+      <p><strong>Status:</strong> {escape(str(fresh_concept.get("status") or "unknown"))}</p>
+      <p><strong>Operator action:</strong> {escape(str(fresh_concept.get("operatorAction") or ""))}</p>
+      <ul>{fresh_scene_items}</ul>
+        """
     auto_expanded = ", ".join(str(item) for item in target_selection.get("autoExpandedSceneIds") or [])
     auto_expansion_note = (
         f"<p><strong>Auto-expanded Grok scenes:</strong> {escape(auto_expanded)}</p>"
@@ -7087,6 +8058,21 @@ def _write_review_packet(handoff_dir: Path, manifest: dict) -> Path:
             if take_rows
             else ""
         )
+        fresh_scene = scene.get("freshConcept") if isinstance(scene.get("freshConcept"), dict) else {}
+        fresh_scene_block = ""
+        if fresh_scene:
+            fresh_scene_block = f"""
+          <details class="fresh-concept">
+            <summary>Fresh concept notes</summary>
+            <ul>
+              <li><strong>Reference:</strong> {escape(str(fresh_scene.get("referenceNote") or ""))}</li>
+              <li><strong>Action beat:</strong> {escape(str(fresh_scene.get("actionBeat") or ""))}</li>
+              <li><strong>Visual risk:</strong> {escape(str(fresh_scene.get("visualRisk") or ""))}</li>
+              <li><strong>Voice:</strong> {escape(str(fresh_scene.get("voiceRequirement") or ""))}</li>
+              <li><strong>Why easier to judge:</strong> {escape(str(fresh_scene.get("qualityRationale") or ""))}</li>
+            </ul>
+          </details>
+            """
         status = escape(str(asset.get("status") or "missing"))
         gate = asset.get("qualityGate") if isinstance(asset.get("qualityGate"), dict) else {}
         clip_probe = asset.get("clipProbe") if isinstance(asset.get("clipProbe"), dict) else {}
@@ -7264,6 +8250,7 @@ def _write_review_packet(handoff_dir: Path, manifest: dict) -> Path:
             <summary>Prompt used for generation</summary>
             <textarea readonly>{prompt}</textarea>
           </details>
+          {fresh_scene_block}
           {take_prompt_block}
           {retry_prompt_block}
           {curation_block}
@@ -7278,7 +8265,7 @@ def _write_review_packet(handoff_dir: Path, manifest: dict) -> Path:
               <li><label><input type="checkbox" data-review-field="captionSafe"{caption_checked} /> Caption-safe area is not blocked by the main subject.</label></li>
               <li><label><input type="checkbox" data-review-field="shotLockMatch"{shot_lock_checked} /> Selected take matches the scene shot lock: action, first-second motion, identity, camera, and layout.</label></li>
               <li><label><input type="checkbox" data-review-field="sceneAssemblyOk"{scene_assembly_checked} /> Selected take has a concrete final-edit role and will cut naturally with neighboring scenes.</label></li>
-              <li><label><input type="checkbox" data-review-field="sourceProvenanceConfirmed"{source_provenance_checked} /> Local MP4 came from Companion/pageAssets direct import or operator-owned manual upload, not browser currentSrc/preview cache.</label></li>
+              <li><label><input type="checkbox" data-review-field="sourceProvenanceConfirmed"{source_provenance_checked} /> Local MP4 came from operator-owned download/import or manual upload, not browser currentSrc/preview cache.</label></li>
             </ul>
             <textarea class="note" data-review-field="sourceRationale" placeholder="source_rationale for accepted clip">{source_rationale}</textarea>
             <textarea class="note" data-review-field="qualityReviewNote" placeholder="quality_review_note for accepted clip">{quality_review_note}</textarea>
@@ -7386,6 +8373,7 @@ def _write_review_packet(handoff_dir: Path, manifest: dict) -> Path:
       <p><strong>Negative prompts:</strong> {escape(negative_prompts)}</p>
       <p><strong>Grok target selection:</strong> {escape(str(target_selection.get("mode") or ""))} / minimum {escape(str(target_selection.get("minGrokMainScenes") or ""))}/{escape(str(target_selection.get("sourceMixTotalScenes") or ""))}</p>
       {auto_expansion_note}
+      {fresh_concept_block}
       <h3>Global review checklist</h3>
       <ul>{review_items}</ul>
       <h3>Hard reject checklist</h3>
@@ -7676,8 +8664,7 @@ def _observed_grok_post_import_plan(
 ) -> dict:
     if not isinstance(generation_observation, dict):
         return {}
-    observation_status = str(generation_observation.get("status") or "").strip()
-    if observation_status not in {"generated", "generated-export-pending", "post-created"}:
+    if not _is_generated_codex_chrome_observation(generation_observation):
         return {}
 
     scene_id = str(
@@ -7836,8 +8823,7 @@ def _grok_main_path_status(
         summary = "Reviewed Grok app/web MP4 clips satisfy the Grok-main source gate."
     elif (
         not local_ready_assets
-        and isinstance(generation_observation, dict)
-        and str(generation_observation.get("status") or "") in {"generated", "generated-export-pending", "post-created"}
+        and _is_generated_codex_chrome_observation(generation_observation)
     ):
         status = "generated-export-pending"
         blocker = "grok-mp4-export-import-pending"
@@ -7962,8 +8948,8 @@ def _grok_main_path_status(
         generation_observation=generation_observation,
         observed_post_import_plan=observed_post_import_plan,
         manual_watch_active=manual_watch_active,
-        companion_connection=companion_connection,
     )
+    generation_proven = _is_generated_codex_chrome_observation(generation_observation)
     return {
         "mode": "grok-app-web-mp4-primary",
         "status": status,
@@ -7972,8 +8958,9 @@ def _grok_main_path_status(
         "summary": summary,
         "primaryPath": "signed-in-grok-app-web-mp4",
         "primaryPathDetail": (
-            "Use the existing logged-in Chrome/SuperGrok app or grok.com session to create short raw MP4 clips; "
-            "Video Studio handles import, candidate review, captions, BGM, layout, and render."
+            "Use Codex/Claude browser-control on the existing logged-in Chrome/SuperGrok app or grok.com session "
+            "to create short raw MP4 clips; the operator owns download/save, and Video Studio handles local import, "
+            "candidate review, captions, BGM, layout, and render."
         ),
         "primaryNextAction": primary_next_action,
         "operatorNextAction": manual_primary_path.get("operatorNextAction"),
@@ -7981,12 +8968,10 @@ def _grok_main_path_status(
         "paidApiPolicy": "Do not call Grok API or paid video APIs; only operator-owned Grok app/web MP4 exports are accepted.",
         "grokAppWebViable": True,
         "cdpPrimaryRecommended": False,
-        "secondaryAutomationRole": "secondary-experimental",
+        "secondaryAutomationRole": "isolated-cdp-and-bookmarklet-fallback-only",
         "secondaryAutomationBlocker": secondary_blocker.get("blocker") or "",
         "secondaryAutomationStatus": secondary_blocker.get("status") or str((automation_status or {}).get("status") or ""),
         "secondaryAutomationDetail": secondary_blocker.get("operatorNextAction") or secondary_blocker.get("detail") or "",
-        "companionConnected": bool((companion_connection or {}).get("connected")),
-        "companionConnectionStatus": str((companion_connection or {}).get("status") or ""),
         "manualWatchActive": manual_watch_active,
         "projectId": project_id,
         "handoffDir": str(handoff_dir),
@@ -8015,7 +9000,7 @@ def _grok_main_path_status(
             "render/caption/BGM pipeline can run after local MP4 import",
             *(
                 ["logged-in Chrome/SuperGrok generation has been observed"]
-                if generation_observation
+                if generation_proven
                 else []
             ),
         ],
@@ -8024,13 +9009,13 @@ def _grok_main_path_status(
             f"readyScenes={len(ready_assets)}/{len(manifest.get('scenes') or [])}",
             f"assetPresentScenes={len(asset_present_scene_ids)}/{len(manifest.get('scenes') or [])}",
             f"mainSourceGate={gate_status or 'unknown'}",
-            "CDP/default-profile automation is secondary, not the main production path",
+            "isolated-CDP/bookmarklet automation is fallback only, not the main production path",
             *(
                 [
                     f"codexChromeObservation={generation_observation.get('status')}",
                     f"observedPost={generation_observation.get('postUrl') or 'none'}",
                 ]
-                if isinstance(generation_observation, dict)
+                if generation_proven
                 else []
             ),
         ],
@@ -8046,10 +9031,8 @@ def _grok_asset_acquisition_status(
     generation_observation: dict | None,
     observed_post_import_plan: dict,
     manual_watch_active: bool,
-    companion_connection: dict | None,
 ) -> dict:
-    observation_status = str((generation_observation or {}).get("status") or "").strip()
-    clip_generated = observation_status in {"generated", "generated-export-pending", "post-created"}
+    clip_generated = _is_generated_codex_chrome_observation(generation_observation)
     local_mp4_imported = bool(ready_assets)
     local_candidate_summaries: list[dict] = []
     quality_blockers: list[str] = []
@@ -8208,7 +9191,6 @@ def _grok_asset_acquisition_status(
     }
     quality_blocked = bool(quality_blockers)
     publish_ready_local_mp4 = local_mp4_imported and not quality_blocked
-    companion_connected = bool((companion_connection or {}).get("connected"))
     observed_post_url = str((generation_observation or {}).get("postUrl") or observed_post_import_plan.get("postUrl") or "").strip()
     observed_asset_url = str((generation_observation or {}).get("videoUrl") or observed_post_import_plan.get("videoUrl") or "").strip()
 
@@ -8234,11 +9216,11 @@ def _grok_asset_acquisition_status(
         operator_actions = []
         if observed_asset_url:
             operator_actions.append(
-                "Reload the Video Studio Grok Companion in the signed-in Chrome profile, activate the observed MP4 asset tab, and use uploadEndpoint direct-import only; do not click Grok Download/Save from Codex automation."
+                "Keep the observed Grok result in the existing signed-in Chrome browser-control session; the operator should save/download the MP4, then import it locally."
             )
         if observed_post_url:
             operator_actions.append(
-                f"Open the observed Grok post for {scene_label}, prefer observed-post direct import to {file_label}; manual Grok Download/Save is operator fallback only."
+                f"Open the observed Grok post for {scene_label} in the existing signed-in Chrome tab; manual Grok Download/Save to {file_label} is the production path."
             )
         operator_actions.extend([
             "Use Downloads watch only after an operator-confirmed manual download or batch upload fallback, not as an automatic Codex action.",
@@ -8294,7 +9276,7 @@ def _grok_asset_acquisition_status(
         "reason": "Grok-main depends on operator-owned Grok app/web MP4 exports, not the Grok/xAI API or CDP.",
         "requiredActions": [
             f"Generate two fresh Grok takes for {scene_label} using the recommended motion-first prompt.",
-            "Use Companion/pageAssets direct import first; if that fails, use only operator-owned manual batch upload.",
+            "Use existing signed-in Chrome browser-control for generation; then use operator-owned manual download/import or batch upload.",
             f"Import the Grok MP4 as {file_label}, or use grouped batch order when the filename is not controllable.",
             "Keep both takes as candidates until Video Studio comparison selects one.",
             "Approve only after first-two-second hook, visible motion, continuity, artifact, caption-safe layout, and audio-fit review.",
@@ -8306,7 +9288,7 @@ def _grok_asset_acquisition_status(
             "clip with baked captions, logos, UI overlay, watermark, or production-intent text",
         ],
         "operatorProofNeeded": [
-            "source is a local MP4 from Companion/pageAssets direct import or operator-owned manual upload",
+            "source is a local MP4 from operator-owned manual download/import or manual upload",
             "candidate comparison note covers at least two takes",
             "review packet records layout, hook, continuity, artifact, audio, and platform-fit evidence",
         ],
@@ -8328,7 +9310,6 @@ def _grok_asset_acquisition_status(
             "low-resolution browser cache/proxy recovery clips are proof only until replaced or explicitly re-reviewed."
         ),
         "manualWatchActive": manual_watch_active,
-        "companionConnected": companion_connected,
         "blockerScope": blocker_scope,
         "sceneId": scene_label,
         "expectedFileName": file_label,
@@ -8346,9 +9327,9 @@ def _grok_asset_acquisition_status(
             else ""
         ),
         "approvedImportPaths": [
-            "signed-in Chrome/Grok Download or Save into the watched Downloads folder",
-            "Grok MP4 batch upload mapped to the scene",
-            "Chrome companion download only after the operator loads/reloads the companion in the active profile",
+            "operator-owned Grok Download or Save into the watched Downloads folder",
+            "Grok MP4 batch upload mapped to the scene after the operator downloads/saves it",
+            "browser-control visible-result proof followed by local MP4 import",
         ],
         "operatorActionPriority": operator_actions,
         "doNotDo": [
@@ -8427,8 +9408,284 @@ def _has_grok_single_candidate_justification(decision: object) -> bool:
     return len(text) >= 32
 
 
+def _sha256_file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _resolve_source_recovery_replacement_path(value: object) -> Path | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        candidate = _project_root / raw
+    try:
+        resolved = candidate.resolve()
+        root = _project_root.resolve()
+    except OSError:
+        return None
+    if not resolved.is_relative_to(root):
+        return None
+    if resolved.suffix.lower() != ".mp4" or not resolved.is_file():
+        return None
+    return resolved
+
+
+def _resolve_source_recovery_acceptance_artifact_path(value: object) -> Path | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        candidate = _project_root / raw
+    try:
+        resolved = candidate.resolve()
+        root = _project_root.resolve()
+    except OSError:
+        return None
+    if not resolved.is_relative_to(root):
+        return None
+    if resolved.name != "source-recovery-acceptance.json" or not resolved.is_file():
+        return None
+    return resolved
+
+
+_SOURCE_RECOVERY_RENDER_ACCEPTANCE_BOOL_FIELDS = (
+    "firstTwoSecondHookPass",
+    "motionDensityPass",
+    "aiSlopVisualFitPass",
+    "stockAiClipFitPass",
+    "captionSafeZonePass",
+    "sourceProvenanceConfirmed",
+    "phoneFirstFrameReviewPass",
+    "continuityReviewPass",
+)
+
+_SOURCE_RECOVERY_RENDER_ACCEPTANCE_TEXT_FIELDS = (
+    "acceptedReplacementFileName",
+    "acceptedReplacementPath",
+    "acceptedReplacementSha256",
+    "reviewerId",
+    "acceptedAt",
+)
+
+
+def _source_recovery_acceptance_decision_for_scene(scene: dict) -> dict:
+    decision = scene.get("operatorDecision") if isinstance(scene.get("operatorDecision"), dict) else {}
+    return decision
+
+
+def _source_recovery_acceptance_scene_value(scene: dict, decision: dict, field: str) -> object:
+    if field in decision:
+        return decision.get(field)
+    return scene.get(field)
+
+
+def _source_recovery_render_acceptance_by_scene(artifact_path: Path) -> dict[str, dict]:
+    try:
+        parsed = json.loads(artifact_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        logger.warning("Unreadable source recovery acceptance artifact: %s", artifact_path)
+        return {}
+    if (
+        not isinstance(parsed, dict)
+        or parsed.get("schema") != "video-studio.source-recovery-acceptance.v1"
+        or parsed.get("templateOnly") is True
+    ):
+        return {}
+
+    status_by_scene: dict[str, dict] = {}
+    for scene in parsed.get("acceptanceScenes") or []:
+        if not isinstance(scene, dict):
+            continue
+        scene_id = str(scene.get("sceneId") or "").strip()
+        if not scene_id:
+            continue
+        decision = _source_recovery_acceptance_decision_for_scene(scene)
+        missing_fields: list[str] = []
+        for field in _SOURCE_RECOVERY_RENDER_ACCEPTANCE_TEXT_FIELDS:
+            if not str(_source_recovery_acceptance_scene_value(scene, decision, field) or "").strip():
+                missing_fields.append(field)
+        for field in _SOURCE_RECOVERY_RENDER_ACCEPTANCE_BOOL_FIELDS:
+            if _source_recovery_acceptance_scene_value(scene, decision, field) is not True:
+                missing_fields.append(field)
+        accepted = (
+            (decision.get("accepted") is True or scene.get("accepted") is True)
+            and not missing_fields
+        )
+        status_by_scene[scene_id] = {
+            "accepted": accepted,
+            "missingFields": missing_fields,
+            "acceptedReplacementFileName": str(_source_recovery_acceptance_scene_value(scene, decision, "acceptedReplacementFileName") or ""),
+            "acceptedReplacementPath": str(_source_recovery_acceptance_scene_value(scene, decision, "acceptedReplacementPath") or ""),
+            "acceptedReplacementSha256": str(_source_recovery_acceptance_scene_value(scene, decision, "acceptedReplacementSha256") or "").strip().lower(),
+            "reviewerId": str(_source_recovery_acceptance_scene_value(scene, decision, "reviewerId") or ""),
+            "acceptedAt": str(_source_recovery_acceptance_scene_value(scene, decision, "acceptedAt") or ""),
+            "reviewStatus": str(decision.get("reviewStatus") or scene.get("acceptanceStatus") or ""),
+            "reviewNotes": str(decision.get("reviewNotes") or scene.get("reviewNotes") or ""),
+        }
+    return status_by_scene
+
+
+def _load_source_recovery_render_replacements(handoff_dir: Path) -> dict[str, dict]:
+    plan_path = handoff_dir / "source-recovery-rerender-plan.template.json"
+    if not plan_path.is_file():
+        return {}
+    try:
+        parsed = json.loads(plan_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        logger.warning("Unreadable source recovery rerender plan: %s", plan_path)
+        return {}
+    if (
+        not isinstance(parsed, dict)
+        or parsed.get("schema") != "video-studio.source-recovery-rerender-plan.v1"
+        or parsed.get("sourceRecoveryAcceptanceCleared") is not True
+        or parsed.get("rerenderInputReady") is not True
+    ):
+        return {}
+
+    replacements: dict[str, dict] = {}
+    artifact_path = str(parsed.get("sourceRecoveryAcceptanceArtifactPath") or "").strip()
+    artifact_sha256 = str(parsed.get("sourceRecoveryAcceptanceSha256") or "").strip().lower()
+    artifact_resolved = _resolve_source_recovery_acceptance_artifact_path(artifact_path)
+    if not artifact_resolved or not artifact_sha256:
+        return {}
+    try:
+        actual_artifact_sha256 = _sha256_file_digest(artifact_resolved).lower()
+    except OSError:
+        return {}
+    if actual_artifact_sha256 != artifact_sha256:
+        return {}
+    acceptance_by_scene = _source_recovery_render_acceptance_by_scene(artifact_resolved)
+    for item in parsed.get("sceneReplacements") or []:
+        if not isinstance(item, dict):
+            continue
+        override = item.get("renderInputOverride") if isinstance(item.get("renderInputOverride"), dict) else {}
+        scene_id = str(item.get("sceneId") or override.get("sceneId") or "").strip()
+        source_path_text = str(item.get("acceptedReplacementPath") or override.get("sourcePath") or "").strip()
+        file_name = str(item.get("acceptedReplacementFileName") or override.get("sourceFileName") or "").strip()
+        expected_sha256 = str(item.get("acceptedReplacementSha256") or "").strip().lower()
+        path_check = item.get("acceptedReplacementPathCheck") if isinstance(item.get("acceptedReplacementPathCheck"), dict) else {}
+        if not expected_sha256:
+            expected_sha256 = str(path_check.get("actualSha256") or "").strip().lower()
+        resolved = _resolve_source_recovery_replacement_path(source_path_text)
+        if not scene_id or not resolved or not expected_sha256:
+            continue
+        acceptance_status = acceptance_by_scene.get(scene_id) if acceptance_by_scene else None
+        if not acceptance_status or acceptance_status.get("accepted") is not True:
+            continue
+        acceptance_file_name = str(acceptance_status.get("acceptedReplacementFileName") or "").strip()
+        acceptance_sha256 = str(acceptance_status.get("acceptedReplacementSha256") or "").strip().lower()
+        acceptance_path_text = str(acceptance_status.get("acceptedReplacementPath") or "").strip()
+        acceptance_resolved = _resolve_source_recovery_replacement_path(acceptance_path_text)
+        if acceptance_file_name and acceptance_file_name != resolved.name:
+            continue
+        if acceptance_sha256 and acceptance_sha256 != expected_sha256:
+            continue
+        if not acceptance_resolved or acceptance_resolved != resolved:
+            continue
+        try:
+            actual_sha256 = _sha256_file_digest(resolved).lower()
+        except OSError:
+            continue
+        if actual_sha256 != expected_sha256:
+            continue
+        if file_name and resolved.name != file_name:
+            continue
+        replacements[scene_id] = {
+            "sceneId": scene_id,
+            "fileName": resolved.name,
+            "mimeType": "video/mp4",
+            "sourcePath": _relative_project_path(resolved),
+            "sizeBytes": resolved.stat().st_size,
+            "status": "ready",
+            "selected": True,
+            "candidateCount": 1,
+            "selectedFileName": resolved.name,
+            "selectedCandidateSummary": (
+                "Source recovery acceptance selected this replacement MP4 after hook, motion, "
+                "source-fit, caption-safe, phone-frame, and continuity review."
+            ),
+            "selectionMethod": "source-recovery-acceptance",
+            "sourceRecoveryReplacement": True,
+            "sourceRecoveryRerenderPlanPath": _relative_project_path(plan_path),
+            "sourceRecoveryAcceptanceArtifactPath": artifact_path,
+            "sourceRecoveryAcceptanceSha256": actual_artifact_sha256,
+            "sourceRecoveryAcceptanceDecision": acceptance_status,
+            "acceptedReplacementSha256": actual_sha256,
+            "sourceProvenance": {
+                "status": "local-mp4-source-unverified",
+                "label": "source recovery accepted replacement",
+                "acceptAsGrokMainSource": True,
+                "proofOnly": False,
+                "originalDownloadLikely": False,
+                "importMode": "source-recovery-rerender-plan",
+                "originalPath": str(resolved),
+                "sourceKind": "source-recovery-accepted-replacement",
+                "qualityNote": "operator accepted replacement path and sha256 through source-recovery-acceptance.json",
+                "eventType": "source-recovery-rerender-plan",
+                "candidateUrl": "",
+                "operatorAction": "Rerender with this accepted replacement, then run final quality audit and fresh-source proof.",
+            },
+            "qualityGate": {
+                "required": True,
+                "status": "accepted",
+                "accepted": True,
+                "firstTwoSecondHook": True,
+                "artifactFree": True,
+                "continuityOk": True,
+                "captionSafe": True,
+                "sourceAcceptable": True,
+                "selectedFileName": resolved.name,
+                "selectedSourcePath": _relative_project_path(resolved),
+                "sourceProvenance": {
+                    "status": "local-mp4-source-unverified",
+                    "acceptAsGrokMainSource": True,
+                },
+                "sourceRecoveryAcceptanceDecision": acceptance_status,
+            },
+            "candidateAssets": [],
+        }
+    return replacements
+
+
+def _apply_source_recovery_render_replacements(handoff_dir: Path, assets: list[dict]) -> list[dict]:
+    source_recovery_replacements = _load_source_recovery_render_replacements(handoff_dir)
+    if not source_recovery_replacements:
+        return assets
+    assets_by_scene_id = {
+        str(item.get("sceneId")): item
+        for item in assets
+        if isinstance(item, dict) and item.get("sceneId")
+    }
+    for scene_id, replacement in source_recovery_replacements.items():
+        assets_by_scene_id[scene_id] = replacement
+    ordered_assets: list[dict] = []
+    seen_scene_ids: set[str] = set()
+    for item in assets:
+        scene_id = str(item.get("sceneId") or "")
+        if scene_id and scene_id in assets_by_scene_id:
+            ordered_assets.append(assets_by_scene_id[scene_id])
+            seen_scene_ids.add(scene_id)
+        elif not scene_id:
+            ordered_assets.append(item)
+    for scene_id, replacement in source_recovery_replacements.items():
+        if scene_id not in seen_scene_ids:
+            ordered_assets.append(replacement)
+    return ordered_assets
+
+
 def _render_payload_from_manifest(handoff_dir: Path, manifest: dict, preview_mode: bool = False) -> dict:
-    assets = _match_downloaded_assets(handoff_dir, manifest)
+    assets = _apply_source_recovery_render_replacements(handoff_dir, _match_downloaded_assets(handoff_dir, manifest))
+    source_recovery_replacements = {
+        str(item.get("sceneId")): item
+        for item in assets
+        if isinstance(item, dict) and item.get("sourceRecoveryReplacement") is True and item.get("sceneId")
+    }
     main_source_gate = _grok_main_source_gate(manifest, assets)
     review_decisions = manifest.get("reviewDecisions") if isinstance(manifest.get("reviewDecisions"), dict) else {}
     production_context = manifest.get("productionContext") if isinstance(manifest.get("productionContext"), dict) else {}
@@ -8439,6 +9696,7 @@ def _render_payload_from_manifest(handoff_dir: Path, manifest: dict, preview_mod
         str(scene_id)
         for scene_id, decision in review_decisions.items()
         if isinstance(decision, dict) and decision.get("accepted") is False
+        and str(scene_id) not in source_recovery_replacements
     )
     rejected_scene_id_set = set(rejected_scene_ids)
     all_ready_assets = [item for item in assets if item.get("status") == "ready" and item.get("sceneId")]
@@ -8534,6 +9792,29 @@ def _render_payload_from_manifest(handoff_dir: Path, manifest: dict, preview_mod
                 draft["grok_review_note"] = decision.get("operatorNote")
             if decision.get("accepted") is False:
                 draft["quality_review_note"] = f"Rejected in Grok review packet: {decision.get('operatorNote') or 'operator marked this clip rejected.'}"
+            replacement = source_recovery_replacements.get(scene_id)
+            if replacement:
+                draft["quality_review_note"] = (
+                    "Source recovery replacement accepted for rerender: "
+                    f"{replacement.get('fileName') or scene_id}."
+                )
+                draft["selectedFileName"] = replacement.get("fileName") or ""
+                draft["selectedCandidateSummary"] = replacement.get("selectedCandidateSummary") or ""
+                draft["visualQualityVerdict"] = "pass"
+                draft["thumbnailReviewNote"] = (
+                    "Source recovery acceptance includes phone first-frame review for the selected replacement."
+                )
+                draft["platformComparisonNote"] = (
+                    "Replacement cleared the source-recovery source-fit review before rerender."
+                )
+                draft["sourceRecoveryReplacement"] = True
+                draft["sourceRecoveryRerenderPlanPath"] = replacement.get("sourceRecoveryRerenderPlanPath")
+                draft["sourceRecoveryAcceptanceArtifactPath"] = replacement.get("sourceRecoveryAcceptanceArtifactPath")
+                draft["sourceRecoveryAcceptanceSha256"] = replacement.get("sourceRecoveryAcceptanceSha256")
+                draft["sourceProvenanceConfirmed"] = True
+                draft["sourceProvenanceNote"] = (
+                    "Source recovery acceptance recorded a replacement MP4 path and matching sha256 for rerender."
+                )
             if grok_visual_led_no_voice:
                 _apply_grok_visual_led_no_voice_defaults(draft)
             preset = str(draft.get("caption_preset") or draft.get("captionPreset") or "lower-info")
@@ -8561,10 +9842,18 @@ def _render_payload_from_manifest(handoff_dir: Path, manifest: dict, preview_mod
             "sourceIntent": "grok",
             "sourceGenerator": "grok-app-web-handoff",
             "selectedFileName": str(item.get("fileName") or ""),
-            "candidateCount": len(item.get("candidateAssets") or []) if isinstance(item.get("candidateAssets"), list) else 1,
+            "candidateCount": _grok_candidate_int(item.get("candidateCount"))
+            or (len(item.get("candidateAssets") or []) if isinstance(item.get("candidateAssets"), list) else 1),
+            "selectedCandidateSummary": str(item.get("selectedCandidateSummary") or ""),
+            "selectionMethod": str(item.get("selectionMethod") or ""),
             "clipProbe": item.get("clipProbe") if isinstance(item.get("clipProbe"), dict) else {},
             "qualityGate": item.get("qualityGate") if isinstance(item.get("qualityGate"), dict) else {},
             "sourceProvenance": item.get("sourceProvenance") if isinstance(item.get("sourceProvenance"), dict) else {},
+            "sourceRecoveryReplacement": item.get("sourceRecoveryReplacement") is True,
+            "sourceRecoveryRerenderPlanPath": item.get("sourceRecoveryRerenderPlanPath") or "",
+            "sourceRecoveryAcceptanceArtifactPath": item.get("sourceRecoveryAcceptanceArtifactPath") or "",
+            "sourceRecoveryAcceptanceSha256": item.get("sourceRecoveryAcceptanceSha256") or "",
+            "acceptedReplacementSha256": item.get("acceptedReplacementSha256") or "",
             "candidateAssets": item.get("candidateAssets") if isinstance(item.get("candidateAssets"), list) else [],
         }
         for item in ready_assets
@@ -8620,8 +9909,7 @@ def _automation_plan_from_manifest(handoff_dir: Path, manifest: dict) -> dict:
     )
     automation_job = _automation_job_summary(_read_automation_job_status(handoff_dir), project_id, stored_request)
     manual_download_watch_job = _manual_download_watch_summary(_read_manual_download_watch_status(handoff_dir), project_id)
-    latest_extension_event = _latest_extension_event(handoff_dir)
-    companion_connection = _companion_connection_status(latest_extension_event)
+    generation_observation = _latest_codex_chrome_observation(manifest)
     manual_primary_path = _manual_primary_path(
         project_id,
         handoff_dir,
@@ -8629,7 +9917,7 @@ def _automation_plan_from_manifest(handoff_dir: Path, manifest: dict) -> dict:
         next_scene,
         main_source_gate,
         automation_status,
-        companion_connection,
+        None,
     )
     main_path_status = _grok_main_path_status(
         project_id,
@@ -8643,7 +9931,15 @@ def _automation_plan_from_manifest(handoff_dir: Path, manifest: dict) -> dict:
         automation_status,
         automation_job,
         manual_download_watch_job,
-        companion_connection,
+        None,
+        generation_observation,
+    )
+    browser_control_primary_rail = _browser_control_primary_rail(
+        project_id,
+        manifest,
+        next_scene,
+        generation_observation=generation_observation,
+        manual_primary_path=manual_primary_path,
     )
     expected_files = [
         {
@@ -8671,6 +9967,7 @@ def _automation_plan_from_manifest(handoff_dir: Path, manifest: dict) -> dict:
         "reviewChecklist": shot_bible.get("reviewChecklist") or [],
         "mainSourceGate": main_source_gate,
         "grokTargetSelection": manifest.get("grokTargetSelection") if isinstance(manifest.get("grokTargetSelection"), dict) else {},
+        "browserControlPrimaryRail": browser_control_primary_rail,
         "manualPrimaryPath": manual_primary_path,
         "mainPathStatus": main_path_status,
         "expectedFiles": expected_files,
@@ -8682,6 +9979,7 @@ def _automation_plan_from_manifest(handoff_dir: Path, manifest: dict) -> dict:
             "defaultRemoteDebugging": False,
             "defaultPersistentAutomationProfile": False,
             "fullBrowserControl": "available only after explicit operator, browser, generate, download, and watch approvals",
+            "primaryProductionRail": "existing signed-in Chrome browser-control plus operator-owned manual download/import",
         },
         "downloadImport": {
             "endpoint": f"/api/grok-handoff/{project_id}/import-downloads",
@@ -8748,14 +10046,14 @@ def _automation_plan_from_manifest(handoff_dir: Path, manifest: dict) -> dict:
                 "remoteDebuggingPort": "use a local-only CDP port such as 9222 or 9333 for the isolated handoff profile",
             },
             "automates": [
-                "open an isolated Chrome/Edge DevTools session, or attach to an already-running operator-launched Chrome CDP session when attachDefaultChromeApproved=true",
+                "fallback only: open an isolated Chrome/Edge DevTools session, or attach to an already-running operator-launched Chrome CDP session when attachDefaultChromeApproved=true",
                 "bring a Grok Imagine tab forward",
                 "wait for the operator to finish login/cookie gates when waitForOperatorReadyApproved=true",
                 "advance the approved xAI sign-in provider handoff when authProviderKickoffApproved=true and authProviderPreference is not manual",
                 "inject the selected scene prompt into the first editable prompt field",
                 "start generation only when generatePromptApproved=true or submitPromptApproved=true",
                 "block Download/Save/Export click requests even when legacy approval flags are present",
-                "leave source import to Companion/pageAssets direct import or explicit local MP4 upload/import",
+                "leave source import to browser-control/manual download or explicit local MP4 upload/import",
             ],
             "operatorStillDoes": [
                 "approve local browser control and sign in to Grok/SuperGrok inside the isolated handoff browser profile when prompted",
@@ -8766,7 +10064,7 @@ def _automation_plan_from_manifest(handoff_dir: Path, manifest: dict) -> dict:
                 "reject bad MP4s in the review packet before channel render",
             ],
         },
-        "chromeCompanionExtension": _chrome_companion_summary(project_id, handoff_dir, manifest),
+        "codexChromeObservation": generation_observation,
         "automationReplay": {
             "endpoint": f"/api/grok-handoff/{project_id}/resume-automation",
             "mode": "replay-last-sanitized-generate-direct-import-request",
@@ -8787,7 +10085,7 @@ def _automation_plan_from_manifest(handoff_dir: Path, manifest: dict) -> dict:
             "requiresBrowserAutomationApprovedTrue": True,
             "storesCredentials": False,
             "writesStatus": "automation-job-status.json",
-            "purpose": "Let the operator complete Grok login/captcha/payment in the opened browser while Video Studio keeps waiting and automatically resumes prompt generation only; source import remains direct-import or explicit local MP4 upload/import.",
+            "purpose": "Let the operator complete Grok login/captcha/payment in the opened browser while Video Studio keeps waiting and automatically resumes prompt generation only; source import remains operator-owned manual download/import or explicit local MP4 upload/import.",
             "operatorStillDoes": [
                 "approve background browser control and any browser profile used for Grok sign-in",
                 "finish Grok login/captcha/payment/safety steps in the opened browser",
@@ -8822,11 +10120,12 @@ def _automation_plan_from_manifest(handoff_dir: Path, manifest: dict) -> dict:
             ],
         },
         "nextAutomationSlice": {
-            "browserControl": "Current local CDP runner can inject, request generation, click an explicit download control, watch the approved folder, and import MP4s after separate approvals; Grok login/captcha/safety gates remain manual.",
+            "browserControl": "Production rail is existing signed-in Chrome browser-control for prompt/generate/result proof only; operator-owned download/save and local import/upload remain the MP4 acquisition path.",
             "guardrails": [
                 "use only operator-approved local browser control",
                 "do not store API keys or passwords",
                 "do not call xAI API keys",
+                "do not click Grok Download/Save/Export from Codex automation",
                 "pause for captcha, payment, policy, or safety interstitials",
             ],
         },
@@ -8941,10 +10240,7 @@ def _manual_primary_path(
     download_import = _download_import_actions(project_id, manifest, selected_scene)
     operator_run = _operator_run_actions(project_id, manifest, selected_scene)
     automation_status_value = str((automation_status or {}).get("status") or "").strip()
-    companion_connected = bool((companion_connection or {}).get("connected"))
-    if companion_connected:
-        automation_state = "companion-available-secondary"
-    elif automation_status_value in {"failed", "needs-operator", "waiting-for-operator"}:
+    if automation_status_value in {"failed", "needs-operator", "waiting-for-operator"}:
         automation_state = "blocked-or-needs-operator-secondary"
     elif automation_status_value in {"queued", "running", "injected"}:
         automation_state = "running-secondary"
@@ -8964,26 +10260,21 @@ def _manual_primary_path(
         operator_next_action = "Render the Grok-main cut from the reviewed MP4 scene assets."
     elif next_scene_id:
         take_label = f"Take {recommended_take_number} / {recommended_take_label}" if recommended_take_label else f"Take {recommended_take_number}"
-        if companion_connected:
-            operator_next_action = (
-                f"Use the Video Studio Grok Companion Prep + Generate flow for {next_scene_id} "
-                f"with {take_label}, "
-                f"download {expected_file or 'the Grok MP4'}, then import and review it."
-            )
-        else:
-            operator_next_action = (
-                f"Use the production queue or opened Grok prep URL in the signed-in Grok app/web "
-                f"for {next_scene_id} with {take_label}, download {expected_file or 'the Grok MP4'}, then use "
-                "Downloads import/watch or batch upload. Browser CDP automation is secondary."
-            )
+        operator_next_action = (
+            f"Use direct browser-control in the existing signed-in Chrome/Grok tab "
+            f"for {next_scene_id} with {take_label}; download/save {expected_file or 'the Grok MP4'} manually, then use "
+            "Downloads import or batch upload. Isolated CDP/bookmarklet flows are fallback only."
+        )
     else:
         operator_next_action = "Review accepted Grok clips and reject weak motion, artifacts, baked text, or continuity breaks before render."
     return {
         "mode": "manual-grok-app-web-primary",
+        "browserControlRail": "existing-signed-in-chrome-browser-control-primary",
+        "downloadAuthority": "operator-owned-manual-download-or-local-upload",
         "primarySource": "grok-app-web-mp4",
         "usesPaidApi": False,
         "paidApiPolicy": "Grok API, paid video APIs, and credential automation are not used.",
-        "browserAutomationRole": "secondary-experimental",
+        "browserAutomationRole": "browser-control-primary; isolated-cdp-and-bookmarklet-fallback-only",
         "browserAutomationState": automation_state,
         "nextAction": next_action,
         "operatorNextAction": operator_next_action,
@@ -9052,10 +10343,10 @@ def _manual_primary_path(
             "renderPayload": f"/api/grok-handoff/{project_id}/render-payload",
         },
         "operatorSteps": [
-            "Open the Grok production queue to generate all required scene MP4s in scene-row take groups.",
-            "Open the signed-in Grok app/web session from the existing Chrome profile or phone app.",
-            "Copy the current scene prompt from Video Studio and generate a short raw 9:16 MP4 in Grok.",
-            "Download the result; naming it scene-XX.grok.mp4 helps, but it is not required.",
+            "Use Codex/Claude browser-control against the existing signed-in Chrome/Grok tab to generate all required scene MP4s in scene-row take groups.",
+            "Stay in the existing signed-in Chrome profile; do not switch to Edge or a new Chrome profile for production Grok generation.",
+            "Fill the current scene prompt from Video Studio and generate a short raw 9:16 MP4 in Grok.",
+            "Operator downloads/saves the result; naming it scene-XX.grok.mp4 helps, but it is not required.",
             "Batch-upload unnamed MP4 files grouped by scene row, or import from Downloads with newest-file fallback.",
             "Use the Grok review packet to reject artifacts, watermark, baked-in text, weak motion, or continuity breaks.",
             "Render only after enough accepted Grok MP4 scenes satisfy the Grok-main source gate.",
@@ -9373,7 +10664,7 @@ def _grok_source_provenance(import_metadata: dict, source_event: dict) -> dict:
         status = "visible-video-fallback-proof-only"
         label = "visible video fallback - proof only"
         accept_as_main = False
-        operator_action = "Use Companion/pageAssets direct import or operator-owned manual batch upload before accepting this scene as Grok-main."
+        operator_action = "Use operator-owned local MP4 import or manual batch upload before accepting this scene as Grok-main."
     elif original_like:
         status = "browser-native-original-download"
         label = "Grok browser-native download"
@@ -9383,14 +10674,14 @@ def _grok_source_provenance(import_metadata: dict, source_event: dict) -> dict:
         status = "local-mp4-download-unverified"
         label = "local Grok MP4 import - verify original download"
         accept_as_main = True
-        operator_action = "Confirm in the review note that this file came from Companion/pageAssets direct import or operator-owned manual upload, not a browser cache/currentSrc fallback."
+        operator_action = "Confirm in the review note that this file came from operator-owned download/import or manual upload, not a browser cache/currentSrc fallback."
     elif event_type == "codex-chrome-observation" or (candidate_url and not import_mode):
         status = "browser-observed-source-unverified"
         label = "browser-observed Grok source unverified"
         accept_as_main = False
         operator_action = (
-            "Use signed-in Grok direct import through the local uploadEndpoint (bookmarklet/console or Companion), "
-            "or explicit manual batch upload, before accepting this browser-observed candidate as Grok-main."
+            "Use operator-owned manual download/import or explicit manual batch upload before accepting this "
+            "browser-observed candidate as Grok-main."
         )
     else:
         status = "local-mp4-source-unverified"
@@ -9414,7 +10705,7 @@ def _grok_source_provenance(import_metadata: dict, source_event: dict) -> dict:
 
 
 def _import_status_payload(project_id: str, handoff_dir: Path, manifest: dict, imported: list[dict], skipped: list[dict]) -> dict:
-    assets = _match_downloaded_assets(handoff_dir, manifest)
+    assets = _apply_source_recovery_render_replacements(handoff_dir, _match_downloaded_assets(handoff_dir, manifest))
     local_ready_assets = [
         item for item in assets if item.get("status") == "ready" and item.get("sceneId")
     ]
@@ -10294,6 +11585,7 @@ def create_grok_handoff_route():
         expected_file_name = f"{scene_id}.grok.mp4"
         prompt_file = prompts_dir / f"{scene_id}.prompt.txt"
         prompt_file.write_text(prompt + "\n", encoding="utf-8")
+        fresh_concept = _fresh_concept_scene_packet(item, scene_id, prompt, prompt_quality)
         scene_record = {
             "sceneId": scene_id,
             "sceneNum": index + 1,
@@ -10308,6 +11600,11 @@ def create_grok_handoff_route():
             "operatorChecklist": _scene_operator_checklist(scene_id, shot_bible),
             "originalImageSource": item.get("original_image_source") or item.get("image_source") or "",
             "grokAutoExpanded": item.get("grok_auto_expanded") is True,
+            "freshConcept": fresh_concept,
+            "referenceNote": fresh_concept.get("referenceNote") or "",
+            "actionBeat": fresh_concept.get("actionBeat") or "",
+            "visualRisk": fresh_concept.get("visualRisk") or "",
+            "voiceRequirement": fresh_concept.get("voiceRequirement") or "",
         }
         take_prompts = _scene_take_prompts(scene_record, {**item, "sceneId": scene_id}, shot_bible)
         for take in take_prompts:
@@ -10318,6 +11615,7 @@ def create_grok_handoff_route():
         scene_record["takePrompts"] = take_prompts
         scenes.append(scene_record)
 
+    fresh_concept_packet = _fresh_concept_packet(data, scenes)
     manifest = {
         "projectId": project_id,
         "createdAt": datetime.now().isoformat(timespec="seconds"),
@@ -10335,6 +11633,7 @@ def create_grok_handoff_route():
         "productionContext": production_context,
         "draftScenes": _safe_draft_scenes(draft_scenes),
         "shotBible": shot_bible,
+        "freshConceptPacket": fresh_concept_packet,
         "scenes": scenes,
         "automationContract": {
             "usesPaidApi": False,
@@ -10351,8 +11650,6 @@ def create_grok_handoff_route():
             ],
             "downloadFolderImport": f"POST /api/grok-handoff/{project_id}/import-downloads",
             "backgroundAutomation": f"POST /api/grok-handoff/{project_id}/background-automation",
-            "chromeCompanionExtension": f"GET /api/grok-handoff/{project_id}/chrome-extension",
-            "chromeCompanionCommand": f"GET /api/grok-handoff/{project_id}/extension-command?operatorApproved=true",
             "postImportReview": f"GET /api/grok-handoff/{project_id}/review-packet",
             "reviewDecisionPersist": f"POST /api/grok-handoff/{project_id}/review-decision",
             "downloadNaming": "scene-id based MP4 filenames, e.g. scene-01.grok.mp4",
@@ -10369,16 +11666,14 @@ def create_grok_handoff_route():
     manifest["automationPlanUrl"] = _automation_plan_url(project_id)
     manifest["reviewPacketUrl"] = _review_packet_url(project_id)
     manifest["reviewDecisionUrl"] = _review_decision_url(project_id)
-    manifest["chromeCompanionExtension"] = _chrome_companion_summary(project_id, handoff_dir, manifest)
     review_packet_path = _write_review_packet(handoff_dir, manifest)
     manifest["reviewPacketPath"] = str(review_packet_path)
     manifest_path = _manifest_path(project_id)
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    assets = _match_downloaded_assets(handoff_dir, manifest)
+    assets = _apply_source_recovery_render_replacements(handoff_dir, _match_downloaded_assets(handoff_dir, manifest))
     main_source_gate = _grok_main_source_gate(manifest, assets)
     scene_queue = _scene_queue_status(handoff_dir, manifest)
     next_scene = _select_grok_scene(manifest, str(scene_queue.get("nextMissingSceneId") or ""))
-    companion_connection = _companion_connection_status(_latest_extension_event(handoff_dir))
     generation_observation = _latest_codex_chrome_observation(manifest)
     manual_primary_path = _manual_primary_path(
         project_id,
@@ -10387,7 +11682,7 @@ def create_grok_handoff_route():
         next_scene,
         main_source_gate,
         None,
-        companion_connection,
+        None,
     )
     main_path_status = _grok_main_path_status(
         project_id,
@@ -10401,7 +11696,7 @@ def create_grok_handoff_route():
         None,
         None,
         None,
-        companion_connection,
+        None,
         generation_observation,
     )
 
@@ -10423,13 +11718,13 @@ def create_grok_handoff_route():
         "reviewPacketPath": str(review_packet_path),
         "reviewPacketUrl": _review_packet_url(project_id),
         "reviewDecisionUrl": _review_decision_url(project_id),
-        "chromeCompanionExtension": manifest["chromeCompanionExtension"],
         "mainSourceGate": main_source_gate,
         "manualPrimaryPath": manual_primary_path,
         "mainPathStatus": main_path_status,
         "observedPostImportPlan": main_path_status.get("observedPostImportPlan") or {},
         "codexChromeObservation": generation_observation,
         "grokTargetSelection": target_selection,
+        "freshConceptPacket": fresh_concept_packet,
         "shotBible": shot_bible,
         "scenes": scenes,
     })
@@ -10643,7 +11938,7 @@ def grok_handoff_status_route(project_id: str):
         str(manifest.get("projectId") or project_id),
         refresh_live=False,
     )
-    assets = _match_downloaded_assets(handoff_dir, manifest)
+    assets = _apply_source_recovery_render_replacements(handoff_dir, _match_downloaded_assets(handoff_dir, manifest))
     main_source_gate = _grok_main_source_gate(manifest, assets)
     local_ready_assets = [
         item for item in assets if item.get("status") == "ready" and item.get("sceneId")
@@ -10696,8 +11991,6 @@ def grok_handoff_status_route(project_id: str):
         automation_status,
         (stored_request or {}).get("remoteDebuggingPort") if isinstance(stored_request, dict) else None,
     )
-    latest_extension_event = _latest_extension_event(handoff_dir)
-    companion_connection = _companion_connection_status(latest_extension_event)
     generation_observation = _latest_codex_chrome_observation(manifest)
     manual_primary_path = _manual_primary_path(
         project_key,
@@ -10706,7 +11999,7 @@ def grok_handoff_status_route(project_id: str):
         next_scene,
         main_source_gate,
         automation_status,
-        companion_connection,
+        None,
     )
     main_path_status = _grok_main_path_status(
         project_key,
@@ -10720,8 +12013,15 @@ def grok_handoff_status_route(project_id: str):
         automation_status,
         automation_job,
         manual_download_watch_job,
-        companion_connection,
+        None,
         generation_observation,
+    )
+    browser_control_primary_rail = _browser_control_primary_rail(
+        project_key,
+        manifest,
+        next_scene,
+        generation_observation=generation_observation,
+        manual_primary_path=manual_primary_path,
     )
     return jsonify({
         "ok": True,
@@ -10742,6 +12042,8 @@ def grok_handoff_status_route(project_id: str):
         "mainPathStatus": main_path_status,
         "observedPostImportPlan": main_path_status.get("observedPostImportPlan") or {},
         "grokAssetAcquisition": main_path_status.get("assetAcquisition") or {},
+        "freshConceptPacket": manifest.get("freshConceptPacket") if isinstance(manifest.get("freshConceptPacket"), dict) else {},
+        "browserControlPrimaryRail": browser_control_primary_rail,
         "grokMainSourceDiagnosis": {
             "modelBlocked": False,
             "generationObserved": bool((main_path_status.get("assetAcquisition") or {}).get("clipGenerated")),
@@ -10749,7 +12051,8 @@ def grok_handoff_status_route(project_id: str):
             "currentBlocker": (main_path_status.get("assetAcquisition") or {}).get("primaryBlocker")
             or main_path_status.get("blocker")
             or "",
-            "recommendedPrimaryPath": "grok-app-web-generated-mp4-local-import",
+            "recommendedPrimaryPath": "existing-signed-in-chrome-browser-control-plus-operator-download-import",
+            "downloadAuthority": "operator-owned-manual-download-or-local-upload",
             "doNotDowngradeToStockOnly": True,
         },
         "operatorNextAction": manual_primary_path.get("operatorNextAction"),
@@ -10758,18 +12061,7 @@ def grok_handoff_status_route(project_id: str):
         "qualityGate": quality_gate,
         "mainSourceGate": main_source_gate,
         "grokTargetSelection": manifest.get("grokTargetSelection") if isinstance(manifest.get("grokTargetSelection"), dict) else {},
-        "chromeCompanionExtension": _chrome_companion_summary(
-            project_key,
-            handoff_dir,
-            manifest,
-            scene_id=(next_scene or {}).get("sceneId") if isinstance(next_scene, dict) else None,
-            next_scene=next_scene,
-            assets=assets,
-            scene_queue=scene_queue,
-        ),
-        "latestExtensionEvent": latest_extension_event,
         "codexChromeObservation": generation_observation,
-        "companionConnection": companion_connection,
         "assets": assets,
         "readyScenes": len(ready_assets),
         "totalScenes": scene_count,
@@ -10839,12 +12131,20 @@ def grok_handoff_extension_command_route(project_id: str):
     if scene is None:
         return jsonify({"ok": False, "error": "No Grok scene is available for the Chrome companion"}), 400
     requested_take = flask_request.args.get("take") or flask_request.args.get("takeNumber")
+    allow_weak_prompt = str(flask_request.args.get("allowWeakPrompt") or "").lower() == "true"
     take_number = (
         _normalize_take_number(requested_take)
         if requested_take is not None
-        else _recommended_take_number(scene)
+        else (2 if allow_weak_prompt else _recommended_take_number(scene))
     )
-    return jsonify(_extension_command_payload(project_id, handoff_dir, manifest, scene, take_number))
+    payload = _extension_command_payload(project_id, handoff_dir, manifest, scene, take_number)
+    block = _prompt_quality_command_block(
+        payload,
+        allow_weak_prompt=allow_weak_prompt,
+    )
+    if block:
+        return jsonify(block), 409
+    return jsonify(payload)
 
 
 @grok_bp.route("/api/grok-handoff/<project_id>/extension-event", methods=["POST"])
@@ -10931,15 +12231,30 @@ def grok_handoff_codex_chrome_observation_route(project_id: str):
     )
     quality_floor_met = rendered_width >= 720 and rendered_height >= 1280
     upload_endpoint = f"http://{_bridge_host}:{_bridge_port}/api/grok-handoff/{project_id}/upload-mp4"
-    status = _short_text(data.get("status"), fallback="generated-export-pending", limit=80)
-    default_export_status = "pending-upload-endpoint-import" if video_url and quality_floor_met else "pending-download-import"
+    raw_status = _short_text(data.get("status"), fallback="", limit=80)
+    status = raw_status or (
+        "generated-export-pending"
+        if video_url or "/imagine/post/" in post_url
+        else "surface-visible-only"
+    )
+    if status not in _CODEX_CHROME_GENERATED_STATUSES:
+        return jsonify({
+            "ok": False,
+            "error": "codex-chrome-observation requires generated Grok proof; use extension-event for surface-visible browser-control proof",
+            "projectId": str(manifest.get("projectId") or project_id),
+            "sceneId": scene_id,
+            "status": status,
+            "generationObserved": False,
+            "surfaceProofEndpoint": f"/api/grok-handoff/{project_id}/extension-event",
+            "statusUrl": f"http://{_bridge_host}:{_bridge_port}/api/grok-handoff/{project_id}/status",
+        }), 400
+    default_export_status = "pending-download-import"
     export_status = _short_text(data.get("exportStatus"), fallback=default_export_status, limit=80)
     if video_url and quality_floor_met:
         operator_next_action = (
             f"Grok generated {scene_id} in the logged-in Chrome/SuperGrok session. "
-            "Use the observed-post recovery console/bookmarklet or Video Studio Companion Import MP4 so the "
-            f"720p+ visible MP4 is fetched inside the signed-in Grok tab and posted to the local uploadEndpoint at {upload_endpoint}; "
-            "do not click Chrome Download if it opens a download approval dialog."
+            "The remaining production step is operator-owned MP4 download/save followed by local Downloads import "
+            f"or explicit upload as {expected_file}; do not let Codex automate a native Chrome download dialog."
         )
     elif video_url:
         operator_next_action = (
@@ -10949,8 +12264,8 @@ def grok_handoff_codex_chrome_observation_route(project_id: str):
     else:
         operator_next_action = (
             f"Grok generated {scene_id} in the logged-in Chrome/SuperGrok session. "
-            "Use the observed-post recovery console/bookmarklet or Video Studio Companion Import MP4 to post "
-            f"{expected_file} to the local uploadEndpoint before falling back to Downloads import/watch."
+            "Operator downloads/saves the MP4, then imports or batch-uploads "
+            f"{expected_file} through Video Studio. Browser-side direct import remains fallback only."
         )
     record = {
         "updatedAt": datetime.now().isoformat(timespec="seconds"),
@@ -10967,7 +12282,7 @@ def grok_handoff_codex_chrome_observation_route(project_id: str):
         "renderedWidth": rendered_width,
         "renderedHeight": rendered_height,
         "qualityFloorMet": quality_floor_met,
-        "directImportPreferred": bool(video_url and quality_floor_met),
+        "directImportPreferred": False,
         "uploadEndpoint": upload_endpoint,
         "detail": _short_text(data.get("detail") or data.get("message"), limit=400),
         "operatorNextAction": operator_next_action,
@@ -11352,6 +12667,12 @@ def grok_handoff_bookmarklet_script_route(project_id: str):
         return jsonify({"ok": False, "error": "No Grok scene is available for the bookmarklet fallback"}), 400
     take_number = _normalize_take_number(flask_request.args.get("take") or flask_request.args.get("takeNumber"))
     command = _extension_command_payload(project_id, handoff_dir, manifest, scene, take_number)
+    block = _prompt_quality_command_block(
+        command,
+        allow_weak_prompt=str(flask_request.args.get("allowWeakPrompt") or "").lower() == "true",
+    )
+    if block:
+        return jsonify(block), 409
     auto_generate = str(flask_request.args.get("autoGenerate") or "").lower() == "true"
     response = Response(_bookmarklet_javascript(project_id, command, auto_generate), mimetype="application/javascript")
     response.headers["Cache-Control"] = "no-store"
@@ -11392,6 +12713,12 @@ def grok_handoff_bookmarklet_queue_script_route(project_id: str):
         response.headers["Access-Control-Allow-Private-Network"] = "true"
         return response
     command = _extension_command_payload(project_id, handoff_dir, manifest, scene)
+    block = _prompt_quality_command_block(
+        command,
+        allow_weak_prompt=str(flask_request.args.get("allowWeakPrompt") or "").lower() == "true",
+    )
+    if block:
+        return jsonify(block), 409
     response = Response(
         _bookmarklet_queue_javascript(project_id, command, max_scenes=max_scenes, wait_seconds=wait_seconds),
         mimetype="application/javascript",
@@ -11416,15 +12743,15 @@ def grok_handoff_direct_import_proof_route(project_id: str):
     command_payload = _extension_command_payload(project_id, handoff_dir, manifest, scene)
     generation_observation = _latest_codex_chrome_observation(manifest)
     observed_post_import_plan = _observed_grok_post_import_plan(project_id, manifest, scene, generation_observation)
-    companion_summary = _chrome_companion_summary(project_id, handoff_dir, manifest, scene_id=scene_id, next_scene=scene)
-    profile_probe = companion_summary.get("profileProbe") if isinstance(companion_summary.get("profileProbe"), dict) else {}
-    guide_url = str(companion_summary.get("guideUrl") or _chrome_companion_guide_url(project_id, scene_id))
     upload_endpoint = str(command_payload.get("uploadEndpoint") or f"http://{_bridge_host}:{_bridge_port}/api/grok-handoff/{project_id}/upload-mp4")
+    operator_command_url = str(command_payload.get("queueCommandUrl") or "")
+    operator_prep_generate_url = str(command_payload.get("prepGenerateAutostartUrl") or "")
+    selected_debug_command_url = str(command_payload.get("commandUrl") or "")
+    selected_debug_prep_generate_url = str(command_payload.get("prepGenerateAutostartUrl") or "")
     queue_console_snippet = str(command_payload.get("bookmarkletQueueInlineConsoleSnippet") or "")
     observed_console_snippet = str(observed_post_import_plan.get("observedPostDownloadConsoleSnippet") or "")
     observed_post_url = str(observed_post_import_plan.get("postUrl") or "")
     observed_bookmarklet = str(observed_post_import_plan.get("observedPostDownloadInlineUrl") or "")
-    extension_dir = str(_chrome_companion_extension_dir())
     status_endpoint = f"/api/grok-handoff/{project_id}/status"
     audit_endpoint = "/api/final-video-library/audit?limit=5"
 
@@ -11438,8 +12765,8 @@ def grok_handoff_direct_import_proof_route(project_id: str):
             )
         observed_section = f"""
   <section>
-    <h2>Observed Grok Post Direct Import</h2>
-    <p>Use this path when the Grok post already shows a 720p+ vertical MP4 and Chrome Download opens an approval dialog. This proof snippet is direct-import only: if the browser-side fetch cannot post to the upload endpoint, it stops without clicking Download, Save, Export, or anchor downloads.</p>
+    <h2>Observed Grok Post Debug Recovery</h2>
+    <p>Use this only as a debug recovery helper when the Grok post already shows a 720p+ vertical MP4. Production success still requires operator-owned local MP4 import and review. If the browser-side fetch cannot post to the upload endpoint, it stops without clicking Download, Save, Export, or anchor downloads.</p>
     <p><strong>Observed post:</strong> <code>{escape(observed_post_url or "not recorded")}</code></p>
     <p><strong>Upload endpoint:</strong> <code>{escape(upload_endpoint)}</code></p>
     <p>
@@ -11458,7 +12785,7 @@ def grok_handoff_direct_import_proof_route(project_id: str):
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Video Studio Grok Direct Import Proof Monitor</title>
+  <title>Video Studio Grok Proof Monitor</title>
   <style>
     body {{ font-family: system-ui, sans-serif; max-width: 980px; margin: 28px auto; padding: 0 20px; line-height: 1.5; color: #111827; }}
     code, pre {{ background: #f3f4f6; border-radius: 6px; padding: 2px 6px; }}
@@ -11471,38 +12798,35 @@ def grok_handoff_direct_import_proof_route(project_id: str):
   </style>
 </head>
 <body>
-  <h1>Direct Import Proof Monitor</h1>
-  <p class="status warn">Goal proof is not complete until the live final-video audit reports <code>liveGrokDirectImportProven=true</code>. This page helps the operator run Companion/bookmarklet direct import without Chrome Download approval dialogs and watch the proof state update.</p>
+  <h1>Grok Proof Monitor</h1>
+  <p class="status warn">Goal proof is not complete until live generation proof is followed by operator-owned local MP4 import, scene review, and the final-video audit gate. This page does not make extension heartbeat or surface-only proof count as generation/import success.</p>
   <section>
     <h2>Current Scene</h2>
     <p><strong>Project:</strong> <code>{escape(project_id)}</code></p>
     <p><strong>Scene:</strong> <code>{escape(scene_id)}</code> -> <code>{escape(str(scene.get("expectedFileName") or ""))}</code></p>
-    <p><strong>Profile probe:</strong> <code>{escape(str(profile_probe.get("status") or "not checked"))}</code></p>
-    <p><strong>Companion folder:</strong></p>
-    <pre>{escape(extension_dir)}</pre>
-    <p>
-      <button class="button" type="button" data-copy-value="{escape(extension_dir, quote=True)}">Copy Companion folder</button>
-      <a class="button" href="{escape(guide_url, quote=True)}">Open full Companion guide</a>
-    </p>
-    <p>Manual setup may require opening <code>chrome://extensions</code> yourself in the existing signed-in Chrome profile. This monitor does not open or automate Chrome extension settings.</p>
+    <p>Use the existing signed-in Chrome/Grok tab through browser-control for prompt fill/generate proof. The operator owns MP4 download/save and local import.</p>
   </section>
   <section>
-    <h2>Companion Command</h2>
-    <p><strong>Command URL:</strong></p>
-    <pre>{escape(str(command_payload.get("commandUrl") or ""))}</pre>
-    <p><strong>Prep+Generate URL:</strong></p>
-    <pre>{escape(str(command_payload.get("prepGenerateAutostartUrl") or ""))}</pre>
+    <h2>Debug Queue Fallback</h2>
+    <p>This stable URL lets the bridge choose the next missing or rejected scene when browser-control is unavailable. Do not treat queue execution as production success without local MP4 import and review.</p>
+    <p><strong>Queue command URL:</strong></p>
+    <pre>{escape(operator_command_url)}</pre>
+    <p><strong>Queue Prep+Generate URL:</strong></p>
+    <pre>{escape(operator_prep_generate_url)}</pre>
     <p><strong>Upload endpoint:</strong></p>
     <pre>{escape(upload_endpoint)}</pre>
     <p>
-      <button class="button" type="button" data-copy-value="{escape(str(command_payload.get("commandUrl") or ""), quote=True)}">Copy command URL</button>
-      <button class="button" type="button" data-copy-value="{escape(str(command_payload.get("prepGenerateAutostartUrl") or ""), quote=True)}">Copy Prep+Generate URL</button>
+      <button class="button" type="button" data-copy-value="{escape(operator_command_url, quote=True)}">Copy queue command URL</button>
+      <button class="button" type="button" data-copy-value="{escape(operator_prep_generate_url, quote=True)}">Copy queue Prep+Generate URL</button>
       <button class="button" type="button" data-copy-value="{escape(upload_endpoint, quote=True)}">Copy upload endpoint</button>
     </p>
+    <p><strong>Selected-scene debug override:</strong></p>
+    <pre>{escape(selected_debug_command_url)}</pre>
+    <pre>{escape(selected_debug_prep_generate_url)}</pre>
   </section>
   <section>
     <h2>No-extension Queue Runner</h2>
-    <p>Run this in the existing signed-in Grok tab if the Companion extension is not loaded. It direct-imports eligible MP4/blob candidates to the local uploadEndpoint before any browser download fallback.</p>
+    <p>Run this in the existing signed-in Grok tab only as a debug fallback. It attempts local uploadEndpoint recovery without clicking browser download controls; production success still requires operator-owned local MP4 import and review.</p>
     <p>
       <a class="button" href="{escape(str(command_payload.get("bookmarkletQueueInlineUrl") or "#"), quote=True)}">Queue Fill+Generate+Direct Import bookmarklet</a>
       <button class="button" type="button" data-copy-value="{escape(queue_console_snippet, quote=True)}">Copy queue console runner</button>
@@ -11536,14 +12860,13 @@ def grok_handoff_direct_import_proof_route(project_id: str):
       async function refreshProofStatus() {{
         try {{
           const [status, audit] = await Promise.all([jsonFrom(statusEndpoint), jsonFrom(auditEndpoint)]);
-          const companion = status.chromeCompanionExtension || {{}};
-          const profile = companion.profileProbe || {{}};
           const proof = (audit.goalReadiness && audit.goalReadiness.liveGrokDirectImportProof) || {{}};
+          const diagnosis = status.grokMainSourceDiagnosis || {{}};
           const lines = [
             `liveGrokDirectImportProven=${{audit.goalReadiness && audit.goalReadiness.liveGrokDirectImportProven === true}}`,
             `goalComplete=${{audit.goalReadiness && audit.goalReadiness.goalComplete === true}}`,
-            `companionProfileStatus=${{profile.status || "unknown"}}`,
-            `latestExtensionEvent=${{(status.latestExtensionEvent && status.latestExtensionEvent.eventType) || ""}}/${{(status.latestExtensionEvent && status.latestExtensionEvent.status) || ""}}`,
+            `generationObserved=${{diagnosis.generationObserved === true}}`,
+            `currentBlocker=${{diagnosis.currentBlocker || ""}}`,
             `proofSourceKind=${{proof.sourceKind || ""}}`,
             `proofImportMode=${{proof.importMode || ""}}`,
           ];
@@ -11604,9 +12927,12 @@ def grok_handoff_chrome_extension_guide_route(project_id: str):
     if scene is None:
         return jsonify({"ok": False, "error": "No Grok scene is available for the Chrome companion"}), 400
     scene_id = str(scene.get("sceneId") or "")
-    command_url = _extension_command_url(project_id, scene_id)
-    autostart_url = _extension_autostart_url(project_id, scene_id)
-    prep_generate_autostart_url = _extension_autostart_url(project_id, scene_id, "prep-generate")
+    queue_command_url = _extension_command_url(project_id)
+    queue_autostart_url = _extension_autostart_url(project_id)
+    queue_prep_generate_autostart_url = _extension_autostart_url(project_id, None, "prep-generate")
+    debug_scene_command_url = _extension_command_url(project_id, scene_id)
+    debug_scene_autostart_url = _extension_autostart_url(project_id, scene_id)
+    debug_scene_prep_generate_url = _extension_autostart_url(project_id, scene_id, "prep-generate")
     bookmarklet_url = _bookmarklet_url(project_id, scene_id)
     bookmarklet_generate_url = _bookmarklet_url(project_id, scene_id, True)
     bookmarklet_script_url = _bookmarklet_script_url(project_id, scene_id)
@@ -11915,24 +13241,30 @@ def grok_handoff_chrome_extension_guide_route(project_id: str):
   <pre>{escape(str(extension_dir))}</pre>
   <p>
     <button class="button" type="button" data-copy-value="{escape(str(extension_dir), quote=True)}">Copy Companion folder</button>
-    <button class="button" type="button" data-copy-value="{escape(command_url, quote=True)}">Copy command URL</button>
-    <button class="button" type="button" data-copy-value="{escape(prep_generate_autostart_url, quote=True)}">Copy Prep+Generate URL</button>
+    <button class="button" type="button" data-copy-value="{escape(queue_command_url, quote=True)}">Copy queue command URL</button>
+    <button class="button" type="button" data-copy-value="{escape(queue_prep_generate_autostart_url, quote=True)}">Copy queue Prep+Generate URL</button>
   </p>
   <pre id="vs-copy-status">Clipboard helper is ready. Use the buttons above before Load unpacked or Companion command paste.</pre>
   <ol>
     <li>Open <code>chrome://extensions</code> in the existing logged-in Chrome profile.</li>
     <li>Enable Developer mode, click <strong>Load unpacked</strong>, and select the folder above.</li>
     <li>Open Grok Imagine in the same Chrome profile.</li>
-    <li>Open the Video Studio Grok Companion toolbar popup and paste this command URL.</li>
-    <li>Run Fill prompt, then Generate. Use Companion/pageAssets direct import; if that fails, stop and use the operator-owned batch upload path.</li>
+    <li>Open the Video Studio Grok Companion toolbar popup and paste the queue command URL. Do not edit <code>sceneId</code> or <code>take</code> during normal operation.</li>
+    <li>Run Fill prompt, then Generate only as fallback. In production, browser-control generates and the operator downloads/saves the MP4 before local import or batch upload.</li>
     <li>Shortcut: open the autostart URL below in the same Chrome profile. The content script loads the command and fills the prompt without CDP.</li>
   </ol>
-  <h2>Scene command URL</h2>
-  <pre>{escape(command_url)}</pre>
-  <h2>Autostart URL</h2>
-  <pre>{escape(autostart_url)}</pre>
-  <h2>Autostart + generate URL</h2>
-  <pre>{escape(prep_generate_autostart_url)}</pre>
+  <h2>Queue command URL - operator default</h2>
+  <p>This stable URL lets the bridge choose the next missing or rejected scene. Operators should use this URL instead of manually editing <code>sceneId</code> or <code>take</code>.</p>
+  <pre>{escape(queue_command_url)}</pre>
+  <h2>Queue autostart URL</h2>
+  <pre>{escape(queue_autostart_url)}</pre>
+  <h2>Queue autostart + generate URL</h2>
+  <pre>{escape(queue_prep_generate_autostart_url)}</pre>
+  <h2>Selected scene debug URLs</h2>
+  <p>Use these only when deliberately replaying or debugging one scene. They are not the normal operator path.</p>
+  <pre>{escape(debug_scene_command_url)}</pre>
+  <pre>{escape(debug_scene_autostart_url)}</pre>
+  <pre>{escape(debug_scene_prep_generate_url)}</pre>
   <h2>Bookmarklet fallback</h2>
   <p>If the unpacked companion extension is not loaded in this Chrome profile, use the self-contained fallback in the current Grok tab. It embeds the prompt command directly instead of asking Grok to load a local script tag. Drag one of these links to the bookmarks bar, open Grok Imagine, then click the bookmarklet there. Clicking it on this guide page will not control Grok.</p>
   <p>
@@ -11986,7 +13318,8 @@ def grok_handoff_chrome_extension_guide_route(project_id: str):
     <button class="button" type="button" id="vs-grok-batch-upload">Upload selected Grok MP4s to Video Studio</button>
   </p>
   <pre id="vs-grok-batch-status">Waiting for native Grok MP4 files.</pre>
-  <h2>All scene command URLs</h2>
+  <h2>All scene debug command URLs</h2>
+  <p>Scene-specific command URLs are for deliberate replay/debug only. Normal operation should use the queue command URL above.</p>
   <ol>
     {scene_command_rows}
   </ol>

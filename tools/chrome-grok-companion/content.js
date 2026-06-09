@@ -1,4 +1,15 @@
 (() => {
+  const EXTENSION_BUILD_TAG = "20260607-popup-state-fix";
+  const PROVIDER_CAPABILITIES = Object.freeze({
+    "grok-web-video": Object.freeze({
+      canProbe: true,
+      canFillPrompt: true,
+      canClickGenerate: true,
+      canImportResult: true,
+      canGenerateVideo: true
+    })
+  });
+
   function isVisible(element) {
     if (!element) return false;
     const rect = element.getBoundingClientRect();
@@ -14,6 +25,33 @@
       element.getAttribute("title"),
       element.getAttribute("placeholder")
     ].filter(Boolean).join(" ").trim();
+  }
+
+  function commandProvider(command) {
+    return String(command?.provider || "grok-web-video");
+  }
+
+  function providerCapabilities(command) {
+    return PROVIDER_CAPABILITIES[commandProvider(command)] || null;
+  }
+
+  function capabilityForAction(action) {
+    if (action === "probe") return "canProbe";
+    if (action === "fill-prompt" || action === "prep-generate") return "canFillPrompt";
+    if (action === "click-generate") return "canClickGenerate";
+    if (["download-asset", "download-visible-video", "download-post-video", "download-current-video"].includes(action)) return "canImportResult";
+    return "";
+  }
+
+  function assertProviderAction(command, action) {
+    const capabilities = providerCapabilities(command);
+    if (!capabilities) {
+      throw new Error(`unsupported Grok companion provider: ${commandProvider(command)}`);
+    }
+    const capability = capabilityForAction(action);
+    if (!capability || capabilities[capability] !== true) {
+      throw new Error(`Grok companion action not supported for provider=${commandProvider(command)} action=${action}`);
+    }
   }
 
   function editableCandidates() {
@@ -47,6 +85,31 @@
     return Math.max(0, 18 - Math.min(18, distance / 45));
   }
 
+  function chatComposerTextPattern() {
+    return /ask|message|chat|send|submit|grok|anything|무엇이든|물어|메시지|채팅|대화|보내기|전송|제출/i;
+  }
+
+  function imaginePromptTextPattern() {
+    return /prompt|describe|imagine|video|create|generate|make|animate|motion|프롬프트|설명|상상|동영상|영상|생성|만들|애니/i;
+  }
+
+  function promptBoxAssessment(element) {
+    const text = textOf(element);
+    const rect = element.getBoundingClientRect();
+    const positive = imaginePromptTextPattern().test(text);
+    const chatLike = chatComposerTextPattern().test(text);
+    const formText = textOf(element.closest?.("form") || element.parentElement || element);
+    const formChatLike = chatComposerTextPattern().test(formText) && !imaginePromptTextPattern().test(formText);
+    return {
+      text,
+      positive,
+      chatLike,
+      formChatLike,
+      lowerComposer: rect.top > window.innerHeight * 0.55 && !positive,
+      status: (chatLike || formChatLike) && !positive ? "chat-composer" : "candidate"
+    };
+  }
+
   function setPromptValue(element, prompt) {
     element.focus();
     if ("value" in element) {
@@ -78,21 +141,29 @@
   function findPromptBox() {
     const boxes = editableCandidates();
     const ranked = boxes.map((box) => {
-      const text = textOf(box).toLowerCase();
+      const assessment = promptBoxAssessment(box);
+      const text = assessment.text.toLowerCase();
       const rect = box.getBoundingClientRect();
       let score = 0;
       if (box.tagName === "TEXTAREA") score += 10;
       if (box.tagName === "INPUT") score += 4;
       if (box.getAttribute("contenteditable") === "true") score += 6;
       if (box.getAttribute("role") === "textbox") score += 6;
+      if (assessment.positive) score += 12;
       if (text.includes("prompt") || text.includes("describe") || text.includes("imagine")) score += 8;
-      if (text.includes("무엇") || text.includes("설명") || text.includes("프롬프트")) score += 8;
+      if (text.includes("설명") || text.includes("프롬프트") || text.includes("동영상") || text.includes("영상")) score += 8;
+      if (assessment.chatLike) score -= 18;
+      if (assessment.formChatLike) score -= 18;
+      if (assessment.lowerComposer) score -= 10;
       if (rect.width > 280) score += 3;
       if (rect.height > 32) score += 2;
       if (rect.top > window.innerHeight * 0.35) score += 2;
-      return { box, score };
+      return { box, score, assessment };
     }).sort((a, b) => b.score - a.score);
-    return ranked[0]?.box || null;
+    const best = ranked[0];
+    if (!best || best.score < 8) return null;
+    if (best.assessment.status === "chat-composer") return null;
+    return best.box || null;
   }
 
   function buttonCandidates(words, referenceBox = null, options = {}) {
@@ -102,7 +173,8 @@
       .filter((element) => isVisible(element) && !element.disabled && element.getAttribute("aria-disabled") !== "true")
       .map((element) => {
         const text = textOf(element).toLowerCase();
-        let score = words.reduce((total, word) => total + (text.includes(word) ? 10 : 0), 0);
+        const wordScore = words.reduce((total, word) => total + (text.includes(word) ? 10 : 0), 0);
+        let score = wordScore;
         if (element.tagName === "INPUT" && element.type === "submit") score += 8;
         if (referenceForm && element.closest("form") === referenceForm) score += 12;
         if (referenceBox) score += proximityScore(element, referenceBox);
@@ -112,7 +184,8 @@
           const reference = centerOf(referenceBox).rect;
           if (control.left >= reference.left && control.top >= reference.top - 80) score += 4;
         }
-        return { element, text, score };
+        if (options.requireWordMatch && wordScore <= 0) score = -100;
+        return { element, text, score, wordScore };
       })
       .filter((item) => item.score > (options.minimumScore || 0))
       .sort((a, b) => b.score - a.score);
@@ -132,7 +205,25 @@
       });
   }
 
+  function imagineSurfaceStatus() {
+    const pathname = String(location.pathname || "").toLowerCase();
+    if (pathname.startsWith("/c/")) {
+      return { ok: false, status: "general-chat-thread", error: "imagine-surface-required-general-chat-thread" };
+    }
+    if (pathname.startsWith("/imagine/post")) {
+      return { ok: false, status: "imagine-post", error: "imagine-composer-required-not-post" };
+    }
+    if (!pathname.startsWith("/imagine")) {
+      return { ok: false, status: "not-imagine", error: "imagine-surface-required" };
+    }
+    return { ok: true, status: "imagine" };
+  }
+
   async function ensureVideoMode() {
+    const surface = imagineSurfaceStatus();
+    if (!surface.ok) {
+      return { ok: false, ...surface, label: "Open Grok Imagine before filling or generating video." };
+    }
     const active = activeVideoModeControl();
     if (active) {
       return { ok: true, status: "already-video", label: textOf(active) || "video" };
@@ -140,11 +231,15 @@
     const words = ["video", "videos", "animate", "motion", "movie", "clip", "동영상", "영상", "애니메이션"];
     const candidate = buttonCandidates(words, null, { allowIconButtons: true, minimumScore: 9 })[0];
     if (!candidate) {
-      return { ok: true, status: "not-found", label: "video mode control not found; keeping current Grok mode" };
+      return { ok: false, status: "video-mode-not-found", error: "video-mode-control-not-found" };
     }
     candidate.element.click();
     await new Promise((resolve) => setTimeout(resolve, 650));
-    return { ok: true, status: "clicked", label: candidate.text || "video mode", score: candidate.score };
+    const selected = activeVideoModeControl();
+    if (!selected) {
+      return { ok: false, status: "video-mode-not-confirmed", error: "video-mode-control-not-confirmed", label: candidate.text || "video mode", score: candidate.score };
+    }
+    return { ok: true, status: "clicked", label: textOf(selected) || candidate.text || "video mode", score: candidate.score };
   }
 
   function mp4AssetCandidateFromUrl(url) {
@@ -329,28 +424,61 @@
   }
 
   async function fillPrompt(command) {
+    if (providerCapabilities(command)?.canFillPrompt !== true) {
+      return { ok: false, error: "grok-fill-not-supported-for-provider", currentUrl: location.href };
+    }
     const mode = await ensureVideoMode();
+    if (!mode.ok) {
+      return {
+        ok: false,
+        error: mode.error || "imagine-video-mode-required",
+        currentUrl: location.href,
+        editableCount: editableCandidates().length,
+        targetFound: false,
+        mode
+      };
+    }
+    const editableCount = editableCandidates().length;
     const box = findPromptBox();
     if (!box) {
       return {
         ok: false,
         error: "prompt-input-not-found",
         currentUrl: location.href,
-        editableCount: editableCandidates().length,
+        editableCount,
+        targetFound: false,
         mode
       };
     }
     setPromptValue(box, command.prompt || "");
-    return { ok: true, currentUrl: location.href, filledLength: String(command.prompt || "").length, mode };
+    return {
+      ok: true,
+      currentUrl: location.href,
+      filledLength: String(command.prompt || "").length,
+      editableCount,
+      targetFound: true,
+      targetTag: box.tagName.toLowerCase(),
+      mode
+    };
   }
 
   async function clickGenerate() {
+    if (providerCapabilities({ provider: "grok-web-video" })?.canClickGenerate !== true) {
+      return { ok: false, error: "grok-generate-not-supported-for-provider", currentUrl: location.href };
+    }
     const mode = await ensureVideoMode();
+    if (!mode.ok) {
+      return { ok: false, error: mode.error || "imagine-video-mode-required", currentUrl: location.href, mode };
+    }
     const box = findPromptBox();
-    const words = ["generate", "create", "submit", "send", "imagine", "video", "동영상", "생성", "만들기", "제출", "보내기", "전송"];
+    if (!box) {
+      return { ok: false, error: "imagine-prompt-input-not-found-or-chat-composer", currentUrl: location.href, mode };
+    }
+    const words = ["generate", "create", "imagine", "video", "동영상", "영상 생성", "생성", "만들기"];
     const button = buttonCandidates(words, box, {
-      allowIconButtons: true,
+      allowIconButtons: false,
       preferRightOfReference: true,
+      requireWordMatch: true,
       minimumScore: box ? 10 : 0
     })[0];
     if (!button) return { ok: false, error: "generate-button-not-found", currentUrl: location.href, mode };
@@ -507,6 +635,10 @@
     }
   }
 
+  function extensionBuildDetail() {
+    return `version=${extensionVersion()} build=${EXTENSION_BUILD_TAG}`;
+  }
+
   function markCompanionLoaded() {
     try {
       const version = extensionVersion();
@@ -549,6 +681,12 @@
     let lastResult = null;
     for (let attempt = 1; attempt <= request.retries; attempt += 1) {
       lastResult = await fillPrompt(command);
+      await report(command, {
+        eventType: lastResult?.targetFound ? "grok-prompt-target-found" : "grok-prompt-target-missing",
+        status: lastResult?.targetFound ? "ready" : "failed",
+        detail: `attempt=${attempt}/${request.retries}; editable=${lastResult?.editableCount ?? 0}; tag=${lastResult?.targetTag || ""}; ${lastResult?.error || ""}; ${extensionBuildDetail()}`,
+        currentUrl: lastResult?.currentUrl || location.href
+      });
       await report(command, {
         eventType: "autostart-fill",
         status: lastResult?.ok ? "filled" : "retry",
@@ -609,7 +747,7 @@
       await report(command, {
         eventType: "autostart-download",
         status: "blocked",
-        detail: "visible-video-fallback-proof-only; use Companion/pageAssets direct import or operator-owned manual upload for original MP4",
+        detail: "visible-video-fallback-proof-only; use operator-owned download/import or manual upload for original MP4",
         currentUrl: result?.currentUrl || location.href,
         candidateUrl: lowQualityVisibleCandidate.url || "",
         sourceKind: lowQualityVisibleCandidate.sourceKind || "",
@@ -671,14 +809,15 @@
       await reportAutostartRequest(request, {
         eventType: "content-script-ready",
         status: "hash-detected",
-        detail: `version=${extensionVersion()}; action=${request.action}; autoGenerate=${request.autoGenerate}`,
+        detail: `${extensionBuildDetail()}; action=${request.action}; autoGenerate=${request.autoGenerate}`,
         currentUrl: location.href
       });
       command = await loadAutostartCommand(request);
+      assertProviderAction(command, request.action);
       await report(command, {
         eventType: "content-script-command-loaded",
         status: "loaded",
-        detail: `version=${extensionVersion()}; action=${request.action}; autoGenerate=${request.autoGenerate}`,
+        detail: `${extensionBuildDetail()}; action=${request.action}; autoGenerate=${request.autoGenerate}`,
         currentUrl: location.href
       });
       await report(command, {
@@ -716,7 +855,7 @@
         await report(command, {
           eventType: "autostart-probe",
           status: "ready",
-          detail: `editable=${editableCandidates().length}; videos=${collectVideoCandidates().length}; activeVideoMode=${Boolean(mode)}`,
+          detail: `editable=${editableCandidates().length}; videos=${collectVideoCandidates().length}; activeVideoMode=${Boolean(mode)}; capabilities=probe,fill-prompt,generate,direct-import`,
           currentUrl: location.href
         });
         return;
@@ -760,6 +899,8 @@
         const mode = activeVideoModeControl();
         sendResponse({
           ok: true,
+          provider: "grok-web-video",
+          capabilities: providerCapabilities({ provider: "grok-web-video" }),
           currentUrl: location.href,
           editableCount: editableCandidates().length,
           videoCandidates: collectVideoCandidates(),

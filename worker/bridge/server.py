@@ -33,6 +33,7 @@ from worker.bridge.job_queue import JobQueue
 from worker.bridge.cleanup import cleanup_storage, format_size
 from worker.bridge.routes_media import media_bp, init_media_routes
 from worker.bridge.routes_grok import grok_bp, init_grok_routes
+from worker.bridge.routes_episodes import episodes_bp, init_episode_routes
 from worker.bridge.routes_sources import sources_bp, init_source_routes
 from worker.bridge.routes_admin import admin_bp, init_admin_routes
 from worker.bridge.draft_executor import (
@@ -388,6 +389,7 @@ init_media_routes(
     get_audio_duration, image_url_for_client, safe_resolve,
 )
 init_grok_routes(BRIDGE_HOST, BRIDGE_PORT, PROJECT_ROOT, safe_resolve)
+init_episode_routes(PROJECT_ROOT, safe_resolve, BRIDGE_HOST, BRIDGE_PORT)
 init_source_routes(execute_draft_core)
 init_admin_routes(
     PROJECT_ROOT, CAPCUT_DRAFT_DIR, batch_manager, job_queue,
@@ -396,6 +398,7 @@ init_admin_routes(
 
 app.register_blueprint(media_bp)
 app.register_blueprint(grok_bp)
+app.register_blueprint(episodes_bp)
 app.register_blueprint(sources_bp)
 app.register_blueprint(admin_bp)
 

@@ -1,17 +1,20 @@
 {
   "manifest_version": 3,
-  "name": "Video Studio Grok Companion",
+  "name": "Video Studio AI Web Companion",
   "version": "0.1.0",
-  "description": "Operator-approved Grok web handoff helper for an existing signed-in Chrome profile.",
+  "description": "Operator-approved Grok and Gemini web handoff helper for an existing signed-in Chrome profile.",
   "permissions": [
     "activeTab",
     "alarms",
     "downloads",
+    "scripting",
     "storage",
     "tabs"
   ],
   "host_permissions": [
     "http://127.0.0.1:5161/*",
+    "https://gemini.google.com/*",
+    "https://gemini.google-b197145817.com/*",
     "https://grok.com/*",
     "https://*.grok.com/*"
   ],
@@ -28,10 +31,20 @@
         "content.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://gemini.google.com/*",
+        "https://gemini.google-b197145817.com/*"
+      ],
+      "js": [
+        "content_gemini.js"
+      ],
+      "run_at": "document_idle"
     }
   ],
   "action": {
-    "default_title": "Video Studio Grok Companion",
+    "default_title": "Video Studio AI Web Companion",
     "default_popup": "popup.html"
   }
 }

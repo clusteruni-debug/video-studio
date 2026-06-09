@@ -477,6 +477,37 @@ def test_free_audio_import_accepts_browser_file_upload(tmp_path):
     assert sidecar["sourceUrl"].startswith("https://mixkit.co/")
 
 
+def test_free_audio_import_accepts_operator_owned_voiceover_without_source_url(tmp_path):
+    client = _media_test_client(tmp_path)
+    audio_bytes = b"operator-owned-voiceover"
+
+    response = client.post("/api/free-assets/import-audio", json={
+        "operatorApproved": True,
+        "fileName": "scene-01-voice.wav",
+        "fileBase64": base64.b64encode(audio_bytes).decode("ascii"),
+        "targetRole": "voiceover",
+        "operatorOwned": True,
+        "speaker": "operator",
+    })
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    copied = tmp_path / payload["asset"]["path"]
+    sidecar_path = tmp_path / payload["asset"]["sidecarPath"]
+    assert copied.read_bytes() == audio_bytes
+    assert copied.parent == tmp_path / "assets" / "voiceover"
+    assert payload["asset"]["role"] == "audio"
+    assert payload["asset"]["kind"] == "voiceover"
+    assert payload["asset"]["provider"] == "upload"
+    assert payload["asset"]["operatorOwned"] is True
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    assert sidecar["targetRole"] == "voiceover"
+    assert sidecar["operatorOwned"] is True
+    assert sidecar["sourceLicense"] == "operator-owned"
+    assert sidecar["sourceOrigin"] == "operator-owned-voiceover"
+    assert "sourceUrl" not in sidecar
+
+
 def test_free_audio_import_rejects_browser_upload_without_audio_extension(tmp_path):
     client = _media_test_client(tmp_path)
 
@@ -574,3 +605,57 @@ def test_scene_sfx_asset_binding_preserves_free_audio_provenance(tmp_path):
     expected_label = "scene-01:local-sfx:sfx:Swooshes, whoosh, short, deep"
     assert summary["freeAudioProvenanceAssets"] == [expected_label]
     assert summary["missingFreeAudioProvenanceAssets"] == []
+
+
+def test_scene_owned_voiceover_asset_binding_marks_voiceover_audio(tmp_path):
+    source = tmp_path / "assets" / "voiceover" / "scene-01-voice.wav"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"operator-owned-voiceover")
+
+    payload = save_project_bundle(
+        prompt="Owned voiceover binding test",
+        budget_mode="free",
+        planner_mode="sample",
+        project_id="owned-voiceover-binding-test",
+        project_root=tmp_path,
+        availability=ProviderAvailability(),
+        template_type="ranking_list",
+        draft_scenes=[{
+            "sceneId": "scene-01",
+            "scene_num": 1,
+            "title": "Voiceover hook",
+            "narration": "이 장면은 직접 녹음한 목소리로 설명합니다.",
+            "display_text": "직접 녹음",
+            "image_prompt": "vertical test scene",
+            "duration": 3,
+            "caption_preset": "top-hook",
+        }],
+        scene_assets=[{
+            "sceneId": "scene-01",
+            "role": "audio",
+            "fileName": "scene-01-voice.wav",
+            "mimeType": "audio/wav",
+            "sourcePath": "assets/voiceover/scene-01-voice.wav",
+            "provider": "upload",
+            "kind": "voiceover",
+            "sourceOrigin": "operator-owned-voiceover",
+            "sourceLicense": "operator-owned",
+            "sourceLabel": "Scene 01 owned voiceover",
+            "operatorOwned": True,
+        }],
+    )
+
+    audio_asset = next(
+        asset
+        for asset in payload["manifest"]["assets"]
+        if asset["sceneId"] == "scene-01" and asset["role"] == "audio"
+    )
+    scene = payload["manifest"]["scenes"][0]
+
+    assert audio_asset["provider"] == "upload"
+    assert audio_asset["kind"] == "voiceover"
+    assert audio_asset["sourceOrigin"] == "operator-owned-voiceover"
+    assert audio_asset["sourceLicense"] == "operator-owned"
+    assert audio_asset["operatorOwned"] is True
+    assert audio_asset["sourcePath"].endswith("/uploads/scene-01/scene-01-voice.wav")
+    assert scene["audioKind"] == "voiceover"

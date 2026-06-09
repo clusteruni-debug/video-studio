@@ -14,7 +14,7 @@ from worker.bridge import image_router, routes_media
 from worker.bridge.draft_executor import safe_resolve
 from worker.bridge.routes_media import init_media_routes, media_bp
 from worker.bridge.templates import build_template_prompt, get_live_channel_operating_templates
-from worker.media.runtime import generate_local_visual_asset
+from worker.media.runtime import build_local_media_plan, generate_local_visual_asset
 from worker.media.model_router import ProviderAvailability
 from worker.planner.save_plan import save_project_bundle
 from worker.render import compose, compose_ffmpeg
@@ -97,7 +97,10 @@ def _source_motion_evidence(status="pass", low_motion_scene_ids=None):
 
 
 FULL_NARRATION = "Warm coffee fills the morning while the hands, steam, and small cafe sounds make the routine feel close and easy to follow."
-CAPTION_REVIEW = "Subject stays visible, caption placement is top-safe or lower-safe, and the Shorts UI danger zone remains clear."
+CAPTION_REVIEW = (
+    "Subject stays visible, caption placement is top-safe or lower-safe, and the Shorts UI danger zone remains clear. "
+    "Compared against Korean Shorts references for first-two-second hook, 2-3s cut rhythm, caption safe-zone, and pacing."
+)
 
 
 def test_compose_tts_uses_only_explicit_viewer_narration():
@@ -146,6 +149,7 @@ def _current_quality_checks(**overrides):
         "voicePolicyCompliance": {"status": "pass", "detail": "template voice policy ready"},
         "captionLayoutReview": {"status": "pass", "detail": "caption does not cover subject or Shorts UI"},
         "captionDensityAndSafeZone": {"status": "pass", "detail": "captions fit lower-mid Shorts safe zone"},
+        "referenceEditGrammar": {"status": "pass", "detail": "reference edit grammar reflected in hook, cut rhythm, and safe-zone captions"},
         "assetReuseDiversity": {"status": "pass", "detail": "no repeated visual assets"},
         "freeAssetProvenance": {"status": "pass", "detail": "free asset source metadata retained"},
         "bgmAssetRotation": {"status": "pass", "detail": "BGM selected with project/template rotation evidence"},
@@ -196,6 +200,41 @@ def _media_test_client(project_root: Path):
     app = Flask(__name__)
     app.register_blueprint(media_bp)
     return app.test_client()
+
+
+def test_regenerate_scene_tts_accepts_quality_rate_override(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_generate_tts(**kwargs):
+        captured.update(kwargs)
+        Path(kwargs["output_path"]).write_bytes(b"fake tts")
+        return True
+
+    monkeypatch.setattr(routes_media, "generate_tts", fake_generate_tts)
+    client = _media_test_client(tmp_path)
+
+    response = client.post("/api/regenerate-scene-tts", json={
+        "scene_num": 1,
+        "narration": "여기서 힘이 딱 빠져요.",
+        "tts_provider": "edge",
+        "voice_gender": "female",
+        "rate": "+8%",
+        "pitch": "+0Hz",
+    })
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["rate"] == "+8%"
+    assert payload["pitch"] == "+0Hz"
+    assert captured["rate"] == "+8%"
+    assert captured["pitch"] == "+0Hz"
+    assert [item["key"] for item in payload["qualityCandidates"]] == [
+        "ko-female-natural",
+        "ko-female-clear",
+        "ko-male-natural",
+        "ko-male-clear",
+    ]
 
 
 def test_pexels_video_search_returns_curatable_candidates(monkeypatch):
@@ -1011,6 +1050,74 @@ def test_dashboard_draft_scene_persists_selected_video_and_caption_preset(tmp_pa
     assert manifest["subtitleStyle"] == "minimal"
 
 
+def test_grok_handoff_visual_source_reuses_existing_file_without_placeholder(tmp_path):
+    source_path = Path("storage/grok-handoffs/runway/incoming/scene-01.mp4")
+    source_file = tmp_path / source_path
+    source_file.parent.mkdir(parents=True, exist_ok=True)
+    source_file.write_bytes(b"grok-mp4")
+    voice_path = Path("storage/uploads/scene-01.wav")
+    voice_file = tmp_path / voice_path
+    voice_file.parent.mkdir(parents=True, exist_ok=True)
+    voice_file.write_bytes(b"voice")
+    manifest = {
+        "projectId": "grok-handoff-source-reuse",
+        "cacheDir": "storage/inputs/grok-handoff-source-reuse",
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "Grok source reuse",
+                "visualKind": "video",
+                "cacheDir": "storage/inputs/grok-handoff-source-reuse/scene-01",
+                "durationSec": 4,
+                "route": "manual_clip",
+            }
+        ],
+        "assets": [
+            {
+                "provider": "upload",
+                "role": "visual",
+                "sceneId": "scene-01",
+                "kind": "video",
+                "sourceOrigin": "grok-handoff",
+                "sourcePath": str(source_path).replace("\\", "/"),
+                "outputPath": str(source_path).replace("\\", "/"),
+                "sourceRecoveryReplacement": True,
+            },
+            {
+                "provider": "operator-voice",
+                "role": "audio",
+                "sceneId": "scene-01",
+                "kind": "voiceover",
+                "sourceOrigin": "uploaded",
+                "sourcePath": str(voice_path).replace("\\", "/"),
+                "outputPath": str(voice_path).replace("\\", "/"),
+            },
+        ],
+    }
+    scene = manifest["scenes"][0]
+    manifest_path = tmp_path / "render-manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    plan = build_local_media_plan(manifest, manifest_path, project_root=tmp_path)
+    assert plan.summary.uploadedVisuals == 1
+    assert plan.summary.generationRequired == 0
+    assert plan.scenes[0].visualSource == "uploaded"
+
+    result = generate_local_visual_asset(
+        manifest=manifest,
+        manifest_path=manifest_path,
+        scene=scene,
+        project_root=tmp_path,
+    )
+
+    assert result.status == "uploaded"
+    assert result.mode == "uploaded"
+    assert result.outputPath == str(source_file)
+    assert result.attempted is False
+    assert result.succeeded is None
+    assert "grok-handoff asset will be used" in result.detail
+
+
 def test_selected_stock_visual_reuses_cached_mp4_before_network(tmp_path, monkeypatch):
     payload = save_project_bundle(
         prompt="manual cached stock short",
@@ -1166,7 +1273,33 @@ def test_create_scene_clip_loops_short_video_and_uses_narration_audio(monkeypatc
     assert args[:4] == ["-y", "-stream_loop", "-1", "-i"]
     map_index = args.index("-map")
     assert args[map_index:map_index + 4] == ["-map", "0:v:0", "-map", "1:a:0"]
+    video_filter = args[args.index("-vf") + 1]
+    assert "flags=lanczos" in video_filter
+    assert "unsharp=3:3:0.28:3:3:0.10" in video_filter
+    assert "eq=contrast=1.025:saturation=1.030:gamma=1.010" in video_filter
+    assert args[args.index("-preset") + 1] == "medium"
+    assert args[args.index("-crf") + 1] == "18"
+    assert args[args.index("-profile:v") + 1] == "high"
     assert str(tmp_path / "narration.wav") in args
+
+
+def test_xfade_final_pass_applies_render_quality_filters(tmp_path):
+    from worker.render.transitions import build_xfade_filter_complex
+
+    result = build_xfade_filter_complex(
+        clip_paths=[tmp_path / "clip-01.mp4", tmp_path / "clip-02.mp4"],
+        durations=[3.2, 3.2],
+        transition_type="fade",
+        transition_duration=0.35,
+        subtitle_file=tmp_path / "captions.ass",
+    )
+
+    assert result is not None
+    _input_args, filter_complex = result
+    assert "scale=1080:1920:flags=lanczos" in filter_complex
+    assert "unsharp=3:3:0.18:3:3:0.06" in filter_complex
+    assert "eq=contrast=1.010:saturation=1.010:gamma=1.005" in filter_complex
+    assert "format=yuv420p[vout]" in filter_complex
 
 
 def test_normalize_audio_duration_tempo_fits_long_tts_instead_of_hard_trim(monkeypatch, tmp_path):
@@ -1271,7 +1404,7 @@ def test_caption_presets_skip_none_and_use_safe_layouts(tmp_path):
     assert "Hidden" not in content
     assert "Dialogue: 0,0:00:02.00,0:00:03.35,TopHook" in content
     assert "Dialogue: 0,0:00:04.00,0:00:05.80,LowerInfo" in content
-    assert "Style: LowerInfo" in content and ",2,72,190,690,1" in content
+    assert "Style: LowerInfo" in content and ",2,72,170,540,1" in content
 
 
 def test_top_hook_caption_is_large_short_and_animated(tmp_path):
@@ -1286,11 +1419,63 @@ def test_top_hook_caption_is_large_short_and_animated(tmp_path):
     )
 
     content = out.read_text(encoding="utf-8")
-    assert "Style: TopHook,Pretendard,82" in content
-    assert "Style: CenterShort,Pretendard,70" in content
-    assert "Style: LowerInfo,Pretendard,60" in content
+    assert "Style: TopHook,Pretendard,78" in content
+    assert "Style: CenterShort,Pretendard,64" in content
+    assert "Style: LowerInfo,Pretendard,58" in content
     assert "Dialogue: 0,0:00:00.00,0:00:01.35,TopHook" in content
     assert "\\t(0,120,\\fscx112\\fscy112)" in content
+
+
+def test_korean_punch_layout_uses_large_korean_text_without_visible_override_brace(tmp_path):
+    out = tmp_path / "captions.ass"
+    generate_ass_subtitle(
+        words=[
+            {
+                "start_sec": 0,
+                "end_sec": 3,
+                "text": "폰 뒤집기",
+                "caption_preset": "top-hook",
+                "layout_variant_key": "korean-punch",
+                "layout_variant_label": "폰 뒤집기",
+                "layout_variant_y": 245,
+            },
+        ],
+        style_preset="minimal",
+        highlight_mode="none",
+        output_path=str(out),
+    )
+
+    content = out.read_text(encoding="utf-8")
+    assert "Style: KoreanPunch,Pretendard,118" in content
+    assert "Dialogue: 4,0:00:00.04,0:00:01.49,KoreanPunch" in content
+    assert ")}폰 뒤집기" in content
+    assert ")}}폰 뒤집기" not in content
+
+
+def test_korean_reference_caption_uses_sentence_length_two_line_safe_text(tmp_path):
+    out = tmp_path / "captions.ass"
+    generate_ass_subtitle(
+        words=[
+            {
+                "start_sec": 0,
+                "end_sec": 3,
+                "text": "폰은 뒤집고 눈을 떼요",
+                "caption_preset": "top-hook",
+                "layout_variant_key": "korean-reference-caption",
+                "layout_variant_y": 300,
+                "layout_variant_max_chars": 8,
+            },
+        ],
+        style_preset="minimal",
+        highlight_mode="none",
+        output_path=str(out),
+    )
+
+    content = out.read_text(encoding="utf-8")
+    assert "Style: KoreanReference,Pretendard,88" in content
+    assert "Dialogue: 4,0:00:00.04,0:00:01.99,KoreanReference" in content
+    assert "폰은 뒤집고\\N눈을 떼요" in content
+    assert ")}}폰은" not in content
 
 
 def test_wrapped_ass_caption_uses_hard_newline_not_visible_backslash(tmp_path):
@@ -1392,8 +1577,8 @@ def test_routine_layout_variants_render_distinct_safe_layers(tmp_path):
 
     content = out.read_text(encoding="utf-8")
     assert "Style: RoutineStep,Pretendard,44" in content
-    assert "Style: RoutineHook,Pretendard,94" in content
-    assert "Style: RoutineLower,Pretendard,70" in content
+    assert "Style: RoutineHook,Pretendard,84" in content
+    assert "Style: RoutineLower,Pretendard,62" in content
     assert "Style: RoutineDetail,Pretendard,46" in content
     assert "Dialogue: 3,0:00:00.00,0:00:01.10,RoutineStep" in content
     assert "Dialogue: 2,0:00:00.08,0:00:01.70,RoutineHook" in content
@@ -1402,7 +1587,7 @@ def test_routine_layout_variants_render_distinct_safe_layers(tmp_path):
     assert "Dialogue: 2,0:00:04.12,0:00:05.92,RoutineLower" in content
     assert "Dialogue: 1,0:00:05.34,0:00:06.50,RoutineDetail" in content
     assert "Dialogue: 0,0:00:06.05,0:00:07.10,RoutineDetail" in content
-    assert "Style: RoutineLower,Pretendard,70" in content and ",1,78,210,690,1" in content
+    assert "Style: RoutineLower,Pretendard,62" in content and ",1,78,210,690,1" in content
     dialogue_text = "\n".join(
         line.rsplit(",,", 1)[-1] for line in content.splitlines() if line.startswith("Dialogue:")
     )
@@ -1698,8 +1883,153 @@ def test_render_quality_report_records_pipeline_checks(tmp_path):
     assert report["checks"]["publishReadinessGate"]["status"] == "fail"
     assert report["publishReadiness"]["status"] == "blocked"
     assert report["publishReadiness"]["requiredFixes"]
+    assert report["gateSystem"]["systemVersion"] == "2026-06-08-unified-quality-gate-system-v1"
+    assert report["gateSystem"]["surface"] == "render-quality-report"
+    assert report["gateSystem"]["blockingPhaseKey"] == "render-quality"
+    assert report["gateSystem"]["renderQualitySummary"]["checkCount"] == 33
+    assert "outputSpec" in report["gateSystem"]["renderQualitySummary"]["failedOrMissingKeys"]
     assert report["productionReview"]["summary"]["uploadedVideoScenes"] == 1
     assert report["productionReview"]["scenes"][0]["sourceRationale"].startswith("Operator selected")
+
+
+def test_render_quality_report_blocks_quality_iteration_without_ratchet(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    manifest = {
+        "projectId": "quality-ratchet-missing",
+        "qualityIteration": "v27-source-rebuild",
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "New hook source",
+                "subtitleText": "First action",
+                "narrationText": FULL_NARRATION,
+                "visualKind": "video",
+                "captionPreset": "top-hook",
+                "sourceRationale": "Operator selected a new source because the prior baseline felt generic.",
+                "continuityNote": "Same subject distance and natural handheld camera language.",
+                "hookNote": "Visible action starts in the first second.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualSourceIntent": "upload",
+            },
+        ],
+        "assets": [
+            {"provider": "upload", "role": "visual", "sceneId": "scene-01", "kind": "video", "sourceOrigin": "uploaded"},
+            {"provider": "edge-tts", "role": "audio", "sceneId": "scene-01", "kind": "voiceover"},
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "quality-ratchet-missing.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"sceneId": "scene-01", "status": "uploaded", "outputKind": "video"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    ratchet = report["qualityRatchet"]
+    assert ratchet["required"] is True
+    assert ratchet["status"] == "fail"
+    assert ratchet["missingFields"] == [
+        "previousBaseline",
+        "rejectionCause",
+        "changedLever",
+        "expectedVisibleImprovement",
+        "actualProof",
+        "nextRatchet",
+    ]
+    assert report["checks"]["qualityRatchet"]["status"] == "fail"
+    assert any("previousBaseline" in item for item in report["publishReadiness"]["requiredFixes"])
+
+
+def test_render_quality_report_accepts_complete_quality_ratchet(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    manifest = {
+        "projectId": "quality-ratchet-complete",
+        "qualityIteration": "v27-source-rebuild",
+        "qualityRatchet": {
+            "previousBaseline": "v26-render-polish final MP4 rejected at phone size.",
+            "rejectionCause": "Opening source still read as generic AI footage and did not answer the viewer question.",
+            "changedLever": ["source", "storyboard", "caption-layout"],
+            "expectedVisibleImprovement": "The first second should show a concrete action instead of a static desk montage.",
+            "actualProof": {
+                "renderPath": "storage/renders/quality-ratchet-complete/v27.mp4",
+                "contactSheet": "storage/qa/quality-ratchet-complete/contact-sheet.jpg",
+                "phoneReview": "operator compared v26 and v27 at phone size",
+            },
+            "nextRatchet": "If still weak, replace scene-01 source before changing FFmpeg again.",
+        },
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "New hook source",
+                "subtitleText": "First action",
+                "narrationText": FULL_NARRATION,
+                "visualKind": "video",
+                "captionPreset": "top-hook",
+                "sourceRationale": "Operator selected a new source because the prior baseline felt generic.",
+                "continuityNote": "Same subject distance and natural handheld camera language.",
+                "hookNote": "Visible action starts in the first second.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualSourceIntent": "upload",
+            },
+        ],
+        "assets": [
+            {"provider": "upload", "role": "visual", "sceneId": "scene-01", "kind": "video", "sourceOrigin": "uploaded"},
+            {"provider": "edge-tts", "role": "audio", "sceneId": "scene-01", "kind": "voiceover"},
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "quality-ratchet-complete.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"sceneId": "scene-01", "status": "uploaded", "outputKind": "video"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    ratchet = report["qualityRatchet"]
+    assert ratchet["required"] is True
+    assert ratchet["status"] == "pass"
+    assert ratchet["missingFields"] == []
+    assert ratchet["viewerFacingLever"] is True
+    assert "source" in ratchet["viewerFacingTerms"]
+    assert report["checks"]["qualityRatchet"]["status"] == "pass"
+    quality_criterion = next(item for item in report["publishReadiness"]["criteria"] if item["key"] == "qualityRatchet")
+    assert quality_criterion["status"] == "pass"
 
 
 def test_render_quality_report_blocks_fallback_sine_instead_of_tts(monkeypatch, tmp_path):
@@ -1756,6 +2086,185 @@ def test_render_quality_report_blocks_fallback_sine_instead_of_tts(monkeypatch, 
     assert "fallbackToneScenes=['scene-01']" in report["checks"]["ttsNarrationEvidence"]["detail"]
     assert report["publishReadiness"]["status"] == "blocked"
     assert any("viewer-facing narration" in item for item in report["publishReadiness"]["requiredFixes"])
+
+
+def test_live_channel_quality_report_rejects_draft_only_windows_voice(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    manifest = {
+        "projectId": "live-channel-fresh-source-runway-20260531-01-render",
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "Fresh source hook",
+                "subtitleText": "첫 장면",
+                "narrationText": FULL_NARRATION,
+                "visualKind": "video",
+                "captionPreset": "top-hook",
+                "sourceRationale": "Operator imported a reviewed moving clip for the hook.",
+                "continuityNote": "Camera distance and subject motion stay consistent.",
+                "hookNote": "Visible movement appears in the first two seconds.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualSourceIntent": "upload",
+            },
+        ],
+        "assets": [
+            {"provider": "upload", "role": "visual", "sceneId": "scene-01", "kind": "video", "sourceOrigin": "uploaded"},
+            {"provider": "windows-speech", "role": "audio", "sceneId": "scene-01", "kind": "voiceover"},
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "draft-only-voice.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"status": "uploaded", "outputKind": "video"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    assert report["checks"]["ttsNarrationEvidence"]["status"] == "fail"
+    assert "strictLiveChannel=True" in report["checks"]["ttsNarrationEvidence"]["detail"]
+    assert "draftOnlyVoiceoverScenes=['scene-01']" in report["checks"]["ttsNarrationEvidence"]["detail"]
+    assert report["productionReview"]["summary"]["draftOnlyVoiceoverScenes"] == ["scene-01"]
+    assert report["publishReadiness"]["status"] == "blocked"
+
+
+def test_live_channel_quality_report_blocks_google_ai_studio_tts_as_paid_provider(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    manifest = {
+        "projectId": "live-channel-paid-tts-blocked",
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "Paid TTS policy check",
+                "subtitleText": "첫 장면",
+                "narrationText": FULL_NARRATION,
+                "visualKind": "video",
+                "captionPreset": "top-hook",
+                "sourceRationale": "Operator imported a reviewed moving clip for the hook.",
+                "continuityNote": "Camera distance and subject motion stay consistent.",
+                "hookNote": "Visible movement appears in the first two seconds.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualSourceIntent": "upload",
+            },
+        ],
+        "assets": [
+            {"provider": "upload", "role": "visual", "sceneId": "scene-01", "kind": "video", "sourceOrigin": "uploaded"},
+            {"provider": "google-ai-studio-tts", "role": "audio", "sceneId": "scene-01", "kind": "voiceover"},
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "paid-tts.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"status": "uploaded", "outputKind": "video"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    assert report["checks"]["zeroPaidProviders"]["status"] == "fail"
+    assert "google-ai-studio-tts" in report["checks"]["zeroPaidProviders"]["detail"]
+    assert report["publishReadiness"]["status"] == "blocked"
+
+
+def test_live_channel_quality_report_allows_operator_owned_upload_voiceover(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    voiceover = tmp_path / "assets" / "voiceover" / "scene-01-voice.wav"
+    voiceover.parent.mkdir(parents=True)
+    voiceover.write_bytes(b"operator-owned-voiceover")
+    manifest = {
+        "projectId": "live-channel-fresh-source-runway-20260531-01-render",
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "Owned voice hook",
+                "subtitleText": "첫 장면",
+                "narrationText": FULL_NARRATION,
+                "visualKind": "video",
+                "captionPreset": "top-hook",
+                "sourceRationale": "Operator imported a reviewed moving clip for the hook.",
+                "continuityNote": "Camera distance and subject motion stay consistent.",
+                "hookNote": "Visible movement appears in the first two seconds.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualSourceIntent": "upload",
+            },
+        ],
+        "assets": [
+            {"provider": "upload", "role": "visual", "sceneId": "scene-01", "kind": "video", "sourceOrigin": "uploaded"},
+            {
+                "provider": "upload",
+                "role": "audio",
+                "sceneId": "scene-01",
+                "kind": "voiceover",
+                "sourcePath": "assets/voiceover/scene-01-voice.wav",
+                "sourceOrigin": "operator-owned-voiceover",
+                "operatorOwned": True,
+            },
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "owned-voice.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"status": "uploaded", "outputKind": "video"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    assert report["checks"]["ttsNarrationEvidence"]["status"] == "pass"
+    assert "strictLiveChannel=True" in report["checks"]["ttsNarrationEvidence"]["detail"]
+    assert "draftOnlyVoiceoverScenes=[]" in report["checks"]["ttsNarrationEvidence"]["detail"]
+    assert report["productionReview"]["summary"]["draftOnlyVoiceoverScenes"] == []
 
 
 def test_render_quality_report_rejects_production_meta_narration(monkeypatch, tmp_path):
@@ -2256,6 +2765,108 @@ def test_render_quality_report_blocks_grok_main_without_curation_and_source_prov
     assert report["checks"]["topTierReadinessGate"]["status"] == "warn"
 
 
+def test_render_quality_report_accepts_source_recovery_replacement_as_grok_curation(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    manifest = {
+        "projectId": "grok-source-recovery-curated",
+        "templateType": "authentic_vlog",
+        "audioDesignMode": "no-voice",
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "Recovered routine hook",
+                "subtitleText": "퇴근 후, 첫 동작부터",
+                "visualKind": "video",
+                "captionPreset": "top-hook",
+                "captionDisplayDurationSec": 1.2,
+                "sourceRationale": "Source recovery acceptance selected the replacement MP4 for rerender.",
+                "continuityNote": "Same worker, desk, notebook, and warm office palette continue through the scene.",
+                "hookNote": "The replacement starts visible phone-down motion inside the first two seconds.",
+                "originalityEvidence": "Source recovery accepted replacement MP4 with recorded path and sha256.",
+                "qualityReviewNote": "Operator accepted this source-recovery replacement after phone/source-fit review.",
+                "visualQualityVerdict": "pass",
+                "thumbnailReviewNote": "Phone-sized first-frame review passed for the replacement.",
+                "audioMixReviewNote": "No-voice BGM and local ambience carry the source-recovery replacement.",
+                "platformComparisonNote": "Replacement cleared source-fit review against Korean short-form routine references.",
+                "layoutVariantKey": "grok-first-hook",
+                "visualSourceIntent": "grok",
+                "selectedFileName": "scene-01-fixed.mp4",
+                "selectedCandidateSummary": (
+                    "Source recovery acceptance selected this replacement after hook, motion, phone-frame, "
+                    "source-fit, caption-safe, and continuity review."
+                ),
+                "sourceProvenanceConfirmed": True,
+                "sourceProvenanceNote": "Source recovery acceptance recorded replacement path and sha256 before rerender.",
+            }
+        ],
+        "assets": [
+            {
+                "provider": "upload",
+                "role": "visual",
+                "sceneId": "scene-01",
+                "kind": "video",
+                "sourceOrigin": "grok-handoff",
+                "sourcePath": "storage/source-recovery/routine/scene-01-fixed.mp4",
+                "candidateCount": 1,
+                "sourceRecoveryReplacement": True,
+                "sourceRecoveryAcceptanceSha256": "acceptance-sha",
+                "acceptedReplacementSha256": "replacement-sha",
+                "sourceProvenance": {
+                    "status": "local-mp4-source-unverified",
+                    "acceptAsGrokMainSource": True,
+                    "sourceKind": "source-recovery-accepted-replacement",
+                },
+            },
+            {
+                "provider": "local-bgm",
+                "role": "audio",
+                "sceneId": "global",
+                "kind": "bgm",
+                "sourceOrigin": "local-library",
+                "sourcePath": "assets/bgm/tech-house/minimal.mp3",
+                "sourceLabel": "Minimal test bed",
+                "sourceUrl": "https://example.invalid/free/minimal",
+                "sourceLicense": "Free test fixture",
+                "candidateCount": 2,
+                "selectionMethod": "stable-hash",
+                "selectionKey": "grok-source-recovery-curated",
+            },
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "grok-source-recovery-curated.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"sceneId": "scene-01", "status": "uploaded", "outputKind": "video"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    summary = report["productionReview"]["summary"]
+    assert summary["missingGrokSourceCurationScenes"] == []
+    assert summary["missingGrokCandidateComparisonScenes"] == []
+    assert report["productionReview"]["scenes"][0]["grokSourceCuration"]["sourceRecoveryReplacement"] is True
+    assert report["productionReview"]["scenes"][0]["grokSourceCuration"]["ready"] is True
+    assert report["checks"]["grokSourceCuration"]["status"] == "pass"
+
+
 def test_render_quality_report_blocks_rejected_grok_source_review(monkeypatch, tmp_path):
     monkeypatch.setattr(
         compose_ffmpeg,
@@ -2560,6 +3171,74 @@ def test_render_quality_report_accepts_trimmed_top_hook_caption_duration(monkeyp
     assert report["checks"]["captionDensityAndSafeZone"]["status"] == "pass"
 
 
+def test_render_quality_report_blocks_missing_reference_edit_grammar(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    manifest = {
+        "projectId": "missing-reference-grammar",
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "Looks fine",
+                "subtitleText": "The routine begins.",
+                "narrationText": FULL_NARRATION,
+                "visualKind": "video",
+                "captionPreset": "top-hook",
+                "captionDisplayDurationSec": 1.2,
+                "sourceRationale": "Operator selected an owned moving clip for this scene.",
+                "continuityNote": "Same desk and warm palette.",
+                "hookNote": "Motion starts immediately.",
+                "qualityReviewNote": "Subject is visible and the frame looks acceptable.",
+                "visualQualityVerdict": "pass",
+            }
+        ],
+        "assets": [
+            {
+                "provider": "upload",
+                "role": "visual",
+                "sceneId": "scene-01",
+                "kind": "video",
+                "sourceOrigin": "uploaded",
+                "sourcePath": "storage/uploads/reference-missing.mp4",
+            },
+            {"provider": "edge-tts", "role": "audio", "sceneId": "scene-01", "kind": "voiceover"},
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "reference-missing.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"sceneId": "scene-01", "status": "uploaded", "outputKind": "video"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    summary = report["productionReview"]["summary"]
+    assert summary["referenceEditGrammarReady"] is False
+    assert summary["missingReferenceEditGrammarScenes"] == ["scene-01"]
+    assert "missing reference edit grammar scenes=['scene-01']" in summary["referenceEditGrammarIssues"]
+    assert report["checks"]["referenceEditGrammar"]["status"] == "fail"
+    criterion = next(item for item in report["publishReadiness"]["criteria"] if item["key"] == "referenceEditGrammar")
+    assert criterion["status"] == "fail"
+    assert report["publishReadiness"]["status"] == "blocked"
+
+
 def test_render_quality_report_blocks_dense_shorts_captions(monkeypatch, tmp_path):
     monkeypatch.setattr(
         compose_ffmpeg,
@@ -2625,6 +3304,65 @@ def test_render_quality_report_blocks_dense_shorts_captions(monkeypatch, tmp_pat
     assert report["checks"]["captionDensityAndSafeZone"]["status"] == "fail"
     assert report["publishReadiness"]["status"] == "blocked"
     assert any("burned-in captions" in item for item in report["publishReadiness"]["requiredFixes"])
+
+
+def test_render_quality_report_blocks_captions_that_read_too_fast(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    manifest = {
+        "projectId": "too-fast-caption-layout",
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "Fast caption",
+                "subtitleText": "손이 먼저 움직인다",
+                "narrationText": "손이 먼저 움직입니다.",
+                "visualKind": "video",
+                "captionPreset": "top-hook",
+                "captionDisplayDurationSec": 0.55,
+                "sourceRationale": "Operator selected a moving Grok handoff hook clip.",
+                "continuityNote": "Same subject and camera position.",
+                "hookNote": "Hand movement starts in the first second.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualQualityVerdict": "pass",
+                "visualSourceIntent": "grok",
+            }
+        ],
+        "assets": [
+            {"provider": "upload", "role": "visual", "sceneId": "scene-01", "kind": "video", "sourceOrigin": "uploaded"},
+            {"provider": "edge-tts", "role": "audio", "sceneId": "scene-01", "kind": "voiceover"},
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "fast-caption.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"sceneId": "scene-01", "status": "uploaded", "outputKind": "video"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    summary = report["productionReview"]["summary"]
+    assert summary["captionDensityIssueScenes"] == ["scene-01"]
+    assert "reads too fast" in summary["captionDensityIssuesByScene"]["scene-01"]
+    assert report["checks"]["captionDensityAndSafeZone"]["status"] == "fail"
+    assert report["publishReadiness"]["status"] == "blocked"
 
 
 def test_render_quality_report_allows_tight_shortform_viewer_narration(monkeypatch, tmp_path):
@@ -2703,6 +3441,71 @@ def test_render_quality_report_allows_tight_shortform_viewer_narration(monkeypat
     }
     assert report["productionReview"]["summary"]["thinNarrationScenes"] == []
     assert report["checks"]["ttsNarrationEvidence"]["status"] == "pass"
+
+
+def test_render_quality_report_allows_short_action_voiceover_callout(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    manifest = {
+        "projectId": "short-action-callout",
+        "templateType": "authentic_vlog",
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "Phone down",
+                "subtitleText": "폰부터 뒤집기",
+                "narrationText": "먼저, 폰을 뒤집어요.",
+                "durationSec": 3.2,
+                "visualKind": "video",
+                "captionPreset": "top-hook",
+                "captionDisplayDurationSec": 1.05,
+                "layoutVariantKey": "routine-action-command",
+                "voiceoverStyle": "short-action-callout",
+                "sourceRationale": "Operator selected a no-face hand/object action clip.",
+                "continuityNote": "Desk, phone, and notebook remain in the same workspace.",
+                "hookNote": "The phone turns down inside the first beat.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualSourceIntent": "upload",
+            },
+        ],
+        "assets": [
+            {"provider": "upload", "role": "visual", "sceneId": "scene-01", "kind": "video", "sourceOrigin": "uploaded"},
+            {"provider": "edge-tts", "role": "audio", "sceneId": "scene-01", "kind": "voiceover"},
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "callout.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"sceneId": "scene-01", "status": "uploaded", "outputKind": "video"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    summary = report["productionReview"]["summary"]
+    scene = report["productionReview"]["scenes"][0]
+    assert summary["thinNarrationScenes"] == []
+    assert summary["shortVoiceoverCalloutScenes"] == ["scene-01"]
+    assert scene["shortVoiceoverCalloutApproved"] is True
+    assert scene["requiredNarrationTextLength"] == 24
+    assert report["checks"]["ttsNarrationEvidence"]["status"] == "pass"
+    assert report["publishReadiness"]["status"] == "ready"
 
 
 def test_render_quality_report_flags_thin_longform_narration(monkeypatch, tmp_path):
@@ -5002,8 +5805,7 @@ def test_finalize_render_copies_ready_publish_packet(tmp_path):
     assert "uploadChecklist" in publish_packet_json
     assert "sceneReview" in publish_packet_json
     publish_actions_text = "\n".join(publish_packet_json["nextImprovementActions"])
-    assert "uploadEndpoint direct import" in publish_actions_text
-    assert "already-saved MP4 batch upload" in publish_actions_text
+    assert "Korean Shorts/long-form references" in publish_actions_text
     assert "generate and download" not in publish_actions_text
     assert "generate/download" not in publish_actions_text
     assert "generate and download" not in publish_packet_text
@@ -5016,6 +5818,11 @@ def test_finalize_render_copies_ready_publish_packet(tmp_path):
     assert payload["audioLevel"]["ok"] is False
     assert payload["qualityAudit"]["summary"]["total"] == 20
     assert quality_audit_json["summary"]["total"] == 20
+    assert payload["qualityAudit"]["metrics"]["acceptedScenes"] == 0
+    assert payload["qualityAudit"]["metrics"]["qualityScore"] == payload["qualityAudit"]["summary"]["passed"]
+    assert payload["qualityAudit"]["metrics"]["blockerCount"] >= 3
+    assert any("uploadReview:status=blocked" in item for item in payload["qualityAudit"]["hardFailures"])
+    assert any("topTierReadiness:status=needs-grok-local-hero" in item for item in payload["qualityAudit"]["hardFailures"])
     assert quality_audit_items["noPlaceholders"]["status"] == "pass"
     assert quality_audit_items["viewerAudioDesign"]["status"] == "pass"
     assert quality_audit_items["stockCandidateCuration"]["status"] == "pass"
@@ -5132,8 +5939,8 @@ def test_finalize_render_rejects_channel_packet_when_channel_readiness_fails(tmp
     assert payload["sourcePipelineStatus"]["paidApiPolicy"]["paidAiApiAllowed"] is False
     assert payload["sourcePipelineStatus"]["grok"]["apiIntegration"] is False
     assert payload["sourcePipelineStatus"]["grok"]["mode"] == "operator-approved-browser-handoff"
-    assert payload["sourcePipelineStatus"]["grok"]["companionDirectImport"]["available"] is True
-    assert payload["sourcePipelineStatus"]["grok"]["companionDirectImport"]["avoidsChromeDownloadPrompt"] is True
+    assert "companionDirectImport" not in payload["sourcePipelineStatus"]["grok"]
+    assert "browser-control" in payload["sourcePipelineStatus"]["grok"]["nextAction"]
     assert payload["sourcePipelineStatus"]["grok"]["bookmarkletDirectImport"]["available"] is True
     assert payload["sourcePipelineStatus"]["grok"]["bookmarkletDirectImport"]["avoidsChromeDownloadPrompt"] is True
     native_prompt_policy = payload["sourcePipelineStatus"]["grok"]["nativeDownloadPromptPolicy"]
@@ -5141,16 +5948,19 @@ def test_finalize_render_rejects_channel_packet_when_channel_readiness_fails(tmp
     assert native_prompt_policy["allowedForGoalCompletion"] is False
     assert native_prompt_policy["blocksIfPromptAppears"] is True
     assert "Downloads watcher fallback" in native_prompt_policy["forbiddenActions"]
-    assert "native download prompt" in payload["sourcePipelineStatus"]["grok"]["nextAction"]
-    assert "Do not fall back to Download/Save/Export" in payload["sourcePipelineStatus"]["grok"]["nextAction"]
+    assert "operator downloads/saves the MP4" in payload["sourcePipelineStatus"]["grok"]["nextAction"]
+    assert "native browser download prompts" in native_prompt_policy["reason"].lower()
+    assert "Do not let Codex click Chrome/Grok Download/Save/Export" in payload["sourcePipelineStatus"]["grok"]["nextAction"]
     assert payload["sourcePipelineStatus"]["localVideo"]["providers"]["wan"]["ready"] is False
     assert payload["sourcePipelineStatus"]["pexels"]["role"].startswith("free support footage")
     action_keys = [item["key"] for item in payload["nextActions"]]
     assert "add-grok-or-local-hero" in action_keys
     assert "add-original-hero-mp4" in action_keys
     hero_action = next(item for item in payload["nextActions"] if item["key"] == "add-grok-or-local-hero")
-    assert "uploadEndpoint direct import" in hero_action["operatorAction"]
-    assert "already-saved MP4 batch upload" in hero_action["operatorAction"]
+    assert "signed-in Grok UI" in hero_action["operatorAction"]
+    assert "operator save/download and import" in hero_action["operatorAction"]
+    assert "Do not press Grok Download/Save/Export" in hero_action["operatorAction"]
+    assert "operator save/download" in hero_action["operatorAction"]
     assert "generate/download" not in hero_action["operatorAction"]
     assert "generate and download" not in hero_action["operatorAction"]
     audit_path = Path(payload["blockedQualityAuditPath"])
@@ -5242,6 +6052,9 @@ def test_finalize_render_copies_channel_ready_packet_when_required(tmp_path):
     assert payload["qualityAudit"]["summary"]["channelReady"] is True
     assert payload["qualityAudit"]["summary"]["audioDesignReady"] is True
     assert payload["qualityAudit"]["summary"]["narrationReady"] is True
+    assert payload["qualityAudit"]["metrics"]["qualityScore"] == payload["qualityAudit"]["summary"]["passed"]
+    assert payload["qualityAudit"]["metrics"]["blockerCount"] == len(payload["qualityAudit"]["summary"]["checksNeeded"])
+    assert "hardFailures" not in payload["qualityAudit"]
     assert Path(payload["publishPacketPath"]).exists()
     assert Path(payload["publishPacketMarkdownPath"]).exists()
     publish_packet = payload["publishPacket"]
@@ -5340,7 +6153,7 @@ def test_finalize_render_rejects_top_tier_packet_without_grok_or_local_hero(tmp_
     assert "complete-top-tier-gate" in action_keys
     grok_action = next(item for item in payload["nextActions"] if item["key"] == "add-grok-or-local-hero")
     assert "Grok app/web handoff path first" in grok_action["operatorAction"]
-    assert "uploadEndpoint direct import" in grok_action["operatorAction"]
+    assert "operator save/download" in grok_action["operatorAction"]
     assert "already-saved MP4 batch upload" in grok_action["operatorAction"]
     assert "generate and download" not in grok_action["operatorAction"]
     assert "generate/download" not in grok_action["operatorAction"]
@@ -5453,7 +6266,7 @@ def test_finalize_render_source_mix_block_surfaces_direct_import_action(tmp_path
     assert "2/3" in source_mix_action["detail"]
     assert "scene-02, scene-03, scene-05" in source_mix_action["detail"]
     assert "Replace at least 1 stock/support scene" in source_mix_action["operatorAction"]
-    assert "uploadEndpoint direct import" in source_mix_action["operatorAction"]
+    assert "operator-owned manual download/import" in source_mix_action["operatorAction"]
     assert "already-saved MP4 batch import" in source_mix_action["operatorAction"]
     assert "Grok Download/Save/Export" in source_mix_action["operatorAction"]
     assert "Chrome native download prompts" in source_mix_action["operatorAction"]
@@ -5636,7 +6449,7 @@ def test_finalize_render_visual_fit_failures_outrank_generic_top_tier_action(tmp
     assert "rewriteDraft=live-channel-fresh-source-rewrite-20260603-01" in visual_action["detail"]
     assert "sourceMix=2/3" in visual_action["detail"]
     assert "heroOriginal=false" in visual_action["detail"]
-    assert "uploadEndpoint direct import" in visual_action["operatorAction"]
+    assert "operator-owned manual download/import" in visual_action["operatorAction"]
     assert "Chrome/Grok Download/Save/Export" in visual_action["operatorAction"]
     assert "Downloads watcher fallback blocked" in visual_action["operatorAction"]
     assert "Conditional selected-stock fallbacks" in visual_action["operatorAction"]
@@ -5653,6 +6466,11 @@ def test_finalize_render_visual_fit_failures_outrank_generic_top_tier_action(tmp
     assert rewrite_candidate["sourceMixRegression"] is True
     assert "complete-top-tier-gate" in action_keys
     audit = json.loads(Path(payload["blockedQualityAuditPath"]).read_text(encoding="utf-8"))
+    assert audit["metrics"]["acceptedScenes"] == 3
+    assert audit["metrics"]["qualityScore"] == 15
+    assert audit["metrics"]["blockerCount"] > 0
+    assert any(item.startswith("aiSlopVisualFit:") for item in audit["hardFailures"])
+    assert any(item.startswith("stockAiClipFit:") for item in audit["hardFailures"])
     assert audit["nextActions"][0]["key"] == "fix-visual-fit-failures"
     assert audit["nextActions"][0]["sourceRecovery"][0]["recommendedLane"] == "rewrite-selected-stock-fallback"
     assert audit["nextActions"][0]["sourceRecovery"][0]["selectedStockRewriteCandidate"]["uploadReady"] is False
@@ -5742,20 +6560,25 @@ def test_final_video_library_audit_ranks_existing_packets(tmp_path, monkeypatch)
     upload_only_hero_action = next(
         item for item in packets["upload-only"]["nextActions"] if item["key"] == "add-grok-or-local-hero"
     )
-    assert "uploadEndpoint direct import" in upload_only_hero_action["operatorAction"]
-    assert "already-saved MP4 batch upload" in upload_only_hero_action["operatorAction"]
+    assert "browser-control" in upload_only_hero_action["operatorAction"]
+    assert "operator save/download" in upload_only_hero_action["operatorAction"]
     assert "generate and download" not in upload_only_hero_action["operatorAction"]
     assert "generate/download" not in upload_only_hero_action["operatorAction"]
     assert "missing-quality-audit" in packets["missing-audit"]["summary"]["nextActionKeys"]
     assert payload["sourcePipelineStatus"]["paidApiPolicy"]["paidAiApiAllowed"] is False
-    assert payload["sourcePipelineStatus"]["grok"]["companionDirectImport"]["operatorReady"] is True
-    assert payload["sourcePipelineStatus"]["grok"]["companionDirectImport"]["setupRequired"] is False
-    assert payload["sourcePipelineStatus"]["grok"]["companionDirectImport"]["uploadEndpointDriven"] is True
-    assert payload["sourcePipelineStatus"]["grok"]["companionDirectImport"]["sourceKind"] == "companion-direct-fetch"
+    assert "companionDirectImport" not in payload["sourcePipelineStatus"]["grok"]
+    assert "operator-owned local MP4 import" in payload["sourcePipelineStatus"]["paidApiPolicy"]["allowedAutomation"]
     assert payload["sourcePipelineStatus"]["grok"]["bookmarkletDirectImport"]["uploadEndpointDriven"] is True
     assert payload["sourcePipelineStatus"]["grok"]["bookmarkletDirectImport"]["operatorReady"] is True
     assert payload["sourcePipelineStatus"]["currentEvidence"]["heroAiOrLocalReady"] is True
     assert payload["sourcePipelineStatus"]["currentEvidence"]["heroOriginalClipReady"] is True
+    assert payload["gateSystem"]["systemVersion"] == "2026-06-08-unified-quality-gate-system-v1"
+    assert payload["gateSystem"] == payload["goalReadiness"]["gateSystem"]
+    assert payload["gateSystem"]["surface"] == "final-video-library"
+    assert payload["gateSystem"]["finalReadinessSummary"]["gateCount"] == 7
+    assert "broad-operating-goal" in payload["gateSystem"]["finalReadinessSummary"]["blockingGateKeys"]
+    assert payload["gateSystem"]["blockingPhaseKey"] in payload["gateSystem"]["finalReadinessSummary"]["blockingGateKeys"]
+    assert payload["gateSystem"]["phaseStates"]
     assert payload["goalReadiness"]["artifactReady"] is True
     assert payload["goalReadiness"]["goalComplete"] is False
     assert payload["goalReadiness"]["overallStatus"] == "incomplete"
@@ -5769,6 +6592,50 @@ def test_final_video_library_audit_ranks_existing_packets(tmp_path, monkeypatch)
         "E-real-test-mp4",
     ]
     assert any("Artifact-level top-tier proof exists" in item for item in payload["goalReadiness"]["remainingGaps"])
+
+
+def test_final_video_library_audit_prefers_publish_packet_final_mp4_over_newer_auxiliary_mp4(tmp_path, monkeypatch):
+    monkeypatch.setattr(routes_media, "_existing_chrome_companion_readiness", _ready_companion_readiness)
+    client = _media_test_client(tmp_path)
+    packet_dir = tmp_path / "storage" / "final-videos" / "top-tier-with-phone-preview"
+    _write_ready_final_video_packet(packet_dir, "top-tier-with-phone-preview")
+    final_video = packet_dir / "top-tier-with-phone-preview.mp4"
+    phone_preview = packet_dir / "phone-preview-390w.mp4"
+    phone_preview.write_bytes(b"phone preview mp4 is newer but not the final render")
+    newer_mtime = final_video.stat().st_mtime + 10
+    os.utime(phone_preview, (newer_mtime, newer_mtime))
+
+    def fake_ffprobe(path):
+        if Path(path).name == phone_preview.name:
+            return {
+                "ok": True,
+                "width": 390,
+                "height": 694,
+                "frameRate": 30.0,
+                "durationSeconds": 12.0,
+                "hasAudio": True,
+                "specReady": False,
+            }
+        return {
+            "ok": True,
+            "width": 1080,
+            "height": 1920,
+            "frameRate": 30.0,
+            "durationSeconds": 12.0,
+            "hasAudio": True,
+            "specReady": True,
+        }
+
+    monkeypatch.setattr(routes_media, "_run_final_video_ffprobe", fake_ffprobe)
+
+    response = client.get("/api/final-video-library/audit?limit=10")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["bestPacket"]["projectId"] == "top-tier-with-phone-preview"
+    assert payload["bestPacket"]["finalVideoPath"].endswith("top-tier-with-phone-preview.mp4")
+    assert payload["bestPacket"]["summary"]["topTierReady"] is True
+    assert payload["counts"]["topTierReady"] == 1
 
 
 def test_final_video_library_audit_blocks_incomplete_publish_packet_content(tmp_path, monkeypatch):
@@ -5852,7 +6719,7 @@ def test_final_video_library_audit_blocks_unsafe_publish_packet_source_flow_guid
     assert packet["publishPacketAudit"]["ready"] is False
     assert packet["publishPacketAudit"]["status"] == "missing-fields"
     assert "nextImprovementActions.safeSourceFlowGuidance" in packet["publishPacketAudit"]["missingFields"]
-    assert "uploadEndpoint direct import" in packet["publishPacketAudit"]["operatorAction"]
+    assert "operator-owned local MP4 import" in packet["publishPacketAudit"]["operatorAction"]
     assert "already-saved MP4 batch upload" in packet["publishPacketAudit"]["operatorAction"]
     assert packet["summary"]["publishPacketContentReady"] is False
     assert packet["summary"]["uploadReady"] is False
@@ -6036,14 +6903,8 @@ def test_final_video_library_audit_reports_proof_monitor_companion_setup_gap(tmp
 
     assert response.status_code == 200
     payload = response.get_json()
-    companion = payload["sourcePipelineStatus"]["grok"]["companionDirectImport"]
-    assert companion["available"] is True
-    assert companion["operatorReady"] is False
-    assert companion["setupRequired"] is True
-    assert companion["installedInExistingProfile"] is False
-    assert companion["chromeProfile"]["codexExtensionInstalled"] is True
-    assert companion["chromeProfile"]["remoteDebuggingListening"] is False
-    assert "Load unpacked" in companion["operatorAction"]
+    assert "companionDirectImport" not in payload["sourcePipelineStatus"]["grok"]
+    assert "operator downloads/saves the MP4" in payload["sourcePipelineStatus"]["grok"]["nextAction"]
     assert payload["sourcePipelineStatus"]["grok"]["bookmarkletDirectImport"]["operatorReady"] is True
     proof_monitor_url = payload["sourcePipelineStatus"]["grok"]["proofMonitorUrl"]
     assert proof_monitor_url.endswith(
@@ -6063,7 +6924,10 @@ def test_final_video_library_audit_reports_proof_monitor_companion_setup_gap(tmp
     assert "Proof monitor:" in payload["sourcePipelineStatus"]["grok"]["nextAction"]
     assert f"Observed Grok post: {observed_post_url}" in payload["sourcePipelineStatus"]["grok"]["nextAction"]
     assert payload["goalReadiness"]["goalComplete"] is False
-    assert any("Capture live signed-in Chrome/Grok Import MP4 proof" in item for item in payload["goalReadiness"]["remainingGaps"])
+    assert any(
+        "Capture live signed-in Chrome/Grok generation proof plus local MP4 import/review advancement" in item
+        for item in payload["goalReadiness"]["remainingGaps"]
+    )
 
 
 def test_final_video_library_audit_surfaces_latest_handoff_fresh_import_gap(tmp_path, monkeypatch):
@@ -6361,10 +7225,10 @@ def test_final_video_library_audit_surfaces_browser_generated_but_not_imported_g
     assert intake["counts"]["browserGeneratedScenes"] == 1
     assert intake["browserGenerationProof"]["doesNotSatisfyFreshSourceProof"] is True
     assert "Grok browser generation was observed" in intake["requiredScenes"][0]["operatorAction"]
-    assert "uploadEndpoint direct import or manual batch upload from an already saved MP4" in intake["requiredScenes"][0]["operatorAction"]
+    assert "operator-owned manual download/import or explicit batch upload from an already saved MP4" in intake["requiredScenes"][0]["operatorAction"]
     assert "do not press Grok Download/Save/Export or any Chrome native download prompt from Codex automation" in intake["requiredScenes"][0]["operatorAction"]
     assert "Generate or acquire a native Grok MP4" in intake["requiredScenes"][1]["operatorAction"]
-    assert "uploadEndpoint direct import or manual batch upload from an already-saved local MP4" in intake["requiredScenes"][1]["operatorAction"]
+    assert "operator-owned manual download/import or explicit batch upload from an already-saved local MP4" in intake["requiredScenes"][1]["operatorAction"]
 
 
 def test_final_video_library_audit_blocks_stale_or_invalid_fresh_imports(tmp_path, monkeypatch):
@@ -6719,7 +7583,7 @@ def test_final_video_library_audit_surfaces_rejected_fresh_scene_backlog(tmp_pat
     assert "Review existing local replacement candidate" in latest["replacementBacklog"][0]["operatorAction"]
     assert latest["scenes"][1]["candidatePool"]["totalCandidates"] == 2
     assert latest["scenes"][1]["candidatePool"]["unreviewedReplacementCandidates"] == ["scene-02-v2-clean-candidate.mp4"]
-    assert "uploadEndpoint direct import" in latest["replacementBacklog"][0]["operatorAction"]
+    assert "operator-owned manual download/import" in latest["replacementBacklog"][0]["operatorAction"]
     assert "rejected 1 scene" in latest["operatorDecision"]["detail"]
     assert "Replace rejected scenes" in latest["operatorDecision"]["nextAction"]
     runway_items = {item["key"]: item for item in payload["goalReadiness"]["operatingRunwayChecklist"]}
@@ -6794,7 +7658,7 @@ def test_final_video_library_audit_surfaces_rejected_fresh_scene_backlog(tmp_pat
     assert runway["prompt"]["source"] == "replacement-backlog"
     assert "Regenerate scene-02" in runway["prompt"]["promptText"]
     assert "Grok Download" in runway["forbiddenActions"]
-    assert "observed-post console direct import" in runway["allowedRoutes"]
+    assert "operator-owned manual download/import" in runway["allowedRoutes"]
     assert "expanded Pexels candidates only as rewrite triage" in recovery["operatorAction"]
     assert "Do not use Chrome/Grok Download/Save/Export" in recovery["operatorAction"]
     acceptance_status = payload["sourcePipelineStatus"]["sourceRecoveryAcceptance"]
@@ -7287,7 +8151,7 @@ def test_final_video_library_fresh_source_intake_writes_template_without_goal_pr
     assert intake["importPreflight"]["readyForReview"] is False
     assert [item["sceneId"] for item in intake["requiredScenes"]] == ["scene-01", "scene-02"]
     assert all("Generate or acquire a native Grok MP4" in item["operatorAction"] for item in intake["requiredScenes"])
-    assert all("uploadEndpoint direct import or manual batch upload from an already-saved local MP4" in item["operatorAction"] for item in intake["requiredScenes"])
+    assert all("operator-owned manual download/import or explicit batch upload from an already-saved local MP4" in item["operatorAction"] for item in intake["requiredScenes"])
     assert all("without using Codex automation to press Grok Download/Save/Export or any Chrome native download prompt" in item["operatorAction"] for item in intake["requiredScenes"])
     assert any("broad live-channel" in item for item in intake["doesNotSatisfy"])
 
@@ -7481,7 +8345,7 @@ def _write_fresh_source_proof(packet_dir: Path, project_id: str, final_mp4_name:
             path.write_text(json.dumps(payload), encoding="utf-8")
     payload = {
         "recordedAt": "2026-06-01T02:30:00+09:00",
-        "sourceFlow": "uploadEndpoint direct import from operator-owned already-saved MP4 batch",
+        "sourceFlow": "operator-owned manual download/import or explicit already-saved MP4 batch upload",
         "topic": "different live-channel proof topic",
         "finalVideoPath": str(packet_dir / final_mp4_name),
         "finalVideoSha256": _sha256_file(packet_dir / final_mp4_name),
@@ -7611,9 +8475,8 @@ def test_final_video_library_audit_accepts_bookmarklet_direct_import_proof(tmp_p
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["bestPacket"]["projectId"] == "bookmarklet-live-proof"
-    companion = payload["sourcePipelineStatus"]["grok"]["companionDirectImport"]
     bookmarklet = payload["sourcePipelineStatus"]["grok"]["bookmarkletDirectImport"]
-    assert companion["operatorReady"] is False
+    assert "companionDirectImport" not in payload["sourcePipelineStatus"]["grok"]
     assert bookmarklet["operatorReady"] is True
     assert bookmarklet["avoidsChromeDownloadPrompt"] is True
     assert payload["goalReadiness"]["liveGrokDirectImportProven"] is True
@@ -7734,7 +8597,7 @@ def test_final_video_library_evidence_templates_materializes_operator_worksheets
     assert fresh_source_template["templateOnly"] is True
     assert fresh_source_template["doNotSubmitAsProof"] is True
     assert fresh_source_template["targetProofArtifactPath"].endswith("fresh-source-proof.json")
-    assert "uploadEndpoint direct import" in fresh_source_template["sourceFlow"]
+    assert "operator-owned manual download/import" in fresh_source_template["sourceFlow"]
     assert fresh_source_template["finalVideoPath"].endswith("template-worksheet-live-proof.mp4")
     assert fresh_source_template["finalVideoSha256"] == _sha256_file(packet_dir / "template-worksheet-live-proof.mp4")
     assert fresh_source_template["renderManifestPath"].endswith("render-manifest.json")
@@ -10768,7 +11631,7 @@ def test_final_video_library_audit_rejects_unpaired_handoff_direct_import_event(
     assert payload["goalReadiness"]["liveGrokDirectImportProven"] is False
     assert payload["goalReadiness"]["liveGrokDirectImportProof"]["sourceKind"] == ""
     assert payload["goalReadiness"]["goalComplete"] is False
-    assert any("Capture live signed-in Chrome/Grok Import MP4 proof" in item for item in payload["goalReadiness"]["remainingGaps"])
+    assert any("Capture live signed-in Chrome/Grok generation proof plus local MP4 import/review advancement" in item for item in payload["goalReadiness"]["remainingGaps"])
 
 
 def test_finalize_render_rejects_blocked_publish_packet(tmp_path, monkeypatch):
@@ -10836,8 +11699,8 @@ def test_finalize_render_rejects_blocked_publish_packet(tmp_path, monkeypatch):
     assert audit["error"] == "render is not publish-ready"
     assert audit["publishReadiness"]["status"] == "blocked"
     assert audit["requiredFixes"] == ["Replace placeholder clips."]
-    assert audit["sourcePipelineStatus"]["grok"]["nextAction"].startswith("Use the Chrome Companion direct-import path")
-    assert audit["sourcePipelineStatus"]["grok"]["companionDirectImport"]["avoidsChromeDownloadPrompt"] is True
+    assert audit["sourcePipelineStatus"]["grok"]["nextAction"].startswith("Use browser-control")
+    assert "companionDirectImport" not in audit["sourcePipelineStatus"]["grok"]
     assert "complete-upload-review" in [item["key"] for item in audit["nextActions"]]
     assert not (tmp_path / "storage" / "final-videos" / "blocked-render").exists()
 

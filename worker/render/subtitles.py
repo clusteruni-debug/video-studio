@@ -71,9 +71,9 @@ _PRESETS_WITH_HIGHLIGHT = {"news", "impact"}
 _DEFAULT_HIGHLIGHT_STYLE = "Style: Highlight,Pretendard,58,&H0000FFFF,&H0000FFFF,&H00000000,&H80000000,1,0,0,0,100,100,1,0,1,3,1.5,5,60,130,0,1"
 
 CAPTION_LAYOUT_STYLES: list[str] = [
-    "Style: CenterShort,Pretendard,70,&H00FFFFFF,&H0000FFFF,&H00000000,&H90000000,1,0,0,0,100,100,0.2,0,1,4,1.2,5,72,190,0,1",
-    "Style: TopHook,Pretendard,82,&H00FFFFFF,&H0000FFFF,&H00000000,&H90000000,1,0,0,0,100,100,0.2,0,1,4.5,1.4,8,72,190,148,1",
-    "Style: LowerInfo,Pretendard,60,&H00FFFFFF,&H0000FFFF,&H00000000,&H86000000,1,0,0,0,100,100,0,0,1,3.5,1,2,72,190,690,1",
+    "Style: CenterShort,Pretendard,64,&H00FFFFFF,&H0000FFFF,&H00000000,&H90000000,1,0,0,0,100,100,0.2,0,1,3.5,1,5,72,170,0,1",
+    "Style: TopHook,Pretendard,78,&H00FFFFFF,&H0000FFFF,&H00000000,&H92000000,1,0,0,0,100,100,0.2,0,1,4.2,1.1,8,72,170,150,1",
+    "Style: LowerInfo,Pretendard,58,&H00FFFFFF,&H0000FFFF,&H00000000,&H88000000,1,0,0,0,100,100,0,0,1,3.4,0.9,2,72,170,540,1",
     "Style: RankBadge,Pretendard,108,&H0000E6FF,&H0000FFFF,&H001A1A1A,&H80000000,1,0,0,0,100,100,0,0,1,5,1.2,7,78,170,164,1",
     "Style: RankTitle,Pretendard,58,&H00FFFFFF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,0,0,3,14,0,7,190,170,174,1",
     "Style: FactChip,Pretendard,44,&H00FFFFFF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,0,0,3,12,0,1,74,170,430,1",
@@ -83,13 +83,15 @@ CAPTION_LAYOUT_STYLES: list[str] = [
     "Style: ChapterTitle,Pretendard,62,&H00FFFFFF,&H0000FFFF,&H00101010,&H9A000000,1,0,0,0,100,100,0.4,0,3,12,0,7,74,170,218,1",
     "Style: StepChip,Pretendard,42,&H00FFFFFF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,0.4,0,3,10,0,7,74,170,155,1",
     "Style: RoutineStep,Pretendard,44,&H0000D4FF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,1,0,3,10,0,7,78,210,152,1",
-    "Style: RoutineHook,Pretendard,94,&H00FFFFFF,&H0000FFFF,&H00101010,&HA0000000,1,0,0,0,100,100,0.2,0,1,5,1.4,7,78,210,220,1",
-    "Style: RoutineLower,Pretendard,70,&H00FFFFFF,&H0000FFFF,&H00101010,&H90000000,1,0,0,0,100,100,0,0,1,4.2,1.1,1,78,210,690,1",
+    "Style: RoutineHook,Pretendard,84,&H00FFFFFF,&H0000FFFF,&H00101010,&H98000000,1,0,0,0,100,100,0.2,0,1,4.4,1.1,7,78,210,220,1",
+    "Style: RoutineLower,Pretendard,62,&H00FFFFFF,&H0000FFFF,&H00101010,&H88000000,1,0,0,0,100,100,0,0,1,3.8,0.9,1,78,210,690,1",
     "Style: RoutineDetail,Pretendard,46,&H00EAEAEA,&H0000FFFF,&H00101010,&H7A000000,0,0,0,0,100,100,0,0,1,2.8,0.8,1,78,210,405,1",
     "Style: GrokHook,Pretendard,84,&H00FFFFFF,&H0000FFFF,&H00101010,&H8E000000,1,0,0,0,100,100,0.2,0,1,4.8,1.2,7,78,220,220,1",
     "Style: GrokLower,Pretendard,64,&H00FFFFFF,&H0000FFFF,&H00101010,&H86000000,1,0,0,0,100,100,0,0,1,4,1.1,1,78,220,690,1",
     "Style: GrokContinuity,Pretendard,68,&H00FFFFFF,&H0000FFFF,&H00141414,&HA8000000,1,0,0,0,100,100,0.2,0,3,14,0,7,78,220,220,1",
     "Style: GrokProof,Pretendard,46,&H00FFFFFF,&H0000FFFF,&H00202020,&HAA000000,1,0,0,0,100,100,0.2,0,3,12,0,1,78,220,430,1",
+    "Style: KoreanPunch,Pretendard,118,&H00FFFFFF,&H0000FFFF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,6.2,2.2,8,86,190,0,1",
+    "Style: KoreanReference,Pretendard,88,&H00FFFFFF,&H0000FFFF,&H00101010,&H8A000000,1,0,0,0,100,100,0,0,1,5.2,1.4,8,86,190,0,1",
 ]
 
 _CAPTION_PRESET_TO_STYLE = {
@@ -120,6 +122,8 @@ _RANKING_LAYOUT_VARIANTS = {
 }
 _STORY_LAYOUT_VARIANTS = {"character-continuity", "object-mystery", "pov-diary", "ambient-routine"}
 _GROK_FIRST_LAYOUT_VARIANTS = {"grok-first-hook", "grok-first-continuity", "grok-first-proof"}
+_KOREAN_PUNCH_LAYOUT_VARIANTS = {"korean-punch", "korean-large-caption", "korean-shorts-caption"}
+_KOREAN_REFERENCE_LAYOUT_VARIANTS = {"korean-reference-caption", "korean-reference-subtitle", "korean-readable-caption"}
 _CHAPTER_LAYOUT_VARIANTS = {"chapter-evidence", "documentary-explainer", "timeline-brief", "headline-evidence"}
 _ROUTINE_LAYOUT_VARIANTS = {"routine-top-hook", "routine-lower-info"}
 _CHIP_LAYOUT_VARIANTS = {
@@ -308,7 +312,8 @@ def _variant_dialogue(
 ) -> None:
     if end <= start or not text.strip():
         return
-    wrapped = _wrap_text(text.strip(), max_chars)
+    stripped = text.strip()
+    wrapped = stripped if r"\N" in stripped else _wrap_text(stripped, max_chars)
     escaped = _ass_escape(wrapped)
     dialogues.append(
         f"Dialogue: {layer},{_format_ass_time(start)},{_format_ass_time(end)},{style},,0,0,0,,{effect}{escaped}"
@@ -339,6 +344,53 @@ def _generate_layout_variant(
     title = str(entry.get("title") or entry.get("sceneTitle") or "").strip()
     display_text = text.strip() or title or label
     title_text = title or display_text
+
+    if variant in _KOREAN_REFERENCE_LAYOUT_VARIANTS:
+        try:
+            caption_y = int(float(entry.get("layout_variant_y") or entry.get("layoutVariantY") or 300))
+        except (TypeError, ValueError):
+            caption_y = 300
+        try:
+            line_chars = int(float(entry.get("layout_variant_max_chars") or entry.get("layoutVariantMaxChars") or 12))
+        except (TypeError, ValueError):
+            line_chars = 12
+        caption_y = max(240, min(caption_y, 560))
+        line_chars = max(7, min(line_chars, 15))
+        _variant_dialogue(
+            dialogues,
+            layer=4,
+            start=start + 0.04,
+            end=_clip_end(start + 0.04, end, 1.95),
+            style="KoreanReference",
+            text=display_text,
+            effect=(
+                rf"{{\an8\pos(540,{caption_y})\fad(45,140)"
+                r"\t(0,120,\fscx105\fscy105)\t(120,260,\fscx100\fscy100)}"
+            ),
+            max_chars=line_chars,
+        )
+        return True
+
+    if variant in _KOREAN_PUNCH_LAYOUT_VARIANTS:
+        try:
+            caption_y = int(float(entry.get("layout_variant_y") or entry.get("layoutVariantY") or 260))
+        except (TypeError, ValueError):
+            caption_y = 260
+        caption_y = max(220, min(caption_y, 520))
+        _variant_dialogue(
+            dialogues,
+            layer=4,
+            start=start + 0.04,
+            end=_clip_end(start + 0.04, end, 1.45),
+            style="KoreanPunch",
+            text=display_text,
+            effect=(
+                rf"{{\an8\pos(540,{caption_y})\fad(35,120)"
+                r"\t(0,110,\fscx107\fscy107)\t(110,230,\fscx100\fscy100)}"
+            ),
+            max_chars=7,
+        )
+        return True
 
     if variant in _ROUTINE_LAYOUT_VARIANTS:
         headline = display_text or title_text

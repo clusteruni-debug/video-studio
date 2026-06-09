@@ -50,6 +50,12 @@ class RenderAssetSpec:
     selectedCandidateSummary: str | None = None
     downloadDate: str | None = None
     attributionRequired: bool | None = None
+    operatorOwned: bool | None = None
+    sourceRecoveryReplacement: bool | None = None
+    sourceRecoveryRerenderPlanPath: str | None = None
+    sourceRecoveryAcceptanceArtifactPath: str | None = None
+    sourceRecoveryAcceptanceSha256: str | None = None
+    acceptedReplacementSha256: str | None = None
     sourceGenerator: str | None = None
     sourceGeneratorRequestPath: str | None = None
     sourceGeneratorPromptPath: str | None = None

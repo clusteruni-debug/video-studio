@@ -19,8 +19,6 @@ import type { LucideIcon } from "lucide-react";
 import { useStudioState, useStudioActions } from "../context/StudioContext";
 import type { GrokBatchUploadMode } from "../context/StudioContext";
 import {
-  buildGrokCompanionCommandUrl,
-  buildGrokCompanionGuideUrl,
   fetchFreeAudioCandidates,
   getGrokCompanionCommand,
   importFreeAudioAsset,
@@ -323,21 +321,6 @@ function automationStatusClass(status?: string): string {
   return "stub";
 }
 
-function grokProfileProbeLabel(status?: string): string {
-  if (status === "video-studio-companion-seen") return "companion loaded";
-  if (status === "codex-extension-only") return "Codex only";
-  if (status === "not-installed") return "companion missing";
-  if (status === "chrome-profile-root-not-found") return "profile unknown";
-  return "not checked";
-}
-
-function grokProfileProbeClass(status?: string): string {
-  if (status === "video-studio-companion-seen") return "ready";
-  if (status === "codex-extension-only" || status === "not-installed") return "blocked";
-  if (status === "chrome-profile-root-not-found") return "active";
-  return "stub";
-}
-
 function grokGateStatusLabel(status?: string): string {
   if (status === "accepted") return "accepted hero";
   if (status === "pending-operator-review") return "review pending";
@@ -456,10 +439,15 @@ export default function SceneDetailPanel() {
   const [selectedAudioCandidateId, setSelectedAudioCandidateId] = useState("");
   const [audioImportPath, setAudioImportPath] = useState("");
   const [audioImportFile, setAudioImportFile] = useState<File | null>(null);
+  const [voiceoverImportPath, setVoiceoverImportPath] = useState("");
+  const [voiceoverImportFile, setVoiceoverImportFile] = useState<File | null>(null);
   const [searchingAudioCandidates, setSearchingAudioCandidates] = useState(false);
   const [importingAudioAsset, setImportingAudioAsset] = useState(false);
+  const [importingVoiceoverAsset, setImportingVoiceoverAsset] = useState(false);
   const [audioCandidateError, setAudioCandidateError] = useState<string | null>(null);
   const [audioImportResult, setAudioImportResult] = useState<string | null>(null);
+  const [voiceoverImportResult, setVoiceoverImportResult] = useState<string | null>(null);
+  const [voiceoverImportError, setVoiceoverImportError] = useState<string | null>(null);
   const [loadingGrokFallbackAction, setLoadingGrokFallbackAction] = useState<string | null>(null);
   const [grokFallbackActionResult, setGrokFallbackActionResult] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -468,6 +456,7 @@ export default function SceneDetailPanel() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const grokUploadBatchModeRef = useRef<GrokBatchUploadMode>("auto");
   const audioImportFileRef = useRef<HTMLInputElement>(null);
+  const voiceoverImportFileRef = useRef<HTMLInputElement>(null);
   const selectedScene = selectedSceneIndex !== null ? draftResult?.scenes?.[selectedSceneIndex] : null;
   const selectedHandoffSceneId = selectedScene
     ? `scene-${String(selectedScene.scene_num || (selectedSceneIndex ?? 0) + 1).padStart(2, "0")}`
@@ -687,6 +676,7 @@ export default function SceneDetailPanel() {
   const grokMainSourceGate = grokHandoff?.mainSourceGate;
   const grokManualPrimaryPath = grokHandoff?.manualPrimaryPath;
   const grokMainPathStatus = grokHandoff?.mainPathStatus;
+  const grokBrowserControlRail = grokHandoff?.browserControlPrimaryRail;
   const grokAssetAcquisition = grokHandoff?.grokAssetAcquisition || grokMainPathStatus?.assetAcquisition;
   const grokMainSourceDiagnosis = grokHandoff?.grokMainSourceDiagnosis;
   const grokCodexChromeObservation = (grokHandoff?.codexChromeObservation || grokMainPathStatus?.generationObservation) as GrokCodexChromeObservation | undefined;
@@ -696,26 +686,7 @@ export default function SceneDetailPanel() {
   const grokManualCurrentScene = grokManualPrimaryPath?.currentScene;
   const grokManualOperatorSteps = grokManualPrimaryPath?.operatorSteps || [];
   const grokManualQualityRules = grokManualPrimaryPath?.qualityRules || [];
-  const grokPrimaryNextAction = grokHandoff?.primaryOperatorNextAction || grokManualPrimaryPath?.operatorNextAction;
-  const grokCompanionProfileProbe = grokHandoff?.chromeCompanionExtension?.profileProbe;
-  const grokCodexNativeHost = grokCompanionProfileProbe?.codexNativeHost;
-  const grokCompanionProfileRows = grokCompanionProfileProbe?.profiles || [];
-  const grokRecommendedProfile = [
-    grokCompanionProfileProbe?.recommendedProfileDirectory,
-    grokCompanionProfileProbe?.recommendedProfileName ? `(${grokCompanionProfileProbe.recommendedProfileName})` : "",
-  ].filter(Boolean).join(" ");
-  const grokProfileAlignment = grokCompanionProfileProbe?.profileAlignment;
-  const grokPrimaryChromeProfile = grokProfileAlignment?.primaryOperatorProfileLabel
-    || grokCompanionProfileProbe?.primaryOperatorProfileLabel
-    || grokRecommendedProfile
-    || "signed-in Chrome";
-  const grokProfileAlignmentStatus = grokProfileAlignment?.status || "unknown";
-  const grokReplayProfile = grokProfileAlignment?.automationReplayProfileDirectory;
-  const grokCodexChromeControlAvailable = grokCodexNativeHost?.videoStudioDirectControlAvailable === true;
-  const grokCodexChromeControlLabel = grokCodexChromeControlAvailable
-    ? "direct control exposed"
-    : "direct control not exposed here";
-  const grokProfileDoNotOpen = grokProfileAlignment?.doNotOpen || grokCompanionProfileProbe?.doNotOpenBrowsers || [];
+  const grokPrimaryNextAction = grokBrowserControlRail?.operatorNextAction || grokHandoff?.primaryOperatorNextAction || grokManualPrimaryPath?.operatorNextAction;
   const grokGateRequired = grokQualityGate?.required || grokSceneQualityGate?.required || grokMainSourceGate?.required;
   const grokGateAcceptedCount = grokQualityGate?.readySceneIds?.length || 0;
   const grokGatePendingSceneIds = grokQualityGate?.pendingSceneIds || [];
@@ -740,7 +711,7 @@ export default function SceneDetailPanel() {
     : grokMainPathStatus?.blocked ? "active" : "blocked";
   const grokHasPacket = Boolean(grokHandoff?.projectId);
   const nativeGrokDownloadFallbackBlocked = true;
-  const nativeGrokDownloadFallbackTitle = "Blocked: Chrome/Grok Download/Save/Export prompts can stall until an operator clicks them. Use Companion/pageAssets direct import or explicit local MP4 upload/import.";
+  const nativeGrokDownloadFallbackTitle = "Blocked: Chrome/Grok Download/Save/Export prompts can stall until an operator clicks them. Use operator-owned local MP4 download/import or explicit batch upload.";
   const grokHasCurrentMp4 = grokSceneAsset?.status === "ready";
   const grokCurrentAccepted = grokSceneQualityGate?.status === "accepted" || selectedGrokReviewDecision?.accepted === true;
   const grokMainReady = grokMainSourceGate?.status === "ready";
@@ -748,8 +719,7 @@ export default function SceneDetailPanel() {
     (asset) => asset.status === "ready" && asset.sourcePath,
   ).length;
   const grokPreviewReady = grokPreviewReadyCount > 0;
-  const grokRailNeedsManualHandoff = !grokHandoff?.chromeCompanionExtension?.profileProbe?.anyVideoStudioCompanion
-    || grokHandoff?.chromeCompanionExtension?.profileProbe?.codexExtensionIsNotCompanion === true;
+  const grokRailNeedsManualHandoff = true;
   const grokProductionRailSteps = [
     {
       key: "packet",
@@ -842,7 +812,7 @@ export default function SceneDetailPanel() {
     `Import/manual-upload folder: ${grokEffectiveDownloadDir || grokHandoff?.incomingDir || "set the Grok import folder first"}`,
     `Prompt: ${scene.grok_prompt || defaultGrokPrompt(scene)}`,
     "Make 2 Grok takes for this scene, then keep the better one only after review.",
-    "Use Companion/pageAssets direct import first; if that fails, use only operator-owned manual batch upload. Do not use currentSrc/cache/visible-video fallback as the main source.",
+    "Use existing signed-in Chrome browser-control for generation; then operator downloads/saves the MP4 and imports it locally. Do not use currentSrc/cache/visible-video fallback as the main source.",
     "No baked-in text, captions, logos, UI overlay, watermark, title card, or production-intent explanation.",
     `Quality floor: ${grokAssetAcquisition?.sourceQualityFloor || "vertical 9:16 original MP4, publishable resolution, visible motion in first second"}`,
   ].join("\n");
@@ -899,7 +869,7 @@ export default function SceneDetailPanel() {
     grokPrimaryPromptText,
     "",
     "Reject before saving if: text is baked into the image, UI/logo/watermark is visible, subject changes identity, camera is static, output looks like a cache/proxy preview, or vertical quality is below publish-ready 9:16.",
-    "After generation: use Companion/pageAssets direct import first; if that fails, use only operator-owned manual batch upload. Do not use currentSrc/cache/visible-video fallback as final footage.",
+    "After generation: operator downloads/saves the MP4, then uses local import or manual batch upload. Do not use currentSrc/cache/visible-video fallback as final footage.",
     "Import rule: preserve two takes for this scene, then select the better one in review.",
   ].join("\n");
   const grokObservedAssetUrl = String(grokCodexChromeObservation?.videoUrl || "").trim();
@@ -1168,6 +1138,63 @@ export default function SceneDetailPanel() {
     }
   };
 
+  const handleImportOwnedVoiceover = async () => {
+    if (selectedSceneIndex === null) {
+      setVoiceoverImportError("Select a scene first.");
+      return;
+    }
+    const sourcePath = voiceoverImportPath.trim();
+    if (!sourcePath && !voiceoverImportFile) {
+      setVoiceoverImportError("Owned voiceover file or local path is required.");
+      return;
+    }
+    setImportingVoiceoverAsset(true);
+    setVoiceoverImportError(null);
+    setVoiceoverImportResult(null);
+    try {
+      const fileBase64 = voiceoverImportFile ? await readAudioFileBase64(voiceoverImportFile) : undefined;
+      const sceneLabel = `scene-${String(scene.scene_num || selectedSceneIndex + 1).padStart(2, "0")}`;
+      const result = await importFreeAudioAsset({
+        operatorApproved: true,
+        sourcePath: voiceoverImportFile ? undefined : sourcePath,
+        fileBase64,
+        fileName: voiceoverImportFile?.name,
+        targetRole: "voiceover",
+        operatorOwned: true,
+        provider: "upload",
+        kind: "voiceover",
+        title: `${sceneLabel} owned voiceover`,
+        sourceLicense: "operator-owned",
+        sourceOrigin: "operator-owned-voiceover",
+        speaker: "operator",
+      });
+      if (!result.ok || !result.asset) {
+        setVoiceoverImportError(result.error || "Owned voiceover import failed.");
+        return;
+      }
+      const importedSidecar = result.sidecar || {};
+      const importedName = baseNameFromPath(result.asset.path) || result.asset.title || `${sceneLabel}-voiceover.wav`;
+      actions.editScene(selectedSceneIndex, "_voiceover_asset_path", result.asset.path);
+      actions.editScene(selectedSceneIndex, "_voiceover_asset_name", importedName);
+      actions.editScene(selectedSceneIndex, "_voiceover_asset_mime", audioMimeFromPath(result.asset.path));
+      actions.editScene(selectedSceneIndex, "_voiceover_asset_title", result.asset.title || String(importedSidecar.title || importedName));
+      actions.editScene(selectedSceneIndex, "_voiceover_asset_provider", result.asset.provider || "upload");
+      actions.editScene(selectedSceneIndex, "_voiceover_asset_source_origin", String(importedSidecar.sourceOrigin || "operator-owned-voiceover"));
+      actions.editScene(selectedSceneIndex, "_voiceover_asset_source_license", result.asset.sourceLicense || String(importedSidecar.sourceLicense || "operator-owned"));
+      actions.editScene(selectedSceneIndex, "_voiceover_asset_kind", result.asset.kind || "voiceover");
+      setVoiceoverImportResult(`Owned voiceover attached to this scene: ${result.asset.path}`);
+      setVoiceoverImportFile(null);
+      setVoiceoverImportPath("");
+      if (voiceoverImportFileRef.current) {
+        voiceoverImportFileRef.current.value = "";
+      }
+    } catch (error) {
+      setVoiceoverImportError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setImportingVoiceoverAsset(false);
+    }
+  };
+
   const handleCopyGrokPrompt = async () => {
     const prompt = scene.grok_prompt || (
       isLocalModelSource(currentSource) ? defaultLocalModelPrompt(scene, currentSource) : defaultGrokPrompt(scene)
@@ -1232,23 +1259,6 @@ export default function SceneDetailPanel() {
     } finally {
       setStartingGrokManualWatch(false);
       setOpeningGrok(false);
-    }
-  };
-
-  const handleOpenGrokCompanionGuide = async () => {
-    const projectId = grokHandoff?.projectId;
-    if (!projectId) return;
-    const commandUrl = buildGrokCompanionCommandUrl(projectId, handoffSceneId);
-    setLoadingGrokPlan(true);
-    try {
-      await navigator.clipboard.writeText(commandUrl);
-      try {
-        await actions.openGrokHandoff("companion-setup", "chrome", handoffSceneId);
-      } catch {
-        window.open(buildGrokCompanionGuideUrl(projectId, handoffSceneId), "_blank", "noreferrer");
-      }
-    } finally {
-      setLoadingGrokPlan(false);
     }
   };
 
@@ -1910,6 +1920,58 @@ export default function SceneDetailPanel() {
                   <small>SFX will be sent as a scene asset on render and mixed into this scene only.</small>
                 </>
               )}
+              <>
+                <span className="asset-packet-label">owned voiceover</span>
+                {scene._voiceover_asset_path && (
+                  <div className="asset-bgm-status">
+                    <span>{scene._voiceover_asset_title || scene._voiceover_asset_name || baseNameFromPath(scene._voiceover_asset_path)}</span>
+                    <span>{scene._voiceover_asset_provider || "upload"}</span>
+                    <span>{scene._voiceover_asset_source_license || "operator-owned"}</span>
+                  </div>
+                )}
+                <input
+                  ref={voiceoverImportFileRef}
+                  type="file"
+                  accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac"
+                  style={{ display: "none" }}
+                  onChange={(event) => {
+                    setVoiceoverImportFile(event.target.files?.[0] || null);
+                    if (event.target.files?.[0]) {
+                      setVoiceoverImportPath("");
+                    }
+                  }}
+                />
+                <div className="button-row">
+                  <button className="chip" onClick={() => voiceoverImportFileRef.current?.click()}>
+                    <Upload size={12} />
+                    보이스 파일 선택
+                  </button>
+                  {voiceoverImportFile && <span className="chip">{voiceoverImportFile.name}</span>}
+                </div>
+                <input
+                  className="editable-input"
+                  value={voiceoverImportPath}
+                  onChange={(event) => {
+                    setVoiceoverImportPath(event.target.value);
+                    if (event.target.value.trim()) {
+                      setVoiceoverImportFile(null);
+                      if (voiceoverImportFileRef.current) {
+                        voiceoverImportFileRef.current.value = "";
+                      }
+                    }
+                  }}
+                  placeholder="또는 직접 녹음한 오디오 경로"
+                />
+                <div className="button-row">
+                  <button className="chip" onClick={handleImportOwnedVoiceover} disabled={importingVoiceoverAsset}>
+                    {importingVoiceoverAsset ? <RefreshCw size={12} className="spin" /> : <Upload size={12} />}
+                    {importingVoiceoverAsset ? "import 중" : "owned voiceover 붙이기"}
+                  </button>
+                  <span className="chip">voiceover</span>
+                </div>
+                {voiceoverImportError && <small style={{ color: "var(--error)" }}>{voiceoverImportError}</small>}
+                {voiceoverImportResult && <small>{voiceoverImportResult}</small>}
+              </>
               {!!audioCandidates.length && (
                 <div className="asset-variant-list">
                   {audioCandidates.slice(0, 6).map((candidate) => (
@@ -2186,9 +2248,11 @@ export default function SceneDetailPanel() {
                 <small>{grokAutomationStatus?.detail || "prompt -> Grok app/web MP4 -> import -> review -> render"}</small>
                 <div className="grok-handoff-meta" style={{ marginTop: 8 }}>
                   <span>mode: {grokManualPrimaryPath?.mode || "operator-approved app/web handoff"}</span>
+                  <span>browser rail: {grokBrowserControlRail?.mode || grokManualPrimaryPath?.browserControlRail || "existing signed-in Chrome control"}</span>
                   <span>primary source: {grokManualPrimaryPath?.primarySource || "Grok MP4"}</span>
                   <span>paid API: disabled</span>
                   <span>browser automation: {grokManualPrimaryPath?.browserAutomationRole || "secondary"}</span>
+                  <span>download: {grokBrowserControlRail?.downloadAuthority || grokManualPrimaryPath?.downloadAuthority || "operator-owned local MP4"}</span>
                   <span>operator owns login/captcha/payment/manual upload choice</span>
                 </div>
                 {grokManualPrimaryPath?.paidApiPolicy && <small>{grokManualPrimaryPath.paidApiPolicy}</small>}
@@ -2258,8 +2322,8 @@ export default function SceneDetailPanel() {
                     <span>Grok-main production rail</span>
                     <strong>{grokMainReady ? "ready to render" : "needs Grok MP4 takes"}</strong>
                   </div>
-                  <span className={`grok-production-mode ${grokRailNeedsManualHandoff ? "manual" : "companion"}`}>
-                    {grokRailNeedsManualHandoff ? "manual app/web handoff" : "companion available"}
+                  <span className={`grok-production-mode ${grokRailNeedsManualHandoff ? "manual" : "fallback"}`}>
+                    {grokBrowserControlRail?.mode ? "browser-control primary" : "manual app/web handoff"}
                   </span>
                 </div>
                 <div className={`grok-primary-action-card ${grokPrimaryActionClass}`}>
@@ -2270,7 +2334,7 @@ export default function SceneDetailPanel() {
                     </div>
                     <span>
                       {nativeGrokDownloadFallbackBlocked
-                        ? "no native download"
+                        ? "operator download only"
                         : isGrokManualWatchPolling
                         ? "watcher armed"
                         : grokHasCurrentMp4 ? "imported, review" : "generate native MP4"}
@@ -2282,21 +2346,11 @@ export default function SceneDetailPanel() {
                     <span>take: {grokPrimaryTakeNumber} / {grokPrimaryTakeLabel}</span>
                     <span>watch fallback: disabled for native prompt safety</span>
                     <span>blocker: {grokPrimaryBlocker}</span>
-                    <span>source: Companion/pageAssets direct import or operator-owned manual upload</span>
+                    <span>source: browser-control generation plus operator-owned manual download/upload</span>
                   </div>
                   <small>
-                    Grok 생성 자체를 실패로 보지 않습니다. 최종 소스는 cache/currentSrc proof가 아니라 direct-import되었거나 사용자가 명시적으로 업로드한 Grok MP4여야 합니다.
+                    Grok 생성은 기존 로그인 Chrome 직접 제어를 기본으로 봅니다. 최종 소스는 cache/currentSrc proof가 아니라 사용자가 저장/다운로드 후 반입했거나 명시적으로 업로드한 Grok MP4여야 합니다.
                   </small>
-                  <div className={`grok-profile-alignment-strip ${grokProfileAlignmentStatus}`}>
-                    <span>Chrome: {grokPrimaryChromeProfile}</span>
-                    <span>Codex extension: {grokCodexNativeHost?.status || "unknown"}</span>
-                    <span>control: {grokCodexChromeControlLabel}</span>
-                    {grokReplayProfile && <span>CDP replay: {grokReplayProfile}</span>}
-                    {grokCompanionProfileProbe?.profileMismatch && <span>profile mismatch: use Chrome {grokPrimaryChromeProfile}</span>}
-                    {grokProfileDoNotOpen.length > 0 && (
-                      <small>Do not open: {grokProfileDoNotOpen.slice(0, 3).join(" / ")}</small>
-                    )}
-                  </div>
                   <div className="grok-primary-action-buttons">
                     <button
                       className="chip primary"
@@ -2371,7 +2425,6 @@ export default function SceneDetailPanel() {
                       <span>file: {grokMainPathStatus.nextExpectedFileName || grokManualCurrentScene?.expectedFileName || "candidate MP4"}</span>
                       <span>ready: {grokMainPathStatus.readyScenes ?? grokHandoff?.readyScenes ?? 0}/{grokMainPathStatus.totalScenes ?? grokHandoff?.totalScenes ?? "?"}</span>
                       <span>accepted: {(grokMainPathStatus.acceptedSceneIds || []).length}/{grokMainPathStatus.requiredAcceptedScenes || "?"}</span>
-                      <span>companion: {grokMainPathStatus.companionConnected ? "connected" : (grokMainPathStatus.companionConnectionStatus || "not connected")}</span>
                       <span>CDP: {grokMainPathStatus.cdpPrimaryRecommended ? "primary" : "secondary only"}</span>
                       {grokMainSourceDiagnosis && (
                         <span>Grok model: {grokMainSourceDiagnosis.modelBlocked ? "blocked" : "available"}</span>
@@ -2551,7 +2604,7 @@ export default function SceneDetailPanel() {
                                   className="chip"
                                   onClick={handleCopyObservedPostRecoveryConsole}
                                   disabled={!grokObservedPostRecoveryReady}
-                                title="Companion 없이 로그인된 Grok post 탭 DevTools console에 붙여넣어 visible video 후보를 local uploadEndpoint로 직접 반입합니다."
+                                title="Debug fallback only: 로그인된 Grok post 탭 DevTools console에서 visible video 후보를 회수합니다. Production success에는 operator-owned local MP4 import가 필요합니다."
                                 >
                                   {loadingGrokFallbackAction === "post-recovery-console"
                                     ? <RefreshCw size={12} className="spin" />
@@ -2576,7 +2629,7 @@ export default function SceneDetailPanel() {
                                 className="chip"
                                 onClick={handleOpenObservedGrokAssetManualRunway}
                                 disabled={!grokObservedManualRunwayReady}
-                                title="Companion reload 없이 로컬 수동 runway를 열되, 저장/업로드 선택은 사용자가 직접 수행합니다. Codex는 다운로드 승인창을 누르지 않습니다."
+                                title="로컬 수동 runway를 열되, 저장/업로드 선택은 사용자가 직접 수행합니다. Codex는 다운로드 승인창을 누르지 않습니다."
                               >
                                 {startingGrokManualWatch || openingGrok
                                   ? <RefreshCw size={12} className="spin" />
@@ -2642,7 +2695,7 @@ export default function SceneDetailPanel() {
                       </span>
                     </div>
                     <div className="grok-original-runway-grid">
-                      <span>required source: Companion/pageAssets direct import or operator-owned manual upload</span>
+                      <span>required source: operator-owned local MP4 import or manual upload after browser-control generation</span>
                       <span>import/manual upload: {grokEffectiveDownloadDir || grokHandoff?.incomingDir || "set import folder"}</span>
                       <span>current candidate: {grokBestLocalCandidate?.fileName || grokSceneAsset?.fileName || "none"}</span>
                       <span>candidate source: {grokBestLocalSourceLabel}</span>
@@ -2657,7 +2710,7 @@ export default function SceneDetailPanel() {
                     </div>
                     <div className="source-guidance-list">
                       <span>1. Generate two takes in signed-in Grok for this exact scene; do not bake captions or explanatory intent into the clip.</span>
-                      <span>2. Prefer Companion/pageAssets direct import. If that fails, use only operator-owned manual batch upload; Codex automation must not click Download/Save/Export.</span>
+                      <span>2. Operator downloads/saves the MP4, then uses local import or manual batch upload; Codex automation must not click Download/Save/Export.</span>
                       <span>3. Keep the filename as {grokOriginalExpectedFile}, or use grouped batch order: scene-01 take A/B, scene-02 take A/B, and so on.</span>
                       <span>4. After import, compare takes in Video Studio and approve only after first-hook, layout, continuity, artifact, and audio-mix review.</span>
                     </div>
@@ -2846,80 +2899,6 @@ export default function SceneDetailPanel() {
                   </div>
                 )}
               </div>
-              {grokCompanionProfileProbe && (
-                <div className={`automation-status ${grokProfileProbeClass(grokCompanionProfileProbe.status)}`}>
-                  <div className="automation-status-head">
-                    <span>Chrome Grok handoff</span>
-                    <strong>{grokProfileProbeLabel(grokCompanionProfileProbe.status)}</strong>
-                  </div>
-                  <small>{grokCompanionProfileProbe.operatorAction || "Load the Video Studio Grok Companion or use the queue fallback in the signed-in Grok tab."}</small>
-                  {grokCompanionProfileProbe.codexExtensionIsNotCompanion && (
-                    <small>
-                      <AlertTriangle size={12} /> Codex Chrome extension is installed, but it cannot generate/import Grok scene MP4s for this project.
-                    </small>
-                  )}
-                  {grokCompanionProfileProbe.profileMismatch && (
-                    <small>
-                      <AlertTriangle size={12} /> Saved Grok CDP replay points at {grokCompanionProfileProbe.automationReplayProfileDirectory}, but this packet should use {grokRecommendedProfile || "the recommended signed-in Chrome profile"} for the Video Studio Companion.
-                    </small>
-                  )}
-                  <div className="grok-handoff-meta">
-                    {grokRecommendedProfile && (
-                      <span>recommended profile: {grokRecommendedProfile} / {grokCompanionProfileProbe.recommendedProfileReason || "profile probe"}</span>
-                    )}
-                    {grokCompanionProfileProbe.automationReplayProfileDirectory && (
-                      <span>saved CDP replay profile: {grokCompanionProfileProbe.automationReplayProfileDirectory}</span>
-                    )}
-                    <span>Video Studio Companion: {grokCompanionProfileProbe.anyVideoStudioCompanion ? "detected" : "not detected"}</span>
-                    <span>Codex extension: {grokCompanionProfileProbe.anyCodexExtension ? "detected" : "not detected"}</span>
-                    {grokCodexNativeHost?.status && (
-                      <span>Codex native host: {grokCodexNativeHost.status} / Video Studio Grok bridge: {grokCodexNativeHost.usedByVideoStudioGrok ? "used" : "not used"}</span>
-                    )}
-                    {grokCompanionProfileProbe.checkedRoots?.[0] && <span>profile root: {grokCompanionProfileProbe.checkedRoots[0]}</span>}
-                    {grokCompanionProfileRows.slice(0, 3).map((profile) => (
-                      <span key={`${profile.profileDir || "profile"}-${profile.profileName || ""}`}>
-                        {profile.profileDir || "profile"} / {profile.profileName || "unnamed"}:
-                        {" "}companion {profile.videoStudioCompanion ? "yes" : "no"},
-                        {" "}codex {profile.codexExtension ? "yes" : "no"}
-                      </span>
-                    ))}
-                  </div>
-                  {grokCompanionProfileProbe.codexExtensionIsNotCompanion && (
-                    <small>
-                      Grok-main route now: generate {grokMainAdditionalAccepted || grokMainMinAccepted || "required"} scene MP4s in Grok, then select them with Grok MP4 반입 grouped by scene row. scene-XX.grok.mp4 names help but are not required.
-                    </small>
-                  )}
-                  <div className="button-row" style={{ marginTop: 8 }}>
-                    <button
-                      className="chip"
-                      onClick={handleOpenGrokCompanionGuide}
-                      disabled={!grokHandoff?.projectId || loadingGrokPlan}
-                      title="현재 Chrome profile probe와 함께 companion 설치/queue fallback 안내를 엽니다."
-                    >
-                      {loadingGrokPlan ? <RefreshCw size={12} className="spin" /> : <Clapperboard size={12} />}
-                      Companion guide
-                    </button>
-                    <button
-                      className="chip"
-                      onClick={() => copyGrokFallbackText("Companion extension folder", grokHandoff?.chromeCompanionExtension?.extensionDir)}
-                      disabled={!grokHandoff?.chromeCompanionExtension?.extensionDir}
-                      title="chrome://extensions Load unpacked에 넣을 Video Studio Grok Companion 폴더를 복사합니다."
-                    >
-                      <Copy size={12} />
-                      Copy folder
-                    </button>
-                    <button
-                      className="chip"
-                      onClick={handleCopyGrokQueueConsoleFallback}
-                      disabled={!!loadingGrokFallbackAction}
-                      title="확장이 아직 없을 때 로그인된 Grok 탭 console에서 실행할 queue fallback을 복사합니다."
-                    >
-                      {loadingGrokFallbackAction === "queue-console" ? <RefreshCw size={12} className="spin" /> : <Copy size={12} />}
-                      Queue fallback
-                    </button>
-                  </div>
-                </div>
-              )}
               {grokHandoff?.projectId && (
                 <div className={`grok-quality-gate ${grokGateStatusClass(grokSceneQualityGate?.status || (grokSceneAsset?.status === "ready" ? "pending-operator-review" : "missing"))}`}>
                   <div className="grok-quality-gate-head">
@@ -2995,14 +2974,6 @@ export default function SceneDetailPanel() {
                     <button className="chip" onClick={handleOpenGrokReviewPacket} disabled={!grokHandoff.reviewPacketUrl}>
                       <Captions size={12} />
                       검수 패킷
-                    </button>
-                    <button
-                      className="chip"
-                      onClick={handleOpenGrokCompanionGuide}
-                      disabled={loadingGrokPlan}
-                    >
-                      {loadingGrokPlan ? <RefreshCw size={12} className="spin" /> : <Copy size={12} />}
-                      현재 씬 command
                     </button>
                   </div>
                   <div className="button-row" style={{ marginTop: 8 }}>
@@ -3108,7 +3079,7 @@ export default function SceneDetailPanel() {
                 </div>
               )}
               <small>
-                Companion Import MP4/direct import가 기본 경로입니다. Chrome/Grok Download/Save/Export 클릭과 Downloads 감시는 native prompt 함정 때문에 차단되어 있으며, 이미 소유한 로컬 MP4 반입만 fallback입니다.
+                기본 경로는 기존 signed-in Chrome/Grok 탭에서 browser-control로 생성 proof를 확보한 뒤, operator-owned manual download/save와 로컬 MP4 반입으로 이어가는 방식입니다. Chrome/Grok Download/Save/Export 자동 클릭과 native prompt 자동화는 차단됩니다.
               </small>
               <div className="button-row">
                 <button className="chip" onClick={handleCreateGrokHandoff} disabled={creatingGrokHandoff}>
@@ -3131,15 +3102,6 @@ export default function SceneDetailPanel() {
                 >
                   {openingGrok ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
                   기존 Chrome 열기
-                </button>
-                <button
-                  className="chip"
-                  onClick={handleOpenGrokCompanionGuide}
-                  disabled={!grokHandoff?.projectId || loadingGrokPlan}
-                  title="로그인된 기존 Chrome 프로필에 Companion을 로드하고, Import MP4가 local uploadEndpoint로 직접 반입할 현재 씬 command URL을 복사합니다."
-                >
-                  {loadingGrokPlan ? <RefreshCw size={12} className="spin" /> : <Clapperboard size={12} />}
-                  Chrome 확장 안내
                 </button>
                 <button
                   className="chip"
@@ -3406,7 +3368,7 @@ export default function SceneDetailPanel() {
                           sourceProvenanceNote: e.target.value,
                         }))}
                         rows={2}
-                        placeholder="Companion Import MP4/direct .mp4 반입인지, 아니면 명시적 manual Download fallback인지와 현재 take 파일명 확인 메모"
+                        placeholder="operator-owned manual download/import 또는 explicit upload인지와 현재 take 파일명 확인 메모"
                       />
                     </div>
                   )}
@@ -3524,7 +3486,7 @@ export default function SceneDetailPanel() {
                         source provenance: {grokSelectedSourceAcceptable ? grokSourceProvenanceLabel(grokSelectedSourceStatus) : "proof-only fallback blocked"}
                       </span>
                       {!grokSelectedSourceAcceptable && (
-                        <span>{grokSelectedSourceProvenance?.operatorAction || "Use Companion Import MP4 direct import first; manual batch upload is operator-owned fallback before accepting this scene."}</span>
+                        <span>{grokSelectedSourceProvenance?.operatorAction || "Use operator-owned Grok MP4 download/import or explicit manual batch upload before accepting this scene."}</span>
                       )}
                       <span>approval evidence: {grokReviewEvidenceReady ? "ready" : "선택 근거와 채널 품질 검수 메모를 먼저 구체적으로 작성"}</span>
                       <span>선택 근거는 generic 업로드 문구가 아니라 이 take를 고른 이유여야 합니다.</span>
@@ -3533,7 +3495,7 @@ export default function SceneDetailPanel() {
                         <span>candidate curation: {grokCandidateEvidenceReady ? "ready" : "Grok take 2개 이상 가져온 뒤 선택 후보 비교 메모 필요"}</span>
                       )}
                       {grokSourceConfirmationRequired && (
-                        <span>original MP4 confirmation: {grokSourceConfirmationReady ? "ready" : "Import MP4/direct import 또는 명시적 manual fallback 확인 체크와 24자 이상 메모 필요"}</span>
+                        <span>original MP4 confirmation: {grokSourceConfirmationReady ? "ready" : "manual download/import 또는 explicit upload 확인 체크와 24자 이상 메모 필요"}</span>
                       )}
                       {grokDetailedReviewRequired && (
                         <span>detailed review: {grokDetailedReviewReady ? "ready" : `필수 미작성: ${grokDetailedReviewMissing.join(", ")}`}</span>
@@ -3546,7 +3508,7 @@ export default function SceneDetailPanel() {
                       onClick={() => handleSaveGrokReview(true)}
                       disabled={!canReviewGrokScene || savingGrokReview || !grokReviewApprovalReady}
                       title={!grokSelectedSourceAcceptable
-                        ? "Grok-main approval requires Companion Import MP4/direct import or explicit operator-owned manual upload; visible-video/currentSrc fallback is proof-only."
+                        ? "Grok-main approval requires operator-owned manual download/import or explicit manual upload; visible-video/currentSrc fallback is proof-only."
                         : !grokReviewAllRequiredChecks
                         ? "Grok clip approval requires first hook, artifact-free, continuity, and caption-safe checks."
                         : !grokReviewEvidenceReady
@@ -3554,7 +3516,7 @@ export default function SceneDetailPanel() {
                           : !grokCandidateEvidenceReady
                             ? "Grok-main approval requires at least two Grok take candidates and a comparison note."
                             : !grokSourceConfirmationReady
-                              ? "Grok-main approval requires confirmation that the local MP4 came through Companion Import MP4/direct import or explicit manual fallback."
+                              ? "Grok-main approval requires confirmation that the local MP4 came through operator-owned manual download/import or explicit manual upload."
                             : !grokDetailedReviewReady
                               ? "Grok-main approval requires explicit visual/layout/audio/platform review fields."
                           : undefined}
@@ -3579,9 +3541,6 @@ export default function SceneDetailPanel() {
                   {grokHandoff.worksheetUrl && <span>worksheet: {grokHandoff.worksheetUrl}</span>}
                   {grokHandoff.automationPlanUrl && <span>automation: {grokHandoff.automationPlanUrl}</span>}
                   {grokHandoff.reviewPacketUrl && <span>review: {grokHandoff.reviewPacketUrl}</span>}
-                  {grokHandoff.chromeCompanionExtension?.extensionDir && (
-                    <span>chrome extension: {grokHandoff.chromeCompanionExtension.extensionDir}</span>
-                  )}
                   {grokHandoff.defaultDownloadDir && (
                     <span>downloads: {grokHandoff.defaultDownloadDir}{grokHandoff.defaultDownloadDirExists === false ? " (missing)" : ""}</span>
                   )}

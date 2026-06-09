@@ -3,7 +3,24 @@ const COMMAND_URL_KEY = "videoStudioGrokCommandUrl";
 const AUTO_QUEUE_KEY = "videoStudioGrokAutoQueueEnabled";
 const KEEPALIVE_ALARM_NAME = "videoStudioGrokCompanionKeepalive";
 const KEEPALIVE_PERIOD_MINUTES = 1;
+const EXTENSION_BUILD_TAG = "20260607-popup-state-fix";
 const handledAutostartKeys = new Set();
+const PROVIDER_CAPABILITIES = Object.freeze({
+  "grok-web-video": Object.freeze({
+    canProbe: true,
+    canFillPrompt: true,
+    canClickGenerate: true,
+    canImportResult: true,
+    canGenerateVideo: true
+  }),
+  "gemini-web-image": Object.freeze({
+    canProbe: true,
+    canFillPrompt: true,
+    canClickGenerate: false,
+    canImportResult: false,
+    canGenerateVideo: false
+  })
+});
 
 // SSRF guard: command payloads may only be fetched from the local bridge origin.
 // Must match the extension manifest host_permissions (127.0.0.1:5161 only).
@@ -41,6 +58,37 @@ function extensionVersion() {
   }
 }
 
+function extensionBuildDetail() {
+  return `version=${extensionVersion()} build=${EXTENSION_BUILD_TAG}`;
+}
+
+function commandProvider(command) {
+  return String(command?.provider || "grok-web-video");
+}
+
+function providerCapabilities(command) {
+  return PROVIDER_CAPABILITIES[commandProvider(command)] || null;
+}
+
+function capabilityForAction(action) {
+  if (action === "probe") return "canProbe";
+  if (action === "fill-prompt" || action === "prep-generate") return "canFillPrompt";
+  if (action === "click-generate") return "canClickGenerate";
+  if (["download-asset", "download-visible-video", "download-post-video", "download-current-video"].includes(action)) return "canImportResult";
+  return "";
+}
+
+function assertProviderAction(command, action) {
+  const capabilities = providerCapabilities(command);
+  if (!capabilities) {
+    throw new Error(`unsupported companion provider: ${commandProvider(command)}`);
+  }
+  const capability = capabilityForAction(action);
+  if (!capability || capabilities[capability] !== true) {
+    throw new Error(`companion action not supported for provider=${commandProvider(command)} action=${action}`);
+  }
+}
+
 async function loadCommandFromUrl(url) {
   if (!url) return null;
   let parsed;
@@ -62,12 +110,37 @@ async function loadCommandFromUrl(url) {
   return data;
 }
 
+async function postBridgeEvent(endpoint, payload) {
+  let parsed;
+  try {
+    parsed = new URL(String(endpoint || ""));
+  } catch (error) {
+    throw new Error(`refusing to post event to invalid URL: ${endpoint}`);
+  }
+  if (!BRIDGE_ALLOWED_ORIGINS.has(parsed.origin)) {
+    throw new Error(`refusing to post event to non-bridge origin: ${parsed.origin}`);
+  }
+  const response = await fetch(parsed.href, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {})
+  });
+  if (!response.ok) {
+    throw new Error(`bridge event post failed: HTTP ${response.status}`);
+  }
+  return response.json().catch(() => ({}));
+}
+
 async function postEvent(command, event) {
   if (!command || !command.eventEndpoint) return;
   const payload = {
     operatorApproved: true,
     extensionApproved: true,
+    provider: event.provider || command.provider || "",
     projectId: command.projectId,
+    episodeId: command.episodeId || "",
+    batchId: command.batchId || "",
+    cutId: command.cutId || "",
     sceneId: command.sceneId,
     expectedFileName: command.expectedFileName,
     currentUrl: event.currentUrl || "",
@@ -96,7 +169,7 @@ async function postHeartbeat(command, detail = "Chrome companion connected.") {
   await postEvent(command, {
     eventType: "companion-heartbeat",
     status: "connected",
-    detail: `${detail} version=${extensionVersion()}`,
+    detail: `${detail} ${extensionBuildDetail()}`,
   });
 }
 
@@ -420,10 +493,55 @@ async function waitForTabComplete(tabId, timeoutMs = 15000) {
   });
 }
 
+function isImagineTabUrl(url) {
+  try {
+    const parsed = new URL(String(url || ""));
+    const pathname = parsed.pathname.toLowerCase();
+    return parsed.hostname.endsWith("grok.com")
+      && pathname.startsWith("/imagine")
+      && !pathname.startsWith("/imagine/post");
+  } catch (error) {
+    return false;
+  }
+}
+
+function imagineUrlForCommand(command) {
+  const value = String(command?.grokUrl || "");
+  return isImagineTabUrl(value) ? value : "https://grok.com/imagine";
+}
+
+function contentScriptForTab(tab) {
+  try {
+    const parsed = new URL(String(tab?.url || ""));
+    if (parsed.hostname.endsWith("grok.com")) return "content.js";
+    if (isGeminiTabHost(parsed.hostname)) return "content_gemini.js";
+  } catch (error) {
+    return "";
+  }
+  return "";
+}
+
+function isGeminiTabHost(hostname) {
+  const value = String(hostname || "").toLowerCase();
+  return value === "gemini.google.com" || /^gemini\.google-[a-z0-9-]+\.com$/.test(value);
+}
+
+function isReceivingEndError(error) {
+  return /receiving end does not exist|could not establish connection/i.test(String(error?.message || error || ""));
+}
+
+async function injectContentScript(tab) {
+  const file = contentScriptForTab(tab);
+  if (!file || !tab?.id || !chrome.scripting?.executeScript) return false;
+  await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: [file] });
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  return true;
+}
+
 async function ensureGrokTab(command) {
-  const grokUrl = command?.grokUrl || "https://grok.com/imagine";
+  const grokUrl = imagineUrlForCommand(command);
   const tabs = await chrome.tabs.query({});
-  let tab = tabs.find((item) => String(item.url || "").includes("grok.com"));
+  let tab = tabs.find((item) => isImagineTabUrl(item.url));
   if (!tab) {
     tab = await chrome.tabs.create({ url: grokUrl, active: true });
   } else {
@@ -437,11 +555,22 @@ async function sendToGrokTab(tab, command, type) {
   return chrome.tabs.sendMessage(tab.id, { type, command });
 }
 
+async function sendToGrokTabWithInjection(tab, command, type) {
+  try {
+    return await sendToGrokTab(tab, command, type);
+  } catch (error) {
+    if (!isReceivingEndError(error) || !(await injectContentScript(tab))) {
+      throw error;
+    }
+    return sendToGrokTab(tab, command, type);
+  }
+}
+
 async function sendToGrokTabWithRetry(tab, command, type, attempts = 10) {
   let lastError = "";
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      return await sendToGrokTab(tab, command, type);
+      return await sendToGrokTabWithInjection(tab, command, type);
     } catch (error) {
       lastError = String(error && error.message ? error.message : error);
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -481,6 +610,7 @@ async function runAutostartFromTabUrl(tabId, url) {
       currentUrl: url,
     });
     command = await loadCommandFromUrl(request.commandUrl);
+    assertProviderAction(command, request.action);
     await postHeartbeat(command, "Background autostart command loaded.");
     await postEvent(command, {
       eventType: "background-autostart-command-loaded",
@@ -492,8 +622,17 @@ async function runAutostartFromTabUrl(tabId, url) {
       await downloadAssetFromCurrentTab(command, url);
       return;
     }
-    const tab = await waitForTabComplete(tabId);
+    let tab = await waitForTabComplete(tabId);
     if (!tab?.id) throw new Error("Grok tab unavailable after autostart URL load.");
+    if (!isImagineTabUrl(tab.url)) {
+      await postEvent(command, {
+        eventType: "background-autostart-fill",
+        status: "failed",
+        detail: `imagine-surface-required-background-autostart; active=${tab.url || url}`,
+        currentUrl: tab.url || url,
+      });
+      return;
+    }
     const type = request.action === "probe" ? "probe" : "fill-prompt";
     const fillResult = await sendToGrokTabWithRetry(tab, command, type);
     await postEvent(command, {
@@ -539,7 +678,9 @@ async function prepGenerateNextScene(nextCommand, previousCommand) {
     status: "preparing",
     detail: `Auto queue prepping ${nextCommand.sceneId || "next scene"} after ${previousCommand?.sceneId || "previous scene"}.`,
   });
-  const fillResult = await sendToGrokTab(tab, nextCommand, "fill-prompt");
+  const fillResult = isImagineTabUrl(tab?.url)
+    ? await sendToGrokTab(tab, nextCommand, "fill-prompt")
+    : { ok: false, error: "imagine-surface-required-background-autoqueue", currentUrl: tab?.url || "" };
   await postEvent(nextCommand, {
     eventType: "auto-queue-fill",
     status: fillResult?.ok ? "filled" : "failed",
@@ -577,6 +718,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
 
+    if (message?.type === "load-command-url") {
+      if (sender?.id !== chrome.runtime.id) {
+        sendResponse({ ok: false, error: "load-command-url sender not allowed" });
+        return;
+      }
+      try {
+        const loaded = await loadCommandFromUrl(message.commandUrl || "");
+        assertProviderAction(loaded, message.action || "fill-prompt");
+        sendResponse({ ok: true, command: loaded });
+      } catch (error) {
+        sendResponse({ ok: false, error: String(error && error.message ? error.message : error) });
+      }
+      return;
+    }
+
+    if (message?.type === "bridge-post-event") {
+      if (sender?.id !== chrome.runtime.id) {
+        sendResponse({ ok: false, error: "bridge-post-event sender not allowed" });
+        return;
+      }
+      try {
+        const result = await postBridgeEvent(message.endpoint || "", message.payload || {});
+        sendResponse({ ok: true, result });
+      } catch (error) {
+        sendResponse({ ok: false, error: String(error && error.message ? error.message : error) });
+      }
+      return;
+    }
+
     if (message?.type === "content-ready") {
       const command = await getStoredCommand();
       const currentUrl = message.currentUrl || sender?.tab?.url || "";
@@ -585,7 +755,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         await postEvent(command, {
           eventType: "content-script-ready",
           status: "ready",
-          detail: `Grok tab content script loaded; version=${extensionVersion()}`,
+          detail: `Grok tab content script loaded; ${extensionBuildDetail()}`,
           currentUrl
         });
       }

@@ -17,6 +17,21 @@ DEFAULT_PREFERENCE = {
 
 _TRUTHY = {"1", "true", "yes", "y", "on"}
 PAID_COST_TIERS = {"cheap", "premium"}
+KNOWN_PAID_PROVIDER_ALIASES = {
+    "ai-studio-tts",
+    "elevenlabs",
+    "gemini-tts",
+    "google-ai-studio",
+    "google-ai-studio-tts",
+    "google-tts",
+    "grok-api",
+    "imagen",
+    "openai-tts",
+    "runway",
+    "veo",
+    "veo3",
+    "xai-api",
+}
 
 
 def paid_providers_allowed() -> bool:
@@ -31,7 +46,10 @@ def paid_providers_allowed() -> bool:
 
 def is_paid_provider(provider_key: str) -> bool:
     """Return whether an adapter can create billable usage."""
-    config = ADAPTER_CONFIG.get(provider_key, {})
+    normalized = str(provider_key or "").strip().lower().replace("_", "-")
+    if normalized in KNOWN_PAID_PROVIDER_ALIASES:
+        return True
+    config = ADAPTER_CONFIG.get(provider_key, {}) or ADAPTER_CONFIG.get(normalized, {})
     return (
         config.get("costTier") in PAID_COST_TIERS
         or float(config.get("costPerUnit", 0.0) or 0.0) > 0

@@ -1,0 +1,36 @@
+{
+  "incompetech-sneaky-snitch.mp3": {
+    "provider": "local-bgm",
+    "sourceProvider": "incompetech",
+    "title": "Sneaky Snitch",
+    "artist": "Kevin MacLeod",
+    "creator": "Kevin MacLeod",
+    "sourceUrl": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Sneaky%20Snitch.mp3",
+    "sourceLicense": "Creative Commons Attribution 3.0 Unported",
+    "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+    "attributionRequired": true,
+    "attribution": "Sneaky Snitch Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 3.0 License. http://creativecommons.org/licenses/by/3.0/",
+    "mood": "tense",
+    "kind": "bgm",
+    "templateFamilies": ["news_explainer", "ranking_list", "authentic_vlog"],
+    "downloadDate": "2026-06-08",
+    "editNotes": "Use for light mystery or reveal beats; avoid if the topic is grave."
+  },
+  "incompetech-anxiety.mp3": {
+    "provider": "local-bgm",
+    "sourceProvider": "incompetech",
+    "title": "Anxiety",
+    "artist": "Kevin MacLeod",
+    "creator": "Kevin MacLeod",
+    "sourceUrl": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Anxiety.mp3",
+    "sourceLicense": "Creative Commons Attribution 3.0 Unported",
+    "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+    "attributionRequired": true,
+    "attribution": "Anxiety Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 3.0 License. http://creativecommons.org/licenses/by/3.0/",
+    "mood": "tense",
+    "kind": "bgm",
+    "templateFamilies": ["news_explainer", "longform_deep_dive", "interview_documentary"],
+    "downloadDate": "2026-06-08",
+    "editNotes": "Use for low tension; keep below voice and avoid long unbroken loops."
+  }
+}

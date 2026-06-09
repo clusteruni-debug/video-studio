@@ -1,10 +1,14 @@
-# Video Studio Grok Companion
+# Video Studio AI Web Companion
 
-Local Chrome extension for the Video Studio Grok app/web handoff.
+Local Chrome extension for Video Studio's operator-approved Grok and Gemini
+web handoffs. The extension is no longer the primary Grok production rail:
+the default rail is Codex/Claude browser-control against the existing signed-in
+Chrome/Grok tab, followed by operator-owned MP4 download/save and local
+Video Studio import/upload.
 
 Use it only in the Chrome profile where the operator is already signed in to
-SuperGrok. It avoids xAI API calls, Chrome DevTools/CDP, copied cookies,
-password storage, and Edge/new-profile launches.
+SuperGrok or Gemini. It avoids xAI/Gemini API calls, Chrome DevTools/CDP,
+copied cookies, password storage, and Edge/new-profile launches.
 
 Important Chrome 137+ note:
 
@@ -19,25 +23,31 @@ Important Chrome 137+ note:
 - Chrome for Testing or Chromium may still support `--load-extension`, but those
   are separate profiles and do not inherit the operator's SuperGrok login.
 
-Workflow:
+Grok video workflow:
 
 1. In Video Studio, create a Grok handoff packet.
-2. Click `Chrome 확장 안내`; the scene command URL is copied to the clipboard.
-3. Open `chrome://extensions` in the existing signed-in Chrome profile.
-4. Enable Developer mode and load this folder as an unpacked extension.
-5. Open Grok Imagine in that same profile.
-6. Paste/load the command URL in the extension popup, then use `Prep + Generate`
-   to open the existing Grok tab, prefer the visible video/animate mode when
-   Grok exposes one, fill the current scene prompt, and click the visible
-   generate/send control. If Grok changes its UI, use Fill prompt and Generate
-   separately so you can see which step failed.
+2. Use Codex/Claude browser-control in the existing signed-in Chrome profile.
+   Do not switch to Edge, Chrome for Testing, or a new Chrome profile for
+   production Grok generation.
+3. Open the real Grok Imagine/generation surface in that same profile. A
+   `https://grok.com/c/*` chat thread is not a successful generation surface.
+4. Fill the Video Studio prompt and generate the raw 9:16 MP4 through the web
+   UI. Login, captcha, safety, payment, and final clip choice remain manual.
+5. The operator downloads/saves the MP4. Video Studio then imports from
+   Downloads or explicit batch upload. Codex automation must not click Grok
+   Download, Save, Export, or any Chrome native approval prompt.
+6. Use the extension only as a fallback/diagnostic helper when browser-control
+   is unavailable. Paste/load the command URL in the extension popup, then use
+   `Prep + Generate` only after confirming the active tab is the real Grok
+   Imagine composer.
    After a command has been loaded once, any Grok tab where the content script
    loads reports a companion heartbeat with the stored command, so Video Studio
    can distinguish "extension installed but idle" from "extension not connected".
    The background worker also sends a stored-command keepalive about once per
    minute, so a multi-minute Grok generation wait does not make the dashboard
    look disconnected while the signed-in Chrome path is still the main source.
-7. Use `Import MP4` after Grok finishes. When the companion can see a direct
+7. If the fallback extension is used, `Import MP4` can be pressed after Grok
+   finishes. When the companion can see a direct
    Grok `.mp4` URL from the page, a direct media tab, or the visible video's
    `currentSrc`, it fetches that MP4 inside the signed-in Chrome extension
    context and uploads it straight to the local Video Studio bridge. When Grok
@@ -66,9 +76,9 @@ Workflow:
    path, make the asset tab active and press the companion `Import MP4` button;
    the companion treats the current MP4 tab URL as the import candidate even when
    the page has no inspectable video DOM.
-8. Manual Downloads import/watch remains an operator-owned fallback from Video
-   Studio itself. The companion extension does not start browser downloads for
-   Codex automation.
+8. Manual Downloads import/watch and batch upload are the production import
+   path from Video Studio itself. The companion extension does not start browser
+   downloads for Codex automation.
 9. Optional: enable `Auto-prep next scene after MP4 import`. After each imported
    MP4 advances the queue, the extension loads the next missing scene command in
    the same signed-in Chrome profile and runs the same fill/generate action.
@@ -80,6 +90,8 @@ Guardrails:
 - No paid xAI/Grok API integration.
 - No credential, cookie, or token storage.
 - No CDP or remote debugging against the default Chrome profile.
+- Browser-control generation proof must use the existing signed-in Chrome
+  profile. New profiles and Edge launches are not production proof.
 - Auto-import reads only the completed Chrome download path and calls the local
   `127.0.0.1:5161` bridge with the current scene id and exact file path; the
   bridge rejects files outside the approved Downloads folder and does not upload
@@ -117,3 +129,23 @@ Quality operating rule:
   scene continuity review: same subject/prop/location/palette, visible motion in
   the first two seconds, no baked-in text/logo/watermark/UI, and no face/hand/body
   morphing. Reject weak clips in Video Studio instead of rendering around them.
+
+Gemini image workflow:
+
+1. Create an episode plan in Video Studio and open
+   `/api/episodes/<episodeId>/browser-handoffs`.
+2. Use each `gemini-web-image` cut `autostartUrl` in the same signed-in Chrome
+   profile where this unpacked extension is loaded.
+3. The Gemini content adapter loads the local command, fills the prompt, and
+   records `gemini-prompt-fill` with `build=20260607-gemini-image-handoff`.
+4. Generation, safety prompts, image choice, saving, and upload/review remain
+   operator-owned. The Gemini adapter deliberately does not click Generate and
+   does not import images until a provider-specific result surface is verified.
+
+Gemini guardrails:
+
+- No Gemini API integration, API key setup, copied cookies, or credential
+  storage.
+- The current Gemini adapter supports `fill-prompt` and `probe` only.
+- Gemini/Veo video handoff remains `planned-only` until the browser surface and
+  result import path are verified separately from paid API adapters.

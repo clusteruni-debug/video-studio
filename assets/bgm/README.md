@@ -66,9 +66,11 @@ Example:
 ```
 
 Preferred free BGM/SFX sources are YouTube Audio Library, Mixkit, Pixabay
-Music, Freesound CC0/CC BY, Wikimedia Commons, KOGL Type 1/public assets, and
-Gongu copyright sources. Keep the download page URL and attribution/license
-text even when attribution is not required.
+Music, Incompetech CC BY, Freesound CC0/CC BY, Wikimedia Commons, KOGL Type
+1/public assets, and Gongu copyright sources. Keep the download page URL and
+attribution/license text even when attribution is not required. For CC BY
+sources such as Incompetech, keep `attributionRequired=true` and paste the
+YouTube-description-ready credit line into the metadata.
 
 ## Rotation checklist
 
