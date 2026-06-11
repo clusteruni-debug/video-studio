@@ -8,6 +8,8 @@ Generated-by: scripts/extract-project-board.py
 ## Operating Policy
 - Board is maintained.
 - Records require minimum fields only: `TASK-ID`, `Owner-Agent`, `Status`, `Scope-Files`.
+- New rows go INSIDE the `### Active Tasks` table, below its header/separator rows — never above section headers or at the top of the file. If the table is missing, stop and report.
+- Cells are one-line summaries (<400 chars). Progress/continuation logs belong in `### Continuation Notes` as dated one-line bullets, never appended into row cells.
 - Workspace-scope tasks stay in the root board; project-scope tasks live in `projects/<slug>/AGENT_TASK_BOARD.md` when present.
 
 ## Task Board
