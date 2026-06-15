@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Clipboard, ExternalLink, FileVideo, Gauge, Layers3, Music2, RefreshCw, Sparkles, Subtitles, XCircle } from "lucide-react";
 import { useStudioState } from "../context/StudioContext";
-import { auditFinalVideoLibrary, captureFinalLibraryDashboardSmoke, finalizeRender, materializeFinalLibraryEvidenceTemplates, materializeFreshSourceIntakePacket, materializeSourceRecoveryAcceptancePacket, materializeSourceRecoveryRerenderPlan, prepareFinalLibraryFreshSourceEvidence, prepareFinalLibraryPhoneReviewEvidence } from "../lib/bridge";
+import { auditFinalVideoLibrary, captureFinalLibraryDashboardSmoke, fetchEpisodeSourceLibrary, finalizeRender, materializeFinalLibraryEvidenceTemplates, materializeFreshSourceIntakePacket, materializeSourceRecoveryAcceptancePacket, materializeSourceRecoveryRerenderPlan, prepareFinalLibraryFreshSourceEvidence, prepareFinalLibraryPhoneReviewEvidence, reviewEpisodeSourceAsset } from "../lib/bridge";
 import type {
+  EpisodeSourceLibraryResult,
+  EpisodeSourceLibraryReviewResult,
   EvidenceTemplateMaterializeResult,
   FinalVideoLibraryAuditResult,
   FinalLibraryDashboardSmokeResult,
@@ -686,6 +688,143 @@ function sceneReadyStatus(item: ProductionReviewScene, firstSceneId: string): "p
   return "warn";
 }
 
+function SourceAcquisitionLoopPanel() {
+  const [episodeId, setEpisodeId] = useState("");
+  const [sourceLibrary, setSourceLibrary] = useState<EpisodeSourceLibraryResult | null>(null);
+  const [loadingSourceLibrary, setLoadingSourceLibrary] = useState(false);
+  const [sourceLibraryError, setSourceLibraryError] = useState("");
+  const [reviewResult, setReviewResult] = useState<EpisodeSourceLibraryReviewResult | null>(null);
+  const [reviewingAssetId, setReviewingAssetId] = useState<string | null>(null);
+  const assets = sourceLibrary?.sourceLibrary.assets ?? [];
+
+  const handleLoadSourceLibrary = useCallback(async () => {
+    const trimmed = episodeId.trim();
+    if (!trimmed) {
+      setSourceLibraryError("episode id required");
+      return;
+    }
+    setLoadingSourceLibrary(true);
+    setSourceLibraryError("");
+    setReviewResult(null);
+    try {
+      setSourceLibrary(await fetchEpisodeSourceLibrary(trimmed));
+    } catch (error) {
+      setSourceLibrary(null);
+      setSourceLibraryError(error instanceof Error ? error.message : "source library load failed");
+    } finally {
+      setLoadingSourceLibrary(false);
+    }
+  }, [episodeId]);
+
+  const handleAcceptAsset = useCallback(async (assetId: string) => {
+    const qualityReviewNote = window.prompt("Phone-size source review note");
+    if (!qualityReviewNote) return;
+    const sourceRationale = window.prompt("Source rationale for this storyboard beat");
+    if (!sourceRationale) return;
+    setReviewingAssetId(assetId);
+    setReviewResult(null);
+    try {
+      const result = await reviewEpisodeSourceAsset(episodeId.trim(), {
+        operatorApproved: true,
+        assetId,
+        accepted: true,
+        storyboardMatch: true,
+        firstSecondAction: true,
+        artifactFree: true,
+        captionSafe: true,
+        phoneSizeWatch: true,
+        sourceProvenanceOk: true,
+        noGenericBroll: true,
+        qualityReviewNote,
+        sourceRationale,
+      });
+      setReviewResult(result);
+      await handleLoadSourceLibrary();
+    } catch (error) {
+      setReviewResult({
+        ok: false,
+        error: error instanceof Error ? error.message : "source review failed",
+      });
+    } finally {
+      setReviewingAssetId(null);
+    }
+  }, [episodeId, handleLoadSourceLibrary]);
+
+  return (
+    <div className="source-acquisition-loop">
+      <div className="source-acquisition-head">
+        <div>
+          <span>Source acquisition loop</span>
+          <strong>
+            {sourceLibrary?.ok
+              ? `${sourceLibrary.sourceLibrary.assetCount} imported source assets`
+              : "Gemini/Grok imported source library"}
+          </strong>
+        </div>
+        <div className="source-acquisition-controls">
+          <input
+            value={episodeId}
+            onChange={(event) => setEpisodeId(event.target.value)}
+            placeholder="episode id"
+            aria-label="episode id"
+          />
+          <button className="render-publish-btn" onClick={handleLoadSourceLibrary} disabled={loadingSourceLibrary}>
+            <RefreshCw size={14} className={loadingSourceLibrary ? "spin" : undefined} />
+            {loadingSourceLibrary ? "조회 중" : "조회"}
+          </button>
+        </div>
+      </div>
+      {sourceLibraryError ? <p className="source-acquisition-error">{sourceLibraryError}</p> : null}
+      {reviewResult ? (
+        <p className={reviewResult.ok ? "source-acquisition-result pass" : "source-acquisition-result fail"}>
+          source review: {reviewResult.status || reviewResult.asset?.review?.status || reviewResult.error || "saved"}
+          {reviewResult.validation?.acceptedMotionCount !== undefined
+            ? ` / motion ${reviewResult.validation.acceptedMotionCount}/${reviewResult.validation.totalBeatCount ?? 0}`
+            : ""}
+        </p>
+      ) : null}
+      {assets.length ? (
+        <div className="source-acquisition-grid">
+          {assets.map((asset) => (
+            <article key={asset.assetId} className={`source-acquisition-card ${asset.review?.accepted ? "accepted" : "pending"}`}>
+              <div className="source-acquisition-thumb">
+                {asset.thumbnailVisible && asset.thumbnailUrl ? (
+                  <img src={asset.thumbnailUrl} alt="" />
+                ) : (
+                  <FileVideo size={20} />
+                )}
+              </div>
+              <div className="source-acquisition-meta">
+                <span>{asset.provider} · {asset.sceneId}</span>
+                <strong>{asset.fileName}</strong>
+                <small>{asset.proofMode || "proof"} · {asset.model || asset.assetKind}</small>
+                <small>{asset.provenance?.browserSurface || asset.currentUrl || asset.path}</small>
+              </div>
+              <div className="source-acquisition-actions">
+                {asset.currentUrl ? (
+                  <a className="render-publish-btn" href={asset.currentUrl} target="_blank" rel="noreferrer">
+                    <ExternalLink size={14} />
+                  </a>
+                ) : null}
+                <button
+                  className="render-publish-btn"
+                  onClick={() => handleAcceptAsset(asset.assetId)}
+                  disabled={reviewingAssetId === asset.assetId}
+                >
+                  <CheckCircle2 size={14} />
+                  {reviewingAssetId === asset.assetId ? "저장 중" : asset.review?.accepted ? "다시 선택" : "선택"}
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : sourceLibrary?.ok ? (
+        <p className="source-acquisition-empty">No imported source assets for this episode.</p>
+      ) : null}
+    </div>
+  );
+}
+
 export function FinalVideoLibraryPanel({ autoLoad = false }: { autoLoad?: boolean }) {
   const [libraryAudit, setLibraryAudit] = useState<FinalVideoLibraryAuditResult | null>(null);
   const [loadingLibraryAudit, setLoadingLibraryAudit] = useState(false);
@@ -1045,6 +1184,7 @@ export function FinalVideoLibraryPanel({ autoLoad = false }: { autoLoad?: boolea
           {preparingFreshSourceEvidence ? "Fresh evidence 준비 중" : "Fresh proof evidence 준비"}
         </button>
       </div>
+      <SourceAcquisitionLoopPanel />
       {libraryAudit ? (
         libraryAudit.ok ? (
           <>

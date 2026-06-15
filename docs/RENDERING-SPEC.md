@@ -313,6 +313,31 @@ MOTION_PRESETS = {
 
 Motion assignment: cycle by scene_num % 4, no same motion for 2 consecutive scenes.
 
+### 5.4 Still Image Source Policy
+
+Static web images are allowed as source material only when the still frame is
+the viewer job itself. Valid primary still-image roles are:
+
+- meme/reaction image
+- screenshot, screen capture, source capture, or official/document capture
+- evidence card, reference card, data card, chart, graph, or table source
+
+For normal explainers, maker/process videos, science/object demos, and
+Korea-first curiosity formats, a generic web still may support the edit but must
+not be the primary visual source. Use Grok/Gemini/local MP4, direct footage,
+rights-safe stock video, generated simulation, or screen/source capture for the
+main proof. Ken Burns motion on a weak still does not satisfy this rule.
+
+Runtime enforcement:
+- `worker/render/compose_ffmpeg.py::write_render_quality_report()` emits
+  `stillImageSourcePolicy`.
+- Source-first/editorial or internet-source manifests fail this check when an
+  internet still image is used as a primary visual without a meme/reaction,
+  capture, or evidence/reference/data-card role.
+- If a still is only support material, mark `stillImageSourceRole` or
+  `imageSourceRole` as `support`, `evidence-card`, `reference-card`, or
+  `data-card`.
+
 ---
 
 ## 6. FFmpeg Render Quality Floor

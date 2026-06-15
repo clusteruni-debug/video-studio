@@ -2226,6 +2226,127 @@ button { cursor: pointer; }
     line-height: 1.35;
 }
 
+.source-acquisition-loop {
+    margin: 12px 0 4px;
+    padding: 10px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: rgba(255,255,255,0.025);
+}
+
+.source-acquisition-head,
+.source-acquisition-controls,
+.source-acquisition-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.source-acquisition-head {
+    justify-content: space-between;
+    flex-wrap: wrap;
+}
+
+.source-acquisition-head > div:first-child {
+    min-width: 180px;
+}
+
+.source-acquisition-head span,
+.source-acquisition-meta span,
+.source-acquisition-meta small {
+    display: block;
+    color: var(--text-tertiary);
+    font-size: 0.68rem;
+    line-height: 1.35;
+}
+
+.source-acquisition-head strong,
+.source-acquisition-meta strong {
+    display: block;
+    color: var(--text-primary);
+    font-size: 0.82rem;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+.source-acquisition-controls input {
+    width: min(280px, 54vw);
+    min-height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    font-size: 0.76rem;
+}
+
+.source-acquisition-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.source-acquisition-card {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 9px;
+    padding: 8px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+}
+
+.source-acquisition-card.accepted {
+    border-color: rgba(52, 199, 123, 0.36);
+}
+
+.source-acquisition-thumb {
+    width: 64px;
+    height: 64px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-tertiary);
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+}
+
+.source-acquisition-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.source-acquisition-meta {
+    min-width: 0;
+}
+
+.source-acquisition-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+.source-acquisition-error,
+.source-acquisition-empty,
+.source-acquisition-result {
+    margin: 8px 0 0;
+    color: var(--text-tertiary);
+    font-size: 0.72rem;
+    line-height: 1.35;
+}
+
+.source-acquisition-error,
+.source-acquisition-result.fail {
+    color: var(--danger);
+}
+
+.source-acquisition-result.pass {
+    color: var(--success);
+}
+
 .source-recovery-scene {
     margin-top: 8px;
     padding-top: 8px;

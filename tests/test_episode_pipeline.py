@@ -1,5 +1,6 @@
 """Episode infrastructure tests."""
 
+import base64
 import json
 from pathlib import Path
 
@@ -311,6 +312,52 @@ def test_episode_plan_writes_manifest_sync_map_and_grok_batches(tmp_path):
     assert browser_event["proofMode"] == "browser-control"
     assert browser_event["browserControlApproved"] is True
     assert browser_event["extensionApproved"] is False
+
+    source_asset_response = client.post(
+        "/api/episodes/grandma-hospital-pilot/browser-handoffs/source-asset",
+        json={
+            "operatorApproved": True,
+            "browserControlApproved": True,
+            "provider": "gemini-web-image",
+            "batchId": "batch-001",
+            "cutId": "cut_001",
+            "sceneId": "scene-001",
+            "expectedFileName": "cut_001.png",
+            "eventType": "gemini-result-visible",
+            "status": "visible",
+            "source": "codex-chrome-browser-control",
+            "proofMode": "browser-control-generate-check",
+            "resultVisible": True,
+            "prompt": image_batch["cuts"][0]["prompt"],
+            "currentUrl": "https://gemini.google.com/app/78075ab55f1bfafc",
+            "model": "gemini-web-image",
+            "assetDataBase64": base64.b64encode(b"fake png bytes").decode("ascii"),
+            "build": "20260607-gemini-image-handoff",
+        },
+    )
+    assert source_asset_response.status_code == 200
+    source_payload = source_asset_response.get_json()
+    asset = source_payload["asset"]
+    assert asset["provider"] == "gemini-web-image"
+    assert asset["assetKind"] == "image-reference"
+    assert asset["sceneId"] == "scene-001"
+    assert asset["proofMode"] == "browser-control-generate-check"
+    assert asset["thumbnailVisible"] is True
+    assert asset["thumbnailUrl"].endswith(f"/source-library/assets/{asset['assetId']}/thumbnail")
+    assert asset["provenance"]["browserSurface"].startswith("https://gemini.google.com/app")
+    assert asset["provenance"]["usesApi"] is False
+    assert Path(tmp_path / asset["path"]).exists()
+    sidecar = json.loads(Path(tmp_path / asset["provenancePath"]).read_text(encoding="utf-8"))
+    assert sidecar["prompt"] == image_batch["cuts"][0]["prompt"]
+    source_event = json.loads(event_path.read_text(encoding="utf-8").splitlines()[-1])
+    assert source_event["eventType"] == "gemini-result-visible"
+    assert source_event["assetId"] == asset["assetId"]
+
+    library_response = client.get("/api/episodes/grandma-hospital-pilot/source-library")
+    assert library_response.status_code == 200
+    library = library_response.get_json()["sourceLibrary"]
+    assert library["assetCount"] == 1
+    assert library["assets"][0]["candidateTemplate"]["provider"] == "gemini-web-image"
 
 
 def test_preproduction_plan_writes_storyboard_asset_briefs_and_episode_handoff(tmp_path):
@@ -941,7 +988,7 @@ def test_preproduction_asset_candidate_review_blocks_without_motion_sources(tmp_
     assert data["ok"] is False
     assert data["status"] == "blocked"
     messages = [item["message"] for item in data["validation"]["errors"]]
-    assert messages.count("each storyboard beat needs one accepted Grok/operator motion source before render") == 3
+    assert messages.count("each storyboard beat needs one accepted Gemini/Grok/operator motion source before render") == 3
     assert Path(data["candidateReviewPath"]).exists()
 
 
@@ -1022,6 +1069,151 @@ def test_preproduction_syncs_accepted_grok_review_candidates_into_source_gate(tm
     source_map = json.loads(Path(data["acceptedSourceMapPath"]).read_text(encoding="utf-8"))
     assert source_map["status"] == "ready-for-render"
     assert source_map["scenes"][0]["acceptedCandidate"]["provider"] == "grok-web-video"
+
+
+def test_browser_control_source_library_imports_grok_imagine_assets_and_rejects_chat_threads(tmp_path):
+    client = _episode_client(tmp_path)
+    client.post("/api/episodes/preproduction-plan", json=_preproduction_payload(create_episode_plan=True))
+
+    chat_thread_response = client.post(
+        "/api/episodes/world-cup-opener-check/browser-handoffs/source-asset",
+        json={
+            "operatorApproved": True,
+            "browserControlApproved": True,
+            "provider": "grok-web-video",
+            "batchId": "batch-001",
+            "cutId": "cut_001",
+            "sceneId": "scene-001",
+            "expectedFileName": "scene-001.grok.mp4",
+            "eventType": "grok-result-visible",
+            "status": "visible",
+            "generationVisible": True,
+            "currentUrl": "https://grok.com/c/12345",
+            "assetDataBase64": base64.b64encode(b"fake mp4 bytes").decode("ascii"),
+        },
+    )
+    assert chat_thread_response.status_code == 400
+    assert "/c/* chat thread" in chat_thread_response.get_json()["error"]
+
+    source_asset_response = client.post(
+        "/api/episodes/world-cup-opener-check/browser-handoffs/source-asset",
+        json={
+            "operatorApproved": True,
+            "browserControlApproved": True,
+            "provider": "grok-web-video",
+            "batchId": "batch-001",
+            "cutId": "cut_001",
+            "sceneId": "scene-001",
+            "expectedFileName": "scene-001.grok.mp4",
+            "eventType": "grok-result-visible",
+            "status": "visible",
+            "source": "codex-chrome-browser-control",
+            "proofMode": "browser-control-generate-check",
+            "generationVisible": True,
+            "prompt": "Raw vertical 9:16 phone-camera MP4. First second: hand circles the opening date.",
+            "currentUrl": "https://grok.com/imagine",
+            "model": "grok-imagine",
+            "assetDataBase64": base64.b64encode(b"fake mp4 bytes for grok imagine source").decode("ascii"),
+            "thumbnailDataBase64": base64.b64encode(b"fake thumbnail bytes").decode("ascii"),
+        },
+    )
+    assert source_asset_response.status_code == 200
+    payload = source_asset_response.get_json()
+    asset = payload["asset"]
+    assert asset["provider"] == "grok-web-video"
+    assert asset["assetKind"] == "motion-source"
+    assert asset["thumbnailVisible"] is True
+    assert asset["provenance"]["browserSurface"] == "https://grok.com/imagine"
+    assert asset["provenance"]["downloadAuthority"] == "browser-control-captured-or-operator-local-file"
+    assert Path(tmp_path / asset["path"]).exists()
+
+    review_response = client.post(
+        "/api/episodes/world-cup-opener-check/source-library/review",
+        json={
+            "operatorApproved": True,
+            "assetId": asset["assetId"],
+            "accepted": True,
+            "storyboardMatch": True,
+            "firstSecondAction": True,
+            "artifactFree": True,
+            "captionSafe": True,
+            "phoneSizeWatch": True,
+            "sourceProvenanceOk": True,
+            "noGenericBroll": True,
+            "qualityReviewNote": "Phone-size review confirms the opening date action is clear and not a generic montage.",
+            "sourceRationale": "Selected because the generated Grok MP4 matches the storyboard action and preserves source provenance.",
+        },
+    )
+    assert review_response.status_code == 200
+    review_payload = review_response.get_json()
+    assert review_payload["sourceGateReady"] is False
+    assert review_payload["validation"]["acceptedMotionCount"] == 1
+    source_map = json.loads(Path(review_payload["acceptedSourceMapPath"]).read_text(encoding="utf-8"))
+    assert source_map["status"] == "blocked"
+    assert source_map["scenes"][0]["accepted"] is True
+    accepted = source_map["scenes"][0]["acceptedCandidate"]
+    assert accepted["provider"] == "grok-web-video"
+    assert accepted["sourceCheck"]["exists"] is True
+    assert accepted["sourceCheck"]["extensionOk"] is True
+
+
+def test_browser_control_source_library_accepts_gemini_video_as_motion_source(tmp_path):
+    client = _episode_client(tmp_path)
+    client.post("/api/episodes/preproduction-plan", json=_preproduction_payload(create_episode_plan=True))
+
+    source_asset_response = client.post(
+        "/api/episodes/world-cup-opener-check/browser-handoffs/source-asset",
+        json={
+            "operatorApproved": True,
+            "browserControlApproved": True,
+            "provider": "gemini-web-video",
+            "batchId": "browser-control-20260612",
+            "cutId": "cut_001",
+            "sceneId": "scene-001",
+            "expectedFileName": "scene-001.gemini.mp4",
+            "eventType": "gemini-result-visible",
+            "status": "visible",
+            "source": "codex-chrome-browser-control",
+            "proofMode": "browser-control-generate-check",
+            "generationVisible": True,
+            "prompt": "Create a vertical Gemini/Veo video. First second: hand circles the opening date.",
+            "currentUrl": "https://gemini.google.com/app/video-proof",
+            "model": "gemini-veo-web",
+            "assetDataBase64": base64.b64encode(b"fake mp4 bytes for gemini video source").decode("ascii"),
+        },
+    )
+    assert source_asset_response.status_code == 200
+    asset = source_asset_response.get_json()["asset"]
+    assert asset["provider"] == "gemini-web-video"
+    assert asset["assetKind"] == "motion-source"
+    assert asset["fileName"] == "scene-001.gemini.mp4"
+    assert Path(tmp_path / asset["path"]).exists()
+
+    review_response = client.post(
+        "/api/episodes/world-cup-opener-check/source-library/review",
+        json={
+            "operatorApproved": True,
+            "assetId": asset["assetId"],
+            "accepted": True,
+            "storyboardMatch": True,
+            "firstSecondAction": True,
+            "artifactFree": True,
+            "captionSafe": True,
+            "phoneSizeWatch": True,
+            "sourceProvenanceOk": True,
+            "noGenericBroll": True,
+            "qualityReviewNote": "Phone-size review confirms the Gemini video action is clear in the first second.",
+            "sourceRationale": "Selected because the Gemini web video is the generated motion source for this storyboard beat.",
+        },
+    )
+    assert review_response.status_code == 200
+    review_payload = review_response.get_json()
+    assert review_payload["validation"]["acceptedMotionCount"] == 1
+    source_map = json.loads(Path(review_payload["acceptedSourceMapPath"]).read_text(encoding="utf-8"))
+    accepted = source_map["scenes"][0]["acceptedCandidate"]
+    assert accepted["provider"] == "gemini-web-video"
+    assert accepted["assetKind"] == "motion-source"
+    assert accepted["sourceCheck"]["extensionOk"] is True
 
 
 def test_preproduction_plan_blocks_generic_story_without_why_now(tmp_path):

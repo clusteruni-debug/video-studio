@@ -1,8 +1,8 @@
 ---
 plan_id: PLAN-CODE-REVIEW-FOLLOWUP-20260603
 project: video-studio
-status: IN_PROGRESS
-status_reason: Original 10 MED findings + systemic key-in-URL (5 Google sites) resolved 2026-06-04 (CC-direct + Codex review); B2/B3/B4 push-back, D3 useCallback deferred
+status: SHIPPED
+status_reason: All 10 MED + systemic key-in-URL (5 Google sites) + R2 SSRF-redirect/extension-origin findings resolved+verified 2026-06-04 (164 pytest pass, npm build exit 0, grep 0 key-in-URL remaining); B2/B3/B4 push-backs Codex-confirmed; only D3 (non-security useCallback) deferred to dedicated UI pass
 created: 2026-06-03
 source: 6 parallel code-reviewer agents over 64 uncommitted files (worker backend + UI + grok system)
 ---

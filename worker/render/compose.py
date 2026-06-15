@@ -36,6 +36,8 @@ from worker.render.compose_ffmpeg import (
     get_manifest_transition,
     get_scene_motion_preset,
     load_manifest,
+    apply_final_outro_fade,
+    manifest_ending_fade_out_duration,
     mix_bgm_into_output,
     mix_sfx_into_scene_audio,
     normalize_final_audio_loudness,
@@ -44,6 +46,7 @@ from worker.render.compose_ffmpeg import (
     resolve_ffmpeg_executable,
     resolve_relative_asset_path,
     run_ffmpeg,
+    scene_voiceover_target_duration,
     sfx_asset_lookup,
     select_bgm_track,
     synthesize_edge_tts,
@@ -464,13 +467,15 @@ def compose_smoke_render(
         if source_audio_path and source_audio_path.exists():
             log_lines.append(f"audio_source=uploaded path={source_audio_path}")
             log_lines.append("")
-            normalize_audio_duration(
+            audio_duration_fit = normalize_audio_duration(
                 ffmpeg_path=ffmpeg_path,
                 input_path=source_audio_path,
                 output_path=audio_path,
                 duration_sec=scene["durationSec"],
                 log_lines=log_lines,
+                voice_duration_sec=scene_voiceover_target_duration(scene),
             )
+            audio_asset["audioDurationFit"] = audio_duration_fit
             _record_scene_audio_render(
                 audio_asset,
                 provider=str(audio_asset.get("provider") or "upload"),
@@ -565,13 +570,15 @@ def compose_smoke_render(
 
                     tts_backends_used.add(tts_backend)
                     if tts_ok:
-                        normalize_audio_duration(
+                        audio_duration_fit = normalize_audio_duration(
                             ffmpeg_path=ffmpeg_path,
                             input_path=raw_tts_path,
                             output_path=audio_path,
                             duration_sec=scene["durationSec"],
                             log_lines=log_lines,
+                            voice_duration_sec=scene_voiceover_target_duration(scene),
                         )
+                        audio_asset["audioDurationFit"] = audio_duration_fit
                         _record_scene_audio_render(
                             audio_asset,
                             provider=tts_backend,
@@ -828,6 +835,15 @@ def compose_smoke_render(
         output_path=output_path,
         log_lines=log_lines,
     )
+    ending_fade_out_sec = manifest_ending_fade_out_duration(manifest)
+    if ending_fade_out_sec > 0:
+        apply_final_outro_fade(
+            ffmpeg_path=ffmpeg_path,
+            video_path=output_path,
+            output_path=output_path,
+            fade_out_sec=ending_fade_out_sec,
+            log_lines=log_lines,
+        )
     log_lines.append("")
 
     if manifest_dirty:

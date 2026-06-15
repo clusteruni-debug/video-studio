@@ -6,14 +6,17 @@ without changing the existing Grok, render, or final-library contracts.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import re
+import shutil
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from flask import Blueprint, jsonify, request as flask_request
+from flask import Blueprint, jsonify, request as flask_request, send_from_directory
 
 from worker.quality_gate_system import build_episode_gate_system, build_quality_loop_gate_system, gate_system_registry
 from worker.render.render_manifest import slugify
@@ -53,9 +56,22 @@ PREPRODUCTION_BEAT_ROLES = {
     "payoff",
     "cta",
 }
-PREPRODUCTION_ASSET_PROVIDERS = {"gemini-web-image", "grok-web-video", "operator-owned-source"}
-PREPRODUCTION_MOTION_SOURCE_PROVIDERS = {"grok-web-video", "operator-owned-source"}
+PREPRODUCTION_ASSET_PROVIDERS = {"gemini-web-image", "gemini-web-video", "grok-web-video", "operator-owned-source"}
+PREPRODUCTION_MOTION_SOURCE_PROVIDERS = {"gemini-web-video", "grok-web-video", "operator-owned-source"}
 PREPRODUCTION_IMAGE_REFERENCE_PROVIDERS = {"gemini-web-image"}
+SOURCE_LIBRARY_PROVIDERS = {"gemini-web-image", "gemini-web-video", "grok-web-video"}
+SOURCE_LIBRARY_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+SOURCE_LIBRARY_VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v"}
+SOURCE_LIBRARY_GENERATION_EVENTS = {
+    "gemini-result-visible",
+    "gemini-generation-visible",
+    "gemini-result-imported",
+    "grok-generation-visible",
+    "grok-result-visible",
+    "grok-result-imported",
+    "asset-imported",
+    "source-asset-imported",
+}
 ASSET_REVIEW_REQUIRED_FLAGS = {
     "storyboardMatch": "candidate must match the storyboard beat",
     "artifactFree": "candidate must be free of obvious AI artifacts",
@@ -970,6 +986,257 @@ def _append_jsonl(path: Path, payload: dict[str, Any]) -> None:
         + "\n",
         encoding="utf-8",
     )
+
+
+def _project_relative(path: Path) -> str:
+    try:
+        return str(path.resolve(strict=False).relative_to(_project_root.resolve(strict=False))).replace("\\", "/")
+    except (OSError, ValueError):
+        return str(path).replace("\\", "/")
+
+
+def _safe_project_file(value: object) -> Path | None:
+    raw_path = _text(value)
+    if not raw_path:
+        return None
+    candidate = Path(raw_path)
+    if not candidate.is_absolute():
+        candidate = _project_root / candidate
+    try:
+        resolved = candidate.resolve(strict=False)
+        root = _project_root.resolve(strict=False)
+    except OSError:
+        return None
+    try:
+        if resolved != root and root not in resolved.parents:
+            return None
+    except RuntimeError:
+        return None
+    return resolved if resolved.exists() and resolved.is_file() else None
+
+
+def _source_library_dir(episode_id: str) -> Path:
+    return _episode_dir(episode_id) / "source-library"
+
+
+def _source_library_index_path(episode_id: str) -> Path:
+    return _source_library_dir(episode_id) / "assets.json"
+
+
+def _load_source_library(episode_id: str) -> dict[str, Any]:
+    path = _source_library_index_path(episode_id)
+    if path.exists():
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(payload.get("assets"), list):
+            return payload
+    return {
+        "schema": "video-studio.source-library.v1",
+        "episodeId": _episode_id(episode_id),
+        "createdAt": _utc_now(),
+        "updatedAt": _utc_now(),
+        "assetCount": 0,
+        "assets": [],
+    }
+
+
+def _write_source_library(episode_id: str, library: dict[str, Any]) -> None:
+    library["updatedAt"] = _utc_now()
+    assets = library.get("assets") if isinstance(library.get("assets"), list) else []
+    library["assetCount"] = len(assets)
+    _write_json(_source_library_index_path(episode_id), library)
+
+
+def _source_library_asset_url(episode_id: str, asset_id: str, file_kind: str = "file") -> str:
+    return _bridge_url(
+        f"/api/episodes/{_episode_id(episode_id)}/source-library/assets/{urllib.parse.quote(asset_id, safe='')}/{file_kind}"
+    )
+
+
+def _sanitize_asset_file_name(value: object, fallback: str, allowed_suffixes: set[str]) -> str:
+    raw_name = Path(_text(value, fallback)).name
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", raw_name).strip(".-") or fallback
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in allowed_suffixes:
+        safe_name = Path(safe_name).stem + sorted(allowed_suffixes)[0]
+    return safe_name
+
+
+def _asset_kind_for_provider(provider: str) -> str:
+    return "image-reference" if provider == "gemini-web-image" else "motion-source"
+
+
+def _asset_suffixes_for_provider(provider: str) -> set[str]:
+    return SOURCE_LIBRARY_IMAGE_SUFFIXES if provider == "gemini-web-image" else SOURCE_LIBRARY_VIDEO_SUFFIXES
+
+
+def _parse_data_url_or_base64(data: dict[str, Any]) -> bytes:
+    data_url = _text(data.get("assetDataUrl") or data.get("dataUrl"))
+    encoded = _text(data.get("assetDataBase64") or data.get("fileBase64"))
+    if data_url:
+        if "," not in data_url:
+            raise ValueError("assetDataUrl must be a data URL with a comma separator")
+        encoded = data_url.split(",", 1)[1]
+    if not encoded:
+        raise ValueError("assetDataBase64, assetDataUrl, or localFilePath is required to import a generated source asset")
+    return base64.b64decode(encoded, validate=True)
+
+
+def _write_optional_thumbnail(asset_dir: Path, data: dict[str, Any], asset_id: str) -> Path | None:
+    thumbnail_source = _safe_project_file(data.get("thumbnailLocalPath") or data.get("thumbnailPath"))
+    if thumbnail_source:
+        thumbnail_name = _sanitize_asset_file_name(thumbnail_source.name, f"{asset_id}-thumb.png", SOURCE_LIBRARY_IMAGE_SUFFIXES)
+        thumbnail_path = asset_dir / thumbnail_name
+        shutil.copyfile(thumbnail_source, thumbnail_path)
+        return thumbnail_path
+    thumbnail_data = _text(data.get("thumbnailDataBase64") or data.get("thumbnailDataUrl"))
+    if not thumbnail_data:
+        return None
+    payload = {"assetDataBase64": thumbnail_data}
+    if thumbnail_data.startswith("data:"):
+        payload = {"assetDataUrl": thumbnail_data}
+    thumbnail_path = asset_dir / f"{asset_id}-thumb.png"
+    thumbnail_path.write_bytes(_parse_data_url_or_base64(payload))
+    return thumbnail_path
+
+
+def _browser_surface_error(provider: str, current_url: str) -> str:
+    normalized = current_url.strip().lower()
+    if provider == "grok-web-video":
+        if "/c/" in normalized:
+            return "Grok /c/* chat thread URLs are not Imagine generation proof"
+        if not normalized.startswith(GROK_WEB_URL):
+            return "Grok source asset proof must come from https://grok.com/imagine"
+    if provider.startswith("gemini") and not normalized.startswith(GEMINI_WEB_URL):
+        return "Gemini source asset proof must come from the signed-in Gemini app surface"
+    return ""
+
+
+def _source_asset_generation_visible(data: dict[str, Any]) -> bool:
+    event_type = _text(data.get("eventType")).lower()
+    status = _text(data.get("status")).lower()
+    return (
+        data.get("generationVisible") is True
+        or data.get("resultVisible") is True
+        or event_type in SOURCE_LIBRARY_GENERATION_EVENTS
+        or status in {"visible", "generated", "imported", "asset-imported", "saved"}
+    )
+
+
+def _find_source_library_asset(library: dict[str, Any], asset_id: str) -> dict[str, Any] | None:
+    for asset in library.get("assets") or []:
+        if isinstance(asset, dict) and str(asset.get("assetId") or "") == asset_id:
+            return asset
+    return None
+
+
+def _store_source_library_asset(episode_id_value: str, data: dict[str, Any], event_record: dict[str, Any]) -> dict[str, Any]:
+    episode_id = _episode_id(episode_id_value)
+    provider = _short_text(data.get("provider"), limit=80)
+    if provider not in SOURCE_LIBRARY_PROVIDERS:
+        raise ValueError("unsupported source library provider")
+    current_url = _short_text(data.get("currentUrl"), limit=260)
+    surface_error = _browser_surface_error(provider, current_url)
+    if surface_error:
+        raise ValueError(surface_error)
+    if not _source_asset_generation_visible(data):
+        raise ValueError("generationVisible=true or a visible/imported generation event is required before source asset import")
+
+    scene_id = _short_text(data.get("sceneId"), fallback="scene", limit=80)
+    cut_id = _short_text(data.get("cutId"), fallback=scene_id, limit=80)
+    allowed_suffixes = _asset_suffixes_for_provider(provider)
+    file_name = _sanitize_asset_file_name(
+        data.get("fileName") or data.get("expectedFileName") or data.get("sourceFileName"),
+        f"{cut_id}.{sorted(allowed_suffixes)[0].lstrip('.')}",
+        allowed_suffixes,
+    )
+    source_file = _safe_project_file(
+        data.get("localFilePath")
+        or data.get("sourcePath")
+        or data.get("downloadedPath")
+        or data.get("resultFilePath")
+    )
+    asset_seed = "|".join([episode_id, provider, scene_id, cut_id, file_name, current_url])
+    asset_hash = hashlib.sha256(asset_seed.encode("utf-8")).hexdigest()[:12]
+    asset_id = _episode_id(data.get("assetId") or f"{scene_id}-{provider}-{asset_hash}")
+    asset_dir = _source_library_dir(episode_id) / provider / asset_id
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    asset_path = asset_dir / file_name
+    if source_file:
+        shutil.copyfile(source_file, asset_path)
+    else:
+        asset_path.write_bytes(_parse_data_url_or_base64(data))
+    digest = hashlib.sha256(asset_path.read_bytes()).hexdigest()
+    thumbnail_path = _write_optional_thumbnail(asset_dir, data, asset_id)
+    if thumbnail_path is None and provider == "gemini-web-image":
+        thumbnail_path = asset_path
+
+    prompt = _text(data.get("prompt") or data.get("sourcePrompt"))
+    record = {
+        "schema": "video-studio.source-library.asset.v1",
+        "assetId": asset_id,
+        "episodeId": episode_id,
+        "provider": provider,
+        "assetKind": _asset_kind_for_provider(provider),
+        "sceneId": scene_id,
+        "cutId": cut_id,
+        "batchId": _short_text(data.get("batchId"), limit=80),
+        "fileName": file_name,
+        "path": _project_relative(asset_path),
+        "sha256": digest,
+        "sizeBytes": asset_path.stat().st_size,
+        "sourceUrl": _short_text(data.get("sourceUrl") or data.get("resultUrl"), limit=500),
+        "currentUrl": current_url,
+        "prompt": prompt,
+        "model": _short_text(data.get("model") or data.get("sourceModel") or provider, limit=120),
+        "createdAt": _utc_now(),
+        "proofMode": _short_text(data.get("proofMode"), fallback=event_record.get("proofMode") or "browser-control", limit=80),
+        "proofEvent": event_record,
+        "provenance": {
+            "source": _short_text(data.get("source"), fallback="browser-control", limit=120),
+            "provider": provider,
+            "timestamp": _utc_now(),
+            "proofMode": _short_text(data.get("proofMode"), fallback=event_record.get("proofMode") or "browser-control", limit=80),
+            "browserSurface": current_url,
+            "eventType": event_record.get("eventType"),
+            "eventStatus": event_record.get("status"),
+            "usesApi": False,
+            "usesPaidApi": False,
+            "downloadAuthority": "browser-control-captured-or-operator-local-file",
+        },
+        "thumbnailPath": _project_relative(thumbnail_path) if thumbnail_path else "",
+        "thumbnailUrl": _source_library_asset_url(episode_id, asset_id, "thumbnail") if thumbnail_path else "",
+        "thumbnailVisible": thumbnail_path is not None,
+        "candidateTemplate": {
+            "beatId": "",
+            "sceneId": scene_id,
+            "cutId": cut_id,
+            "provider": provider,
+            "sourcePath": _project_relative(asset_path),
+            "sourceUrl": _short_text(data.get("sourceUrl") or data.get("resultUrl"), limit=500),
+            "fileName": file_name,
+            "prompt": prompt,
+        },
+        "review": {
+            "status": "pending",
+            "accepted": False,
+        },
+    }
+    sidecar_path = asset_dir / "provenance.json"
+    _write_json(sidecar_path, record)
+    record["provenancePath"] = _project_relative(sidecar_path)
+
+    library = _load_source_library(episode_id)
+    assets = [item for item in library.get("assets") or [] if isinstance(item, dict) and item.get("assetId") != asset_id]
+    assets.append(record)
+    library["assets"] = assets
+    _write_source_library(episode_id, library)
+    return {
+        "ok": True,
+        "episodeId": episode_id,
+        "asset": record,
+        "sourceLibrary": library,
+        "sourceLibraryPath": str(_source_library_index_path(episode_id)),
+    }
 
 
 def _bridge_url(path: str) -> str:
@@ -2266,9 +2533,9 @@ def _validate_asset_candidate_reviews(
             accepted_references[beat_id].append(candidate)
     for beat_id, beat in beats_by_id.items():
         if not accepted_references.get(beat_id):
-            warnings.append({"field": f"{beat_id}.geminiReference", "message": "Gemini reference image is not accepted yet; Grok generation may drift from the storyboard"})
+            warnings.append({"field": f"{beat_id}.geminiReference", "message": "Gemini reference/source is not accepted yet; motion generation may drift from the storyboard"})
         if not accepted_motion.get(beat_id):
-            errors.append({"field": f"{beat_id}.motionSource", "message": "each storyboard beat needs one accepted Grok/operator motion source before render"})
+            errors.append({"field": f"{beat_id}.motionSource", "message": "each storyboard beat needs one accepted Gemini/Grok/operator motion source before render"})
     return {
         "ok": not errors,
         "status": "ready-for-render" if not errors else "blocked",
@@ -2512,6 +2779,106 @@ def _sync_grok_asset_candidates(episode_id_value: str, data: dict[str, Any]) -> 
         "requiresNoGenericBrollApproval": not (data.get("noGenericBrollApproved") is True),
     }
     _write_json(_episode_dir(episode_id) / "preproduction" / "grok-review-sync.json", result["grokReviewSync"])
+    return result
+
+
+def _source_asset_candidate_from_review(asset: dict[str, Any], data: dict[str, Any], beats: list[dict[str, Any]]) -> dict[str, Any]:
+    beats_by_id = {str(beat.get("beatId") or ""): beat for beat in beats}
+    beats_by_scene = {str(beat.get("sceneId") or ""): beat for beat in beats}
+    beats_by_cut = {str(beat.get("cutId") or ""): beat for beat in beats}
+    beat = (
+        beats_by_id.get(_text(data.get("beatId")))
+        or beats_by_scene.get(_text(data.get("sceneId") or asset.get("sceneId")))
+        or beats_by_cut.get(_text(data.get("cutId") or asset.get("cutId")))
+    )
+    if not beat:
+        raise ValueError("source asset review must map to a preproduction storyboard beat")
+    provider = _text(asset.get("provider"))
+    review = data.get("review") if isinstance(data.get("review"), dict) else {}
+    source_rationale = _text(
+        review.get("sourceRationale")
+        or data.get("sourceRationale")
+        or f"Selected from source library asset {asset.get('assetId')} for this storyboard beat."
+    )
+    quality_note = _text(review.get("qualityReviewNote") or data.get("qualityReviewNote"))
+    return {
+        "candidateId": _text(data.get("candidateId"), f"{beat['beatId']}-{asset.get('assetId')}"),
+        "beatId": beat["beatId"],
+        "sceneId": beat["sceneId"],
+        "cutId": beat.get("cutId"),
+        "provider": provider,
+        "sourcePath": _text(asset.get("path")),
+        "sourceUrl": _text(asset.get("sourceUrl") or asset.get("currentUrl")),
+        "fileName": _text(asset.get("fileName")),
+        "prompt": _text(asset.get("prompt")),
+        "review": {
+            "accepted": data.get("accepted") is True,
+            "storyboardMatch": review.get("storyboardMatch") is True or data.get("storyboardMatch") is True,
+            "firstSecondAction": review.get("firstSecondAction") is True or data.get("firstSecondAction") is True,
+            "artifactFree": review.get("artifactFree") is True or data.get("artifactFree") is True,
+            "captionSafe": review.get("captionSafe") is True or data.get("captionSafe") is True,
+            "phoneSizeWatch": review.get("phoneSizeWatch") is True or data.get("phoneSizeWatch") is True,
+            "sourceProvenanceOk": review.get("sourceProvenanceOk") is True or data.get("sourceProvenanceOk") is True,
+            "noGenericBroll": review.get("noGenericBroll") is True or data.get("noGenericBroll") is True,
+            "qualityReviewNote": quality_note,
+            "sourceRationale": source_rationale,
+            "rejectionReason": _text(review.get("rejectionReason") or data.get("rejectionReason")),
+        },
+    }
+
+
+def _write_source_library_review(episode_id_value: str, data: dict[str, Any]) -> dict[str, Any]:
+    episode_id = _episode_id(episode_id_value)
+    if not _text(data.get("assetId")):
+        raise ValueError("assetId is required")
+    asset_id = _episode_id(data.get("assetId"))
+    library = _load_source_library(episode_id)
+    asset = _find_source_library_asset(library, asset_id)
+    if asset is None:
+        raise ValueError("source library asset not found")
+    now = _utc_now()
+    if data.get("accepted") is not True:
+        asset["review"] = {
+            "status": "rejected" if data.get("rejected") is True else "needs-review",
+            "accepted": False,
+            "updatedAt": now,
+            "rejectionReason": _text(data.get("rejectionReason")),
+        }
+        _write_source_library(episode_id, library)
+        return {
+            "ok": True,
+            "episodeId": episode_id,
+            "asset": asset,
+            "sourceLibrary": library,
+            "sourceGateReady": False,
+        }
+
+    storyboard = _load_episode_file(episode_id, "preproduction/storyboard.json")
+    if storyboard is None:
+        raise ValueError("preproduction storyboard is required before accepting source library assets")
+    beats = storyboard.get("beats") if isinstance(storyboard.get("beats"), list) else []
+    candidate = _source_asset_candidate_from_review(asset, data, beats)
+    existing_review = _load_episode_file(episode_id, "preproduction/asset-candidate-review.json")
+    existing_candidates = (
+        existing_review.get("candidates")
+        if isinstance(existing_review, dict) and isinstance(existing_review.get("candidates"), list)
+        else []
+    )
+    candidates = _merge_asset_candidates(existing_candidates, [candidate])
+    result = _write_asset_candidate_review(episode_id, {"candidates": candidates})
+    asset["review"] = {
+        "status": "accepted" if result.get("validation", {}).get("ok") else "accepted-source-map-blocked",
+        "accepted": True,
+        "updatedAt": now,
+        "candidateId": candidate["candidateId"],
+        "acceptedSourceMapPath": result.get("acceptedSourceMapPath"),
+        "sourceGateStatus": result.get("status"),
+        "sourceGateReady": result.get("ok") is True,
+    }
+    _write_source_library(episode_id, library)
+    result["asset"] = asset
+    result["sourceLibraryPath"] = str(_source_library_index_path(episode_id))
+    result["sourceGateReady"] = result.get("ok") is True
     return result
 
 
@@ -2941,3 +3308,93 @@ def episode_browser_handoff_extension_event_route(episode_id: str):
         "eventLogPath": str(event_path),
         "statusUrl": _bridge_url(f"/api/episodes/{_episode_id(episode_id)}/browser-handoffs"),
     })
+
+
+@episodes_bp.route("/api/episodes/<episode_id>/browser-handoffs/source-asset", methods=["POST"])
+def episode_browser_handoff_source_asset_route(episode_id: str):
+    episode_dir = _episode_dir(episode_id)
+    if not (episode_dir / "browser-handoffs" / "browser-handoffs.json").exists():
+        return jsonify({"ok": False, "error": "episode browser handoffs not found"}), 404
+    data = flask_request.get_json(silent=True) or {}
+    browser_control_approved = data.get("browserControlApproved") is True
+    extension_approved = data.get("extensionApproved") is True
+    if data.get("operatorApproved") is not True or not (extension_approved or browser_control_approved):
+        return jsonify({
+            "ok": False,
+            "error": "operatorApproved=true and extensionApproved=true or browserControlApproved=true are required before source assets are imported",
+        }), 403
+    provider = _short_text(data.get("provider"), fallback="unknown-provider", limit=80)
+    if provider not in SOURCE_LIBRARY_PROVIDERS:
+        return jsonify({"ok": False, "error": "unsupported source library provider"}), 400
+    record = {
+        "updatedAt": _utc_now(),
+        "episodeId": _episode_id(episode_id),
+        "provider": provider,
+        "batchId": _short_text(data.get("batchId"), limit=80),
+        "cutId": _short_text(data.get("cutId"), limit=80),
+        "sceneId": _short_text(data.get("sceneId"), limit=80),
+        "expectedFileName": _short_text(data.get("expectedFileName") or data.get("fileName"), limit=140),
+        "eventType": _short_text(data.get("eventType"), fallback="source-asset-imported", limit=80),
+        "status": _short_text(data.get("status"), fallback="imported", limit=80),
+        "source": _short_text(data.get("source"), fallback="codex-chrome-browser-control", limit=120),
+        "proofMode": _short_text(data.get("proofMode"), fallback="browser-control" if browser_control_approved else "extension", limit=80),
+        "browserControlApproved": browser_control_approved,
+        "extensionApproved": extension_approved,
+        "detail": _short_text(data.get("detail") or data.get("message"), limit=400),
+        "currentUrl": _short_text(data.get("currentUrl"), limit=260),
+        "build": _short_text(data.get("build"), limit=80),
+    }
+    try:
+        payload = _store_source_library_asset(episode_id, data, record)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    record["assetId"] = payload["asset"]["assetId"]
+    record["assetPath"] = payload["asset"]["path"]
+    event_path = episode_dir / "browser-handoffs" / "extension-events.jsonl"
+    _append_jsonl(event_path, record)
+    payload["latestExtensionEvent"] = record
+    payload["eventLogPath"] = str(event_path)
+    payload["statusUrl"] = _bridge_url(f"/api/episodes/{_episode_id(episode_id)}/source-library")
+    return jsonify(payload), 200
+
+
+@episodes_bp.route("/api/episodes/<episode_id>/source-library", methods=["GET"])
+def episode_source_library_route(episode_id: str):
+    if not _episode_dir(episode_id).exists():
+        return jsonify({"ok": False, "error": "episode not found"}), 404
+    library = _load_source_library(_episode_id(episode_id))
+    return jsonify({
+        "ok": True,
+        "episodeId": _episode_id(episode_id),
+        "sourceLibrary": library,
+        "sourceLibraryPath": str(_source_library_index_path(_episode_id(episode_id))),
+    })
+
+
+@episodes_bp.route("/api/episodes/<episode_id>/source-library/assets/<asset_id>/<file_kind>", methods=["GET"])
+def episode_source_library_asset_file_route(episode_id: str, asset_id: str, file_kind: str):
+    library = _load_source_library(_episode_id(episode_id))
+    asset = _find_source_library_asset(library, _episode_id(asset_id))
+    if asset is None:
+        return jsonify({"ok": False, "error": "source library asset not found"}), 404
+    path_key = "thumbnailPath" if file_kind == "thumbnail" else "path"
+    requested = _safe_project_file(asset.get(path_key))
+    if requested is None:
+        return jsonify({"ok": False, "error": f"source library {file_kind} file not found"}), 404
+    return send_from_directory(str(requested.parent), requested.name)
+
+
+@episodes_bp.route("/api/episodes/<episode_id>/source-library/review", methods=["POST"])
+def episode_source_library_review_route(episode_id: str):
+    data = flask_request.get_json(silent=True) or {}
+    if data.get("operatorApproved") is not True:
+        return jsonify({"ok": False, "error": "operatorApproved=true is required before source library review"}), 400
+    try:
+        payload = _write_source_library_review(episode_id, data)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    return jsonify(payload), 200

@@ -81,14 +81,38 @@ QUALITY_RATCHET_VIEWER_FACING_TERMS = (
     "gemini",
     "stock",
 )
+AUDIENCE_INTEREST_GENERIC_TERMS = (
+    "people are interested",
+    "viral",
+    "trending",
+    "popular",
+    "hot topic",
+    "good topic",
+    "interesting topic",
+    "everyone likes",
+    "요즘 관심",
+    "사람들이 관심",
+    "바이럴",
+    "트렌딩",
+    "인기 소재",
+    "흥미로운 소재",
+    "좋은 소재",
+)
+UPLOAD_CANDIDATE_FLAGS = (
+    "uploadCandidate",
+    "uploadCandidateRequired",
+    "publishCandidate",
+)
+UPLOAD_CANDIDATE_ALLOWED_PROVIDER_MODES = {"grok-only", "gemini-only"}
+CAPTION_PURPOSES = {"hook", "friction", "action", "payoff", "context", "proof", "none"}
 SCENE_COLORS = ["#183153", "#3f5c7a", "#7c4d3a", "#556b2f", "#5f4b8b", "#7b3f61"]
 DEFAULT_MOTION_PRESET = "none"
 DEFAULT_TRANSITION_TYPE = "fade"
 DEFAULT_TRANSITION_DURATION = 0.5
 
 BGM_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
-BGM_VOLUME = float(os.environ.get("VIDEO_STUDIO_BGM_VOLUME", "0.35"))
-BGM_MIX_GAIN = float(os.environ.get("VIDEO_STUDIO_BGM_MIX_GAIN", "1.55"))
+BGM_VOLUME = float(os.environ.get("VIDEO_STUDIO_BGM_VOLUME", "0.28"))
+BGM_MIX_GAIN = float(os.environ.get("VIDEO_STUDIO_BGM_MIX_GAIN", "0.55"))
 BGM_DUCK_THRESHOLD = float(os.environ.get("VIDEO_STUDIO_BGM_DUCK_THRESHOLD", "0.08"))
 BGM_DUCK_RATIO = float(os.environ.get("VIDEO_STUDIO_BGM_DUCK_RATIO", "2.6"))
 BGM_DUCK_RELEASE_MS = int(os.environ.get("VIDEO_STUDIO_BGM_DUCK_RELEASE_MS", "180"))
@@ -122,8 +146,69 @@ FREE_AUDIO_STOCK_PROVIDERS = {
 FREE_NARRATION_PROVIDERS = {"edge-tts", "windows-speech", "windows-tts", "edge"}
 DRAFT_ONLY_NARRATION_PROVIDERS = {"windows-speech", "windows-tts"}
 LOCAL_ORIGINAL_VIDEO_INTENTS = {"wan", "ltx-video", "hunyuan-video"}
+INTERNET_SOURCE_TAGS = {
+    "internet-source",
+    "internet-image",
+    "internet-gif",
+    "internet-meme",
+    "internet-meme-gif",
+    "meme-image",
+    "reaction-image",
+    "community-image",
+    "web-image",
+    "meme-gif",
+    "reaction-gif",
+    "community-gif",
+    "web-gif",
+    "public-domain-image",
+    "public-domain-gif",
+    "cc-image",
+    "cc-gif",
+    "wikimedia-image",
+    "wikimedia-gif",
+}
+STILL_IMAGE_PRIMARY_ALLOWED_TERMS = {
+    "meme",
+    "reaction",
+    "jjalg",
+    "screenshot",
+    "screen-capture",
+    "source-capture",
+    "web-capture",
+    "official-capture",
+    "document-capture",
+    "evidence-card",
+    "reference-card",
+    "source-card",
+    "data-card",
+    "chart",
+    "graph",
+    "table-source",
+    "document-source",
+    "짤",
+    "움짤",
+    "밈",
+}
+INTERNET_SOURCE_FETCH_PASS_STATUSES = {"fetched", "downloaded", "pass", "ok", "ready", "saved"}
+INTERNET_SOURCE_MEDIA_KINDS = {"gif", "video", "image"}
+SOURCE_FIRST_REQUIRED_FLAGS = (
+    "sourceFirstRequired",
+    "sourceFirstQualityGateRequired",
+    "grokGeminiSourceRequired",
+)
+GEMINI_VIDEO_SOURCE_TAGS = {
+    "gemini",
+    "gemini-video",
+    "gemini-handoff",
+    "gemini-web-handoff",
+    "gemini-web-video",
+    "gemini-video-handoff",
+}
 GROK_SOURCE_PROVENANCE_ACCEPTABLE_STATUSES = {
+    "accepted-source-library-proof",
     "browser-native-original-download",
+    "browser-control-cache-origin-import",
+    "browser-control-cache-range-reassembly",
     "local-mp4-download-unverified",
     "local-mp4-source-unverified",
 }
@@ -264,6 +349,361 @@ REFERENCE_EDIT_GRAMMAR_TERMS = (
     "세이프",
     "세이프존",
 )
+INTERNET_SOURCE_MOTION_EDITORIAL_TERMS = (
+    "gif",
+    "video",
+    "motion",
+    "moving",
+    "animated",
+    "loop",
+    "movement",
+    "움직",
+    "동작",
+    "낙하",
+    "떨어",
+    "움짤",
+)
+INTERNET_SOURCE_STILL_EDITORIAL_TERMS = (
+    "image",
+    "photo",
+    "still",
+    "frame",
+    "picture",
+    "사진",
+    "정지",
+    "이미지",
+    "프레임",
+    "현장",
+    "맥락",
+    "배경",
+)
+INTERNET_SOURCE_WEAK_CAPTION_TERMS = (
+    "source beat",
+    "proof beat",
+    "proof scene",
+    "motion proof",
+    "source proof",
+    "internet source",
+    "generic source",
+    "핵심 장면",
+    "증거 장면",
+    "소스 장면",
+    "장면 설명",
+    "맥락 장면",
+    "에서 시작",
+    "시작",
+    "확인",
+    "같이 떨어지는 장면",
+    "공기 없는 달에서 시작",
+)
+CONVERSATIONAL_COPY_FORBIDDEN_TERMS = (
+    "source beat",
+    "proof beat",
+    "proof scene",
+    "motion proof",
+    "source proof",
+    "internet source",
+    "generic source",
+    "layout",
+    "caption",
+    "subtitle",
+    "tts",
+    "prompt",
+    "핵심 장면",
+    "증거 장면",
+    "소스 장면",
+    "장면 설명",
+    "맥락 장면",
+    "장면",
+    "도입부",
+    "제작",
+    "프롬프트",
+    "레이아웃",
+    "자막",
+    "내레이션",
+    "에서 시작",
+    "결론은",
+    "확인한다",
+    "보여준다",
+    "같이 떨어지는 장면",
+    "공기 없는 달에서 시작",
+)
+CONVERSATIONAL_COPY_PROMPT_KEYS = (
+    "copyStylePrompt",
+    "captionScriptPrompt",
+    "scriptStylePrompt",
+    "subtitleScriptPrompt",
+    "conversationalCopyPrompt",
+)
+CONVERSATIONAL_COPY_TONE_TERMS = (
+    "conversational",
+    "spoken",
+    "casual",
+    "구어체",
+    "말하듯",
+    "친구한테",
+    "대화체",
+)
+CONVERSATIONAL_COPY_KOREAN_MARKERS = (
+    "?",
+    "어,",
+    "왜",
+    "그래",
+    "보이죠",
+    "있죠",
+    "없죠",
+    "죠",
+    "요",
+    "잖",
+    "거든",
+    "네",
+    "봐",
+    "맞",
+    "진짜",
+    "잠깐",
+)
+CONVERSATIONAL_COPY_ENGLISH_MARKERS = (
+    "?",
+    "see",
+    "look",
+    "watch",
+    "wait",
+    "you",
+    "here",
+    "now",
+    "let's",
+)
+SCRIPT_QUALITY_PROMPT_LABEL_TERMS = (
+    "bare label",
+    "label-only",
+    "noun-only",
+    "source label",
+    "scene label",
+    "라벨형",
+    "라벨만",
+    "명사만",
+    "소스명",
+)
+SCRIPT_QUALITY_PROMPT_PAYOFF_TERMS = (
+    "hook",
+    "turn",
+    "payoff",
+    "reaction",
+    "curiosity",
+    "viewer task",
+    "훅",
+    "전환",
+    "반응",
+    "호기심",
+    "payoff",
+    "댓글",
+)
+SCRIPT_QUALITY_THIN_REACTION_ENDINGS = (
+    "보여요",
+    "보이죠",
+    "바뀌죠",
+    "갈리죠",
+    "느껴요",
+    "느껴지죠",
+    "보이나요",
+    "see?",
+    "shows?",
+    "changes?",
+    "right?",
+)
+SCRIPT_QUALITY_SUBSTANTIVE_TURN_TERMS = (
+    "에서",
+    "순간",
+    "때문",
+    "같은",
+    "다른",
+    "정답",
+    "댓글",
+    "다시",
+    "비교",
+    "사람마다",
+    "갈리는",
+    "바로",
+    "instead",
+    "because",
+    "before",
+    "after",
+    "same",
+    "different",
+    "comment",
+    "answer",
+    "real",
+    "fake",
+    "loop",
+    "motion",
+)
+SCRIPT_QUALITY_MIN_NARRATION_CHARS_BY_PURPOSE = {
+    "hook": 22,
+    "proof": 22,
+    "context": 22,
+    "payoff": 26,
+}
+VIEWER_COPY_TURN_TERMS = (
+    "왜",
+    "뭐가",
+    "먼저",
+    "잠깐",
+    "지금",
+    "같이",
+    "보여",
+    "보이",
+    "바뀌",
+    "번갈",
+    "뒤집",
+    "갈리",
+    "다르",
+    "느껴",
+    "기울",
+    "착시",
+    "댓글",
+    "정답",
+    "which",
+    "why",
+    "first",
+    "wait",
+    "switch",
+    "turns",
+    "changes",
+    "comment",
+)
+VIEWER_COPY_ARC_TERMS_BY_PURPOSE = {
+    "hook": ("왜", "뭐", "먼저", "잠깐", "지금", "보여", "보이", "wait", "why", "first"),
+    "proof": ("바뀌", "번갈", "같은", "먼저", "보여", "보이", "switch", "changes", "same"),
+    "context": ("왜", "바뀌", "뒤집", "같은", "다르", "느껴", "switch", "changes", "why"),
+    "payoff": ("댓글", "갈리", "다르", "정답", "남겨", "comment", "different", "answer"),
+}
+CONVERSATIONAL_COPY_REPETITION_STOPWORDS = {
+    "그리고",
+    "그래서",
+    "이번엔",
+    "먼저",
+    "보세요",
+    "봐요",
+    "이제",
+    "정말",
+    "거의",
+    "scene",
+    "this",
+    "that",
+    "with",
+    "from",
+    "here",
+    "there",
+}
+KOREAN_FORMAL_ENDING_PATTERN = re.compile(r"(?:습니다|ㅂ니다|입니다|합니다|됩니다|했습니다|였습니다|니다)")
+TTS_PACING_MAX_TEMPO_SPEED = 1.15
+TTS_PACING_MAX_KOREAN_COMPACT_CHARS_PER_SEC = 7.6
+TTS_PACING_MAX_ENGLISH_WORDS_PER_SEC = 3.4
+TTS_PACING_MIN_SUBTITLE_NARRATION_RATIO = 0.30
+ENDING_TAIL_MIN_HOLD_SEC = 1.1
+ENDING_TAIL_MAX_HOLD_SEC = 1.8
+ENDING_FADE_OUT_MIN_SEC = 0.7
+ENDING_FINAL_VOICE_MAX_SEC = 4.8
+ENDING_FINAL_CAPTION_MIN_VOICE_COVERAGE_RATIO = 0.4
+CAPTION_RENDER_MAX_DURATION_BY_PRESET = {
+    "top-hook": 1.35,
+    "center-short": 1.6,
+    "lower-info": 1.8,
+}
+CAPTION_RENDER_MAX_DURATION_BY_LAYOUT_VARIANT = {
+    "korean-reference-caption": 1.95,
+    "korean-reference-subtitle": 1.95,
+    "korean-readable-caption": 1.95,
+    "korean-punch": 1.45,
+    "korean-large-caption": 1.45,
+    "korean-shorts-caption": 1.45,
+}
+SOURCE_LOOP_RHYTHM_REVIEW_MIN_CHARS = 36
+SOURCE_LOOP_REVIEW_TERMS = (
+    "loop",
+    "repeat",
+    "replay",
+    "callback",
+    "rhythm",
+    "timing",
+    "caption",
+    "beat",
+    "루프",
+    "반복",
+    "다시",
+    "콜백",
+    "호흡",
+    "타이밍",
+    "자막",
+)
+SOURCE_INTENT_ROLES = {
+    "hook",
+    "setup",
+    "context",
+    "proof",
+    "closeup",
+    "replay",
+    "payoff",
+    "callback",
+    "contrast",
+    "reaction",
+}
+SOURCE_INTENT_GENERIC_TERMS = (
+    "contextually",
+    "relevant",
+    "appropriate",
+    "fits the scene",
+    "for this scene",
+    "맥락에 맞게",
+    "어울리는",
+    "적절한",
+    "좋은 소스",
+    "관련 소스",
+)
+VISUAL_FRAME_REVIEW_REQUIRED_VERDICTS = (
+    "sourceDominanceVerdict",
+    "captionOcclusionVerdict",
+    "layoutNaturalnessVerdict",
+    "ttsCaptionSyncVerdict",
+    "captionTtsHumanVerdict",
+    "motionStabilityVerdict",
+    "sourceRepetitionVerdict",
+    "endingResolutionVerdict",
+)
+INTERNET_SOURCE_INTEGRATION_STOPWORDS = {
+    "source",
+    "scene",
+    "viewer",
+    "visual",
+    "video",
+    "image",
+    "internet",
+    "media",
+    "caption",
+    "subtitle",
+    "layout",
+    "proof",
+    "asset",
+    "beat",
+    "beats",
+    "feel",
+    "feels",
+    "real",
+    "concrete",
+    "generic",
+    "visible",
+    "장면",
+    "시청자",
+    "소스",
+    "자막",
+    "레이아웃",
+    "이미지",
+    "영상",
+    "미디어",
+    "증거",
+    "역할",
+    "선택",
+}
 PRODUCTION_META_HARD_TERMS = (
     "tts",
     "b-roll",
@@ -471,6 +911,141 @@ def write_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def _scene_or_asset_value(scene: dict, visual_asset: dict, *keys: str) -> str:
+    for container in (scene, visual_asset):
+        if not isinstance(container, dict):
+            continue
+        for key in keys:
+            value = str(container.get(key) or "").strip()
+            if value:
+                return value
+    return ""
+
+
+def _source_loop_group_id(scene: dict, visual_asset: dict | None = None) -> str:
+    return _scene_or_asset_value(
+        scene,
+        visual_asset or {},
+        "sourceLoopGroupId",
+        "source_loop_group_id",
+        "loopGroupId",
+        "loop_group_id",
+        "intentionalRepeatGroupId",
+    )
+
+
+def _source_loop_repeat_approved(scene: dict, visual_asset: dict | None = None) -> bool:
+    visual_asset = visual_asset or {}
+    return any(
+        value is True or str(value or "").strip().lower() in {"1", "true", "yes", "pass", "approved", "intentional"}
+        for value in (
+            scene.get("sourceLoopRepeatApproved"),
+            scene.get("intentionalSourceLoop"),
+            scene.get("sourceLoopApproved"),
+            visual_asset.get("sourceLoopRepeatApproved"),
+            visual_asset.get("intentionalSourceLoop"),
+            visual_asset.get("sourceLoopApproved"),
+        )
+    )
+
+
+def _source_loop_review_text(scene: dict, visual_asset: dict | None = None) -> str:
+    return _scene_or_asset_value(
+        scene,
+        visual_asset or {},
+        "sourceLoopRhythmReview",
+        "loopRhythmReview",
+        "sourceLoopReview",
+        "loopReview",
+        "sourceLoopPurpose",
+        "loopPurpose",
+    )
+
+
+def _source_loop_repeat_pair_approved(
+    first_scene: dict,
+    first_visual_asset: dict,
+    scene: dict,
+    visual_asset: dict,
+) -> bool:
+    group_id = _source_loop_group_id(scene, visual_asset)
+    if not group_id or group_id != _source_loop_group_id(first_scene, first_visual_asset):
+        return False
+    return _source_loop_repeat_approved(first_scene, first_visual_asset) and _source_loop_repeat_approved(
+        scene,
+        visual_asset,
+    )
+
+
+def _ending_tail_hold_seconds(scene: dict, ending: dict | None = None) -> float:
+    ending = ending or {}
+    for container in (scene, ending):
+        if not isinstance(container, dict):
+            continue
+        for key in ("endingTailHoldSec", "ending_tail_hold_sec", "tailHoldSec", "tail_hold_sec", "finalHoldSec"):
+            try:
+                value = float(container.get(key) or 0)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                return value
+    return 0.0
+
+
+def _ending_fade_out_seconds(scene: dict, ending: dict | None = None) -> float:
+    ending = ending or {}
+    for container in (scene, ending):
+        if not isinstance(container, dict):
+            continue
+        for key in ("endingFadeOutSec", "ending_fade_out_sec", "fadeOutSec", "fade_out_sec", "finalFadeOutSec"):
+            try:
+                value = float(container.get(key) or 0)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                return value
+    return 0.0
+
+
+def scene_voiceover_target_duration(scene: dict) -> float:
+    duration_sec = _scene_duration_seconds(scene)
+    if duration_sec <= 0:
+        return 0.0
+    tail_hold_sec = min(_ending_tail_hold_seconds(scene), max(0.0, duration_sec - 0.5))
+    return max(0.5, duration_sec - tail_hold_sec)
+
+
+def manifest_ending_fade_out_duration(manifest: dict) -> float:
+    scenes = manifest.get("scenes") if isinstance(manifest.get("scenes"), list) else []
+    final_scene = scenes[-1] if scenes else {}
+    ending = manifest.get("endingSystem") if isinstance(manifest.get("endingSystem"), dict) else {}
+    return _ending_fade_out_seconds(final_scene, ending)
+
+
+def _normalized_layout_variant_key(scene: dict) -> str:
+    return str(
+        scene.get("layoutVariantKey")
+        or scene.get("layout_variant_key")
+        or scene.get("layoutVariant")
+        or scene.get("layout_variant")
+        or ""
+    ).strip().lower().replace("_", "-")
+
+
+def _rendered_caption_duration_seconds(scene: dict, scene_duration_sec: float = 0.0) -> float:
+    declared_sec = _scene_caption_duration(scene)
+    if declared_sec <= 0:
+        return 0.0
+    cap_sec = CAPTION_RENDER_MAX_DURATION_BY_LAYOUT_VARIANT.get(_normalized_layout_variant_key(scene))
+    if cap_sec is None:
+        preset = str(scene.get("captionPreset") or scene.get("caption_preset") or "").strip().lower()
+        cap_sec = CAPTION_RENDER_MAX_DURATION_BY_PRESET.get(preset)
+    rendered_sec = min(declared_sec, cap_sec) if cap_sec else declared_sec
+    if scene_duration_sec > 0:
+        rendered_sec = min(rendered_sec, scene_duration_sec)
+    return max(0.0, rendered_sec)
+
+
 def _required_narration_chars(content_template: str, scene_id: str, first_scene_id: str) -> int:
     """Minimum compact narration length needed before TTS evidence is credible."""
     if content_template in LONGFORM_NARRATION_TEMPLATES:
@@ -490,7 +1065,8 @@ def _short_voiceover_callout_approved(
     duration_sec: float,
 ) -> bool:
     """Allow deliberately short action callouts when the clip is too short for full narration."""
-    if content_template not in SHORTFORM_TIGHT_NARRATION_TEMPLATES:
+    source_loop_callout = _source_loop_repeat_approved(scene, {})
+    if content_template not in SHORTFORM_TIGHT_NARRATION_TEMPLATES and not source_loop_callout:
         return False
     if not (0 < duration_sec <= 4.5):
         return False
@@ -505,10 +1081,46 @@ def _short_voiceover_callout_approved(
         or scene.get("callout_style")
     )
     layout_key = _normalized_audio_design_mode(scene.get("layoutVariantKey") or scene.get("layout_variant_key"))
-    return style in {"short-action-callout", "short-callout", "action-callout"} or layout_key in {
+    return source_loop_callout or style in {
+        "short-action-callout",
+        "short-callout",
+        "action-callout",
+        "source-loop-callout",
+        "short-source-loop-callout",
+    } or layout_key in {
         "routine-action-command",
         "short-action-callout",
+        "source-loop-repeat",
     }
+
+
+def _final_payoff_short_narration_approved(
+    scene: dict,
+    scene_id: str,
+    final_scene_id: str,
+    narration_length: int,
+    subtitle_length: int,
+) -> bool:
+    if scene_id != final_scene_id:
+        return False
+    purpose = _normalized_audio_design_mode(scene.get("endingPurpose") or scene.get("ending_purpose"))
+    if purpose not in {"payoff", "resolution", "takeaway", "final-payoff", "final-resolution"}:
+        return False
+    if _manual_visual_verdict_status(str(scene.get("endingVerdict") or "")) == "fail":
+        return False
+    has_ending_review = bool(str(scene.get("endingPacingReview") or "").strip())
+    has_takeaway_review = bool(str(scene.get("finalTakeawayReview") or "").strip())
+    return narration_length >= 24 and subtitle_length >= 8 and has_ending_review and has_takeaway_review
+
+
+def _short_source_loop_callout_scene(scene: dict, content_template: str) -> bool:
+    return _short_voiceover_callout_approved(
+        scene,
+        content_template,
+        _compact_text_length(str(scene.get("narrationText") or "")),
+        _compact_text_length(str(scene.get("subtitleText") or "")),
+        _scene_duration_seconds(scene),
+    )
 
 
 def _normalized_audio_design_mode(value: object) -> str:
@@ -828,6 +1440,7 @@ def _build_quality_ratchet_review(manifest: dict) -> dict:
         raw = {}
     required = bool(
         manifest.get("qualityRatchetRequired") is True
+        or _upload_candidate_required(manifest)
         or manifest.get("qualityIteration")
         or raw
     )
@@ -863,6 +1476,2449 @@ def _build_quality_ratchet_review(manifest: dict) -> dict:
     }
 
 
+def _sample_set_payload(manifest: dict) -> dict:
+    raw = manifest.get("qualitySampleSet") or manifest.get("quality_sample_set") or {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _sample_text(value: object) -> str:
+    if isinstance(value, list):
+        return " ".join(_sample_text(item) for item in value)
+    if isinstance(value, dict):
+        return " ".join(_sample_text(item) for item in value.values())
+    return str(value or "").strip()
+
+
+def _sample_pass_value(value: object) -> bool:
+    return str(value or "").strip().lower() in {"pass", "passed", "ok", "true", "accepted", "ready"}
+
+
+def _sample_review_value_present(value: object) -> bool:
+    return str(value or "").strip().lower() in {
+        "pass",
+        "passed",
+        "ok",
+        "true",
+        "accepted",
+        "ready",
+        "fail",
+        "failed",
+        "rejected",
+        "quality-fail",
+        "baseline-rejected",
+    }
+
+
+def _sample_review_text_present(sample: dict, *keys: str, min_length: int = 48) -> bool:
+    for key in keys:
+        if len(_sample_text(sample.get(key))) >= min_length:
+            return True
+    return False
+
+
+def _sample_status(sample: dict) -> str:
+    return str(sample.get("status") or sample.get("verdict") or "").strip().lower()
+
+
+def _sample_is_accepted(sample: dict) -> bool:
+    status = _sample_status(sample)
+    return sample.get("accepted") is True or status in {"accepted", "pass", "quality-pass", "ready"}
+
+
+def _sample_is_rejected_baseline(sample: dict) -> bool:
+    status = _sample_status(sample)
+    return status in {"rejected", "baseline-rejected", "quality-fail", "fail"} or sample.get("accepted") is False
+
+
+def _sample_source_families(sample: dict) -> set[str]:
+    raw = sample.get("sourceFamilies") or sample.get("sourceTypes") or sample.get("mediaFamilies") or []
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        raw = []
+    return {str(item).strip().lower() for item in raw if str(item).strip()}
+
+
+def _sample_artifact_exists(value: object, project_root: Path | None) -> bool:
+    text = _sample_text(value)
+    if not text or project_root is None:
+        return False
+    path = Path(text)
+    if path.is_absolute():
+        return path.exists()
+    return (project_root / path).exists()
+
+
+def _build_quality_sample_set_review(manifest: dict, project_root: Path | None = None) -> dict:
+    raw = _sample_set_payload(manifest)
+    samples = raw.get("samples") or raw.get("proofs") or raw.get("videos") or []
+    if not isinstance(samples, list):
+        samples = []
+    required = bool(manifest.get("qualitySampleSetRequired") is True or raw)
+    try:
+        min_accepted = int(raw.get("minAcceptedSamples") or manifest.get("minAcceptedQualitySamples") or 2)
+    except (TypeError, ValueError):
+        min_accepted = 2
+    try:
+        min_rejected = int(raw.get("minRejectedBaselines") or 1)
+    except (TypeError, ValueError):
+        min_rejected = 1
+    min_accepted = max(2, min_accepted)
+    min_rejected = max(1, min_rejected)
+
+    accepted_samples: list[dict] = []
+    rejected_baselines: list[dict] = []
+    sample_issues: list[str] = []
+    accepted_topics: set[str] = set()
+    accepted_source_families: set[str] = set()
+    current_project_id = str(manifest.get("projectId") or "").strip()
+    current_project_included = False
+
+    for index, sample in enumerate(samples):
+        if not isinstance(sample, dict):
+            sample_issues.append(f"sample-{index}:object")
+            continue
+        sample_id = str(sample.get("projectId") or sample.get("id") or f"sample-{index}").strip()
+        if current_project_id and sample_id == current_project_id:
+            current_project_included = True
+        topic = str(sample.get("topic") or "").strip()
+        families = _sample_source_families(sample)
+        if _sample_is_accepted(sample):
+            accepted_samples.append(sample)
+            if topic:
+                accepted_topics.add(topic.lower())
+            accepted_source_families.update(families)
+            missing: list[str] = []
+            if not sample_id:
+                missing.append("projectId")
+            if not topic:
+                missing.append("topic")
+            mp4_path = sample.get("mp4Path") or sample.get("renderPath")
+            contact_sheet_path = sample.get("contactSheetPath")
+            if not _sample_text(mp4_path):
+                missing.append("mp4Path")
+            elif not _sample_artifact_exists(mp4_path, project_root):
+                missing.append("mp4PathExists")
+            if not _sample_text(contact_sheet_path):
+                missing.append("contactSheetPath")
+            elif not _sample_artifact_exists(contact_sheet_path, project_root):
+                missing.append("contactSheetPathExists")
+            if not families:
+                missing.append("sourceFamilies")
+            try:
+                unique_source_count = int(sample.get("uniqueSourceCount") or sample.get("distinctSourceCount") or 0)
+            except (TypeError, ValueError):
+                unique_source_count = 0
+            try:
+                duplicate_source_count = int(
+                    sample.get("duplicateSourceCount")
+                    or sample.get("reusedSourceCount")
+                    or sample.get("sourceReuseCount")
+                    or 0
+                )
+            except (TypeError, ValueError):
+                duplicate_source_count = 1
+            if unique_source_count < 2:
+                missing.append("uniqueSourceCount>=2")
+            if duplicate_source_count > 0:
+                if not _sample_pass_value(sample.get("intentionalSourceRepeatVerdict")):
+                    missing.append("intentionalSourceRepeatVerdict=pass")
+                if not _sample_review_text_present(
+                    sample,
+                    "intentionalSourceRepeatReview",
+                    "sourceLoopReframeReview",
+                    "sourceReuseJustification",
+                    min_length=48,
+                ):
+                    missing.append("intentionalSourceRepeatReview>=48")
+            if not _sample_pass_value(sample.get("renderQualityStatus")):
+                missing.append("renderQualityStatus=pass")
+            try:
+                warn_count = int(sample.get("warnCount") or 0)
+            except (TypeError, ValueError):
+                warn_count = 1
+            if warn_count != 0:
+                missing.append("warnCount=0")
+            for verdict_key in (
+                "audienceInterestVerdict",
+                "humanVisualVerdict",
+                "sourceIntentVerdict",
+                "captionTtsVerdict",
+                "captionTtsHumanVerdict",
+                "motionStabilityVerdict",
+                "sourceRepetitionVerdict",
+                "layoutVerdict",
+                "endingVerdict",
+            ):
+                if not _sample_pass_value(sample.get(verdict_key)):
+                    missing.append(f"{verdict_key}=pass")
+            if not _sample_review_text_present(
+                sample,
+                "captionTtsReview",
+                "captionTtsHumanReview",
+                "ttsCaptionReview",
+                min_length=48,
+            ):
+                missing.append("captionTtsReview>=48")
+            if not _sample_review_text_present(
+                sample,
+                "motionStabilityReview",
+                "cameraStabilityReview",
+                "visualStabilityReview",
+                min_length=48,
+            ):
+                missing.append("motionStabilityReview>=48")
+            if not _sample_review_text_present(
+                sample,
+                "sourceRepetitionReview",
+                "sourceReuseReview",
+                "sourceVarietyReview",
+                min_length=48,
+            ):
+                missing.append("sourceRepetitionReview>=48")
+            try:
+                audience_interest_score = int(sample.get("audienceInterestScore") or sample.get("interestScore") or -1)
+            except (TypeError, ValueError):
+                audience_interest_score = -1
+            if audience_interest_score < 4:
+                missing.append("audienceInterestScore>=4")
+            if len(_sample_text(sample.get("interestEvidence") or sample.get("audienceInterestEvidence"))) < 24:
+                missing.append("interestEvidence>=24")
+            if missing:
+                sample_issues.append(f"{sample_id}:{','.join(missing)}")
+        elif _sample_is_rejected_baseline(sample):
+            rejected_baselines.append(sample)
+            missing: list[str] = []
+            if not sample_id:
+                missing.append("projectId")
+            if not topic:
+                missing.append("topic")
+            mp4_path = sample.get("mp4Path") or sample.get("renderPath")
+            contact_sheet_path = sample.get("contactSheetPath")
+            if not _sample_text(mp4_path):
+                missing.append("mp4Path")
+            elif not _sample_artifact_exists(mp4_path, project_root):
+                missing.append("mp4PathExists")
+            if not _sample_text(contact_sheet_path):
+                missing.append("contactSheetPath")
+            elif not _sample_artifact_exists(contact_sheet_path, project_root):
+                missing.append("contactSheetPathExists")
+            if not _sample_text(sample.get("rejectionCause") or sample.get("visibleFailure")):
+                missing.append("baselineRejectionCause")
+            if not _sample_review_value_present(sample.get("humanVisualVerdict")):
+                missing.append("humanVisualVerdict")
+            if missing:
+                sample_issues.append(f"{sample_id}:{','.join(missing)}")
+
+    missing_fields: list[str] = []
+    if len(accepted_samples) < min_accepted:
+        missing_fields.append(f"acceptedSamples>={min_accepted}")
+    if len(rejected_baselines) < min_rejected:
+        missing_fields.append(f"rejectedBaselines>={min_rejected}")
+    if len(accepted_topics) < min_accepted:
+        missing_fields.append("distinctAcceptedTopics")
+    if len(accepted_source_families) < 2:
+        missing_fields.append("sourceFamilyDiversity>=2")
+    if current_project_id and not current_project_included:
+        missing_fields.append("currentProjectInSampleSet")
+    missing_fields.extend(sample_issues)
+    status = "pass"
+    if required and missing_fields:
+        status = "fail"
+    return {
+        "required": required,
+        "status": status,
+        "minAcceptedSamples": min_accepted,
+        "minRejectedBaselines": min_rejected,
+        "acceptedSampleIds": [
+            str(sample.get("projectId") or sample.get("id") or "").strip()
+            for sample in accepted_samples
+        ],
+        "rejectedBaselineIds": [
+            str(sample.get("projectId") or sample.get("id") or "").strip()
+            for sample in rejected_baselines
+        ],
+        "acceptedTopicCount": len(accepted_topics),
+        "acceptedSourceFamilies": sorted(accepted_source_families),
+        "currentProjectIncluded": current_project_included,
+        "missingFields": missing_fields,
+        "payload": raw,
+        "policy": {
+            "sampleRule": "Reusable quality claims need more than one accepted proof video.",
+            "baselineRule": "At least one rejected baseline must remain with real MP4/contact-sheet artifacts, visible rejection cause, and human visual verdict so gate pass and human quality do not collapse into one claim.",
+            "reviewRule": "Each accepted sample needs render pass, warn 0, real MP4/contact-sheet artifacts, audience-interest proof, unique source count/reuse accounting, and human visual verdicts for source intent, motion stability, source repetition, captions/TTS, layout, and ending.",
+        },
+    }
+
+
+def _upload_candidate_required(manifest: dict) -> bool:
+    if any(_truthy_metadata(manifest.get(flag)) for flag in UPLOAD_CANDIDATE_FLAGS):
+        return True
+    render_purpose = str(manifest.get("renderPurpose") or manifest.get("render_purpose") or "").strip().lower()
+    return "upload-candidate" in render_purpose or "publish-candidate" in render_purpose
+
+
+def _provider_consistency_review(manifest: dict, production_summary: dict) -> dict:
+    required = _upload_candidate_required(manifest)
+    mode = str(
+        manifest.get("providerConsistencyMode")
+        or manifest.get("finalProviderMode")
+        or manifest.get("sourceProviderMode")
+        or ""
+    ).strip().lower()
+    total_scenes = int(production_summary.get("totalScenes", 0) or 0)
+    grok = int(production_summary.get("grokHandoffScenes", 0) or 0)
+    gemini = int(production_summary.get("geminiHandoffScenes", 0) or 0)
+    local_model = int(production_summary.get("localModelVideoScenes", 0) or 0)
+    stock = int(production_summary.get("stockVideoScenes", 0) or 0)
+    uploaded = int(production_summary.get("uploadedVideoScenes", 0) or 0)
+    issues: list[str] = []
+    if required and mode not in UPLOAD_CANDIDATE_ALLOWED_PROVIDER_MODES:
+        issues.append("providerConsistencyMode must be grok-only or gemini-only for upload candidates")
+    if required and total_scenes > 0:
+        if mode == "grok-only" and (grok != total_scenes or gemini or local_model or stock or uploaded):
+            issues.append(
+                f"grok-only requires all scenes Grok handoff and no Gemini/local/stock/upload mix: "
+                f"grok={grok}, gemini={gemini}, local={local_model}, stock={stock}, upload={uploaded}, total={total_scenes}"
+            )
+        elif mode == "gemini-only" and (gemini != total_scenes or grok or local_model or stock or uploaded):
+            issues.append(
+                f"gemini-only requires all scenes Gemini handoff and no Grok/local/stock/upload mix: "
+                f"grok={grok}, gemini={gemini}, local={local_model}, stock={stock}, upload={uploaded}, total={total_scenes}"
+            )
+        if local_model == total_scenes and total_scenes > 0:
+            issues.append("local-only is not allowed for upload candidates; keep it as proof/fallback only")
+    return {
+        "required": required,
+        "status": "fail" if issues else "pass",
+        "mode": mode,
+        "allowedModes": sorted(UPLOAD_CANDIDATE_ALLOWED_PROVIDER_MODES),
+        "counts": {
+            "totalScenes": total_scenes,
+            "grokHandoffScenes": grok,
+            "geminiHandoffScenes": gemini,
+            "localModelVideoScenes": local_model,
+            "stockVideoScenes": stock,
+            "uploadedVideoScenes": uploaded,
+        },
+        "issues": issues,
+    }
+
+
+def _scene_field_text(scene: dict, *keys: str) -> str:
+    for key in keys:
+        value = str(scene.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _build_anti_ai_naturalness_review(manifest: dict) -> dict:
+    required = _upload_candidate_required(manifest)
+    missing: list[str] = []
+    rejected: list[str] = []
+    reviewed: list[str] = []
+    for scene in manifest.get("scenes", []):
+        scene_id = str(scene.get("sceneId") or "")
+        verdict = _manual_visual_verdict_status(
+            scene.get("antiAiNaturalnessVerdict")
+            or scene.get("naturalnessVerdict")
+            or scene.get("humanNaturalnessVerdict")
+            or ""
+        )
+        note = _scene_field_text(scene, "naturalnessReviewNote", "antiAiNaturalnessNote")
+        action_reason = _scene_field_text(scene, "actionMotivation", "actionReason", "physicalActionReason")
+        continuity = _scene_field_text(scene, "worldContinuityNote", "continuityNote")
+        scene_missing: list[str] = []
+        if verdict != "pass":
+            scene_missing.append("antiAiNaturalnessVerdict=pass")
+        if len(note) < 48:
+            scene_missing.append("naturalnessReviewNote>=48")
+        if len(action_reason) < 16:
+            scene_missing.append("actionMotivation>=16")
+        if len(continuity) < 24:
+            scene_missing.append("worldContinuityNote/continuityNote>=24")
+        if scene_missing:
+            missing.append(f"{scene_id}:{','.join(scene_missing)}")
+        else:
+            reviewed.append(scene_id)
+        if verdict == "fail":
+            rejected.append(scene_id)
+    status = "pass"
+    if required and (missing or rejected):
+        status = "fail"
+    return {
+        "required": required,
+        "status": status,
+        "reviewedScenes": reviewed,
+        "missingScenes": missing,
+        "rejectedScenes": rejected,
+    }
+
+
+def _build_caption_system_review(manifest: dict, production_summary: dict) -> dict:
+    required = _upload_candidate_required(manifest)
+    policy = manifest.get("captionSystem") if isinstance(manifest.get("captionSystem"), dict) else {}
+    fixed_preset = str(
+        policy.get("fixedPreset")
+        or manifest.get("captionFixedPreset")
+        or manifest.get("captionPresetPolicy")
+        or ""
+    ).strip()
+    if fixed_preset.startswith("fixed-"):
+        fixed_preset = fixed_preset.removeprefix("fixed-")
+    captioned = production_summary.get("captionedSceneIds") or []
+    missing: list[str] = []
+    mismatched: list[str] = []
+    purpose_missing: list[str] = []
+    purpose_by_scene = policy.get("purposeByScene") if isinstance(policy.get("purposeByScene"), dict) else {}
+    for scene in manifest.get("scenes", []):
+        scene_id = str(scene.get("sceneId") or "")
+        preset = str(scene.get("captionPreset") or "lower-info").strip()
+        subtitle_text = str(scene.get("subtitleText") or "").strip()
+        if required and subtitle_text and not fixed_preset:
+            missing.append(scene_id)
+        if required and fixed_preset and subtitle_text and preset != fixed_preset:
+            mismatched.append(f"{scene_id}:{preset}")
+        purpose = str(scene.get("captionPurpose") or purpose_by_scene.get(scene_id) or "").strip().lower()
+        if purpose.startswith("viewer-"):
+            purpose = purpose.removeprefix("viewer-")
+        if required and subtitle_text and purpose not in CAPTION_PURPOSES:
+            purpose_missing.append(scene_id)
+    missing_layout = production_summary.get("missingCaptionLayoutReviewScenes") or []
+    long_top_hook = production_summary.get("longTopHookScenes") or []
+    sparse = bool(production_summary.get("captionSparsePlan"))
+    status = "pass"
+    if required and (missing or mismatched or purpose_missing or missing_layout or long_top_hook or sparse):
+        status = "fail"
+    return {
+        "required": required,
+        "status": status,
+        "fixedPreset": fixed_preset,
+        "captionedScenes": captioned,
+        "missingFixedPresetScenes": missing,
+        "mismatchedPresetScenes": mismatched,
+        "missingPurposeScenes": purpose_missing,
+        "missingLayoutReviewScenes": missing_layout,
+        "longTopHookScenes": long_top_hook,
+        "captionSparsePlan": sparse,
+    }
+
+
+def _build_viewer_takeaway_review(manifest: dict) -> dict:
+    required = _upload_candidate_required(manifest)
+    raw = manifest.get("viewerTakeaway") if isinstance(manifest.get("viewerTakeaway"), dict) else {}
+    understood = str(raw.get("understood") or raw.get("understanding") or "").strip()
+    action = str(raw.get("action") or raw.get("viewerAction") or raw.get("takeawayAction") or "").strip()
+    feeling = str(raw.get("feeling") or raw.get("emotionalState") or raw.get("state") or "").strip()
+    missing = []
+    if len(understood) < 8:
+        missing.append("understood")
+    if len(action) < 8:
+        missing.append("action")
+    if len(feeling) < 6:
+        missing.append("feeling")
+    return {
+        "required": required,
+        "status": "fail" if required and missing else "pass",
+        "missingFields": missing,
+        "payload": raw,
+    }
+
+
+def _source_editorial_layout_required(manifest: dict) -> bool:
+    if manifest.get("sourceEditorialLayoutRequired") is True:
+        return True
+    if manifest.get("sourceCaptureDemo") is True or manifest.get("webImageMixDemo") is True:
+        return True
+    purpose = str(manifest.get("renderPurpose") or "").lower()
+    return "source-first" in purpose or "source-editorial" in purpose or "webmix" in purpose
+
+
+def _scene_layout_payload(scene: dict) -> dict:
+    payload = scene.get("sourceEditorialLayout")
+    return payload if isinstance(payload, dict) else {}
+
+
+def _build_source_editorial_layout_review(manifest: dict) -> dict:
+    """Gate image/source-first layouts before they can be treated as quality proof."""
+    required = _source_editorial_layout_required(manifest)
+    reviewed: list[str] = []
+    missing: list[str] = []
+    rejected: list[str] = []
+    risky_fit: list[str] = []
+    caption_collision: list[str] = []
+    overlap_risk: list[str] = []
+    divider_risk: list[str] = []
+    for scene in manifest.get("scenes", []):
+        scene_id = str(scene.get("sceneId") or "")
+        visual_kind = str(scene.get("visualKind") or "").strip()
+        caption_preset = str(scene.get("captionPreset") or "lower-info").strip()
+        subtitle_text = str(scene.get("subtitleText") or "").strip()
+        layout = _scene_layout_payload(scene)
+        image_fit = _scene_field_text(scene, "imageFitPolicy", "imageFit", "visualFit") or _scene_field_text(layout, "imageFitPolicy", "imageFit", "visualFit")
+        subject_zone = _scene_field_text(scene, "subjectSafeZone", "subjectZone") or _scene_field_text(layout, "subjectSafeZone", "subjectZone")
+        caption_zone = _scene_field_text(scene, "captionSafeZone", "captionZone") or _scene_field_text(layout, "captionSafeZone", "captionZone")
+        crop_note = _scene_field_text(scene, "layoutSafetyReview", "cropReviewNote", "sourceEditorialLayoutReview") or _scene_field_text(layout, "layoutSafetyReview", "cropReviewNote", "sourceEditorialLayoutReview")
+        collision_note = _scene_field_text(scene, "captionCollisionReview", "captionOcclusionReview") or _scene_field_text(layout, "captionCollisionReview", "captionOcclusionReview")
+        overlap_note = _scene_field_text(scene, "imageOverlapReview", "visualOverlapReview") or _scene_field_text(layout, "imageOverlapReview", "visualOverlapReview")
+        divider_note = _scene_field_text(scene, "dividerLineReview", "blackLineReview") or _scene_field_text(layout, "dividerLineReview", "blackLineReview")
+        verdict = _scene_field_text(scene, "layoutSafetyVerdict", "captionCollisionVerdict") or _scene_field_text(layout, "layoutSafetyVerdict", "captionCollisionVerdict")
+        overlap_verdict = _scene_field_text(scene, "imageOverlapVerdict", "visualOverlapVerdict") or _scene_field_text(layout, "imageOverlapVerdict", "visualOverlapVerdict")
+        divider_verdict = _scene_field_text(scene, "dividerLineVerdict", "blackLineVerdict") or _scene_field_text(layout, "dividerLineVerdict", "blackLineVerdict")
+        verdict_status = _manual_visual_verdict_status(verdict)
+        overlap_status = _manual_visual_verdict_status(overlap_verdict)
+        divider_status = _manual_visual_verdict_status(divider_verdict)
+        scene_missing: list[str] = []
+        if visual_kind == "image":
+            if image_fit.lower() not in {"cover-safe", "contain-stage", "split-stage", "top-crop-safe", "center-crop-safe"}:
+                scene_missing.append("imageFitPolicy")
+                risky_fit.append(scene_id)
+            if len(subject_zone) < 16:
+                scene_missing.append("subjectSafeZone>=16")
+            if subtitle_text and len(caption_zone) < 16:
+                scene_missing.append("captionSafeZone>=16")
+            if len(crop_note) < 36:
+                scene_missing.append("layoutSafetyReview>=36")
+            if len(overlap_note) < 32:
+                scene_missing.append("imageOverlapReview>=32")
+                overlap_risk.append(scene_id)
+            if overlap_status != "pass":
+                scene_missing.append("imageOverlapVerdict=pass")
+            if len(divider_note) < 24:
+                scene_missing.append("dividerLineReview>=24")
+                divider_risk.append(scene_id)
+            if divider_status != "pass":
+                scene_missing.append("dividerLineVerdict=pass")
+        if subtitle_text and caption_preset != "none":
+            if len(collision_note) < 32:
+                scene_missing.append("captionCollisionReview>=32")
+                caption_collision.append(scene_id)
+            if verdict_status != "pass":
+                scene_missing.append("captionCollisionVerdict=pass")
+        if verdict_status == "fail":
+            rejected.append(scene_id)
+        if scene_missing:
+            missing.append(f"{scene_id}:{','.join(dict.fromkeys(scene_missing))}")
+        else:
+            reviewed.append(scene_id)
+    status = "pass"
+    if required and (missing or rejected):
+        status = "fail"
+    return {
+        "required": required,
+        "status": status,
+        "reviewedScenes": reviewed,
+        "missingScenes": missing,
+        "rejectedScenes": rejected,
+        "riskyImageFitScenes": sorted(set(risky_fit)),
+        "captionCollisionRiskScenes": sorted(set(caption_collision)),
+        "imageOverlapRiskScenes": sorted(set(overlap_risk)),
+        "dividerLineRiskScenes": sorted(set(divider_risk)),
+        "policy": {
+            "imageFitPolicy": ["cover-safe", "contain-stage", "split-stage", "top-crop-safe", "center-crop-safe"],
+            "captionRule": "captioned source-editorial scenes need explicit subject zone, caption zone, collision review, and pass verdict",
+            "overlapRule": "multi-image layouts need no-overlap review and no visible black-divider/gutter artifact verdict",
+        },
+    }
+
+
+def _build_source_editorial_image_context_review(manifest: dict) -> dict:
+    required = _source_editorial_layout_required(manifest)
+    scenes = manifest.get("scenes", [])
+    missing: list[str] = []
+    reviewed: list[str] = []
+    duplicate_scenes: list[str] = []
+    seen: dict[str, str] = {}
+    seen_asset_keys: dict[str, str] = {}
+    for scene in scenes:
+        scene_id = str(scene.get("sceneId") or "")
+        visual_kind = str(scene.get("visualKind") or "").strip()
+        if visual_kind != "image":
+            continue
+        layout = _scene_layout_payload(scene)
+        situation = _scene_field_text(scene, "situationKey", "situationLabel", "sceneSituation") or _scene_field_text(layout, "situationKey", "situationLabel", "sceneSituation")
+        distinct_id = _scene_field_text(scene, "sceneVisualDistinctId", "visualDistinctId") or _scene_field_text(layout, "sceneVisualDistinctId", "visualDistinctId")
+        context_note = _scene_field_text(scene, "situationImageFitReview", "contextImageFitReview", "imageContextReview") or _scene_field_text(layout, "situationImageFitReview", "contextImageFitReview", "imageContextReview")
+        context_verdict = _scene_field_text(scene, "situationImageFitVerdict", "contextImageFitVerdict") or _scene_field_text(layout, "situationImageFitVerdict", "contextImageFitVerdict")
+        scene_missing: list[str] = []
+        if len(situation) < 8:
+            scene_missing.append("situationKey>=8")
+        if len(distinct_id) < 8:
+            scene_missing.append("sceneVisualDistinctId>=8")
+        elif distinct_id in seen:
+            duplicate_scenes.append(f"{scene_id}:same-as-{seen[distinct_id]}")
+            scene_missing.append("sceneVisualDistinctId unique")
+        else:
+            seen[distinct_id] = scene_id
+        asset_key = _scene_field_text(
+            scene,
+            "visualAssetFingerprint",
+            "sourceUrl",
+            "sourceExternalId",
+            "uploadPath",
+            "assetPath",
+            "selectedFilePath",
+        ) or _scene_field_text(
+            layout,
+            "visualAssetFingerprint",
+            "sourceUrl",
+            "sourceExternalId",
+            "uploadPath",
+            "assetPath",
+            "selectedFilePath",
+        )
+        if len(asset_key) >= 8:
+            if asset_key in seen_asset_keys:
+                duplicate_scenes.append(f"{scene_id}:same-asset-as-{seen_asset_keys[asset_key]}")
+                scene_missing.append("visualAssetFingerprint/source unique")
+            else:
+                seen_asset_keys[asset_key] = scene_id
+        if len(context_note) < 40:
+            scene_missing.append("situationImageFitReview>=40")
+        if _manual_visual_verdict_status(context_verdict) != "pass":
+            scene_missing.append("situationImageFitVerdict=pass")
+        if scene_missing:
+            missing.append(f"{scene_id}:{','.join(dict.fromkeys(scene_missing))}")
+        else:
+            reviewed.append(scene_id)
+    status = "pass"
+    if required and (missing or duplicate_scenes):
+        status = "fail"
+    return {
+        "required": required,
+        "status": status,
+        "reviewedScenes": reviewed,
+        "missingScenes": missing,
+        "duplicateVisualScenes": duplicate_scenes,
+        "policy": "Every source-editorial situation needs a unique visual identity, a non-reused source/image fingerprint when provided, and an explicit fit review for that scene's viewer job.",
+    }
+
+
+def _still_image_source_policy_required(manifest: dict) -> bool:
+    return (
+        _truthy_metadata(manifest.get("stillImageSourcePolicyRequired"))
+        or _source_editorial_layout_required(manifest)
+        or _internet_source_context_required(manifest)
+    )
+
+
+def _still_image_source_policy_text(scene: dict, visual_asset: dict) -> str:
+    layout = _scene_layout_payload(scene)
+    payload = _source_acquisition_payload(scene, visual_asset)
+    keys = (
+        "visualSourceIntent",
+        "sourceOrigin",
+        "sourceType",
+        "sourceRole",
+        "imageSourceRole",
+        "stillImageSourceRole",
+        "sourceCategory",
+        "mediaCategory",
+    )
+    values: list[str] = []
+    for container in (scene, visual_asset, layout, payload):
+        if not isinstance(container, dict):
+            continue
+        for key in keys:
+            values.append(str(container.get(key) or ""))
+    return " ".join(values).strip().lower().replace("_", "-")
+
+
+def _still_image_source_allowed_reason(policy_text: str) -> str:
+    for term in sorted(STILL_IMAGE_PRIMARY_ALLOWED_TERMS, key=len, reverse=True):
+        if term in policy_text:
+            return term
+    return ""
+
+
+def _scene_uses_primary_still_image_source(scene: dict, visual_asset: dict) -> tuple[bool, dict]:
+    if not _is_internet_source_candidate(scene, visual_asset):
+        return False, {"candidate": False}
+    _ready, _missing, acquisition_detail = _internet_source_acquisition_scene_status(scene, visual_asset)
+    visual_kind = str(scene.get("visualKind") or visual_asset.get("kind") or "").strip().lower()
+    media_kind = str(acquisition_detail.get("mediaKind") or "").strip().lower()
+    if not media_kind and visual_kind == "image":
+        media_kind = "image"
+    source_role = _scene_field_text(
+        scene,
+        "visualRole",
+        "sourceRole",
+        "imageSourceRole",
+        "stillImageSourceRole",
+    ) or _scene_field_text(
+        visual_asset,
+        "visualRole",
+        "sourceRole",
+        "imageSourceRole",
+        "stillImageSourceRole",
+    )
+    source_role_normalized = source_role.strip().lower().replace("_", "-")
+    support_role = source_role_normalized in {
+        "support",
+        "supporting",
+        "support-card",
+        "evidence-card",
+        "reference-card",
+        "data-card",
+        "caption-support",
+    }
+    primary = visual_kind == "image" and media_kind == "image" and not support_role
+    return primary, {
+        "candidate": True,
+        "visualKind": visual_kind,
+        "mediaKind": media_kind,
+        "sourceRole": source_role_normalized,
+        "supportRole": support_role,
+    }
+
+
+def _build_still_image_source_policy_review(manifest: dict) -> dict:
+    """Block generic web stills from becoming the primary source of non-meme explainers."""
+    required = _still_image_source_policy_required(manifest)
+    reviewed: list[str] = []
+    allowed: list[str] = []
+    support_only: list[str] = []
+    blocked: list[str] = []
+    scene_details: list[dict] = []
+    for scene in manifest.get("scenes", []):
+        scene_id = str(scene.get("sceneId") or "")
+        visual_asset = _visual_asset_for_scene(manifest, scene_id)
+        primary_still, detail = _scene_uses_primary_still_image_source(scene, visual_asset)
+        detail["sceneId"] = scene_id
+        scene_details.append(detail)
+        if not detail.get("candidate") or detail.get("mediaKind") != "image":
+            continue
+        reviewed.append(scene_id)
+        if detail.get("supportRole") is True:
+            support_only.append(scene_id)
+            continue
+        policy_text = _still_image_source_policy_text(scene, visual_asset)
+        allowed_reason = _still_image_source_allowed_reason(policy_text)
+        detail["allowedReason"] = allowed_reason
+        if primary_still and not allowed_reason:
+            blocked.append(f"{scene_id}:primary-still-image-source-not-meme-reaction-capture-card")
+        else:
+            allowed.append(scene_id)
+    status = "pass"
+    if required and blocked:
+        status = "fail"
+    return {
+        "required": required,
+        "status": status,
+        "reviewedScenes": reviewed,
+        "allowedPrimaryStillScenes": allowed,
+        "supportOnlyStillScenes": support_only,
+        "blockedScenes": blocked,
+        "sceneDetails": scene_details,
+        "policy": {
+            "primaryStillAllowedOnlyFor": sorted(STILL_IMAGE_PRIMARY_ALLOWED_TERMS),
+            "rule": "A fetched/web still image may be the primary visual only when the image itself is the subject: meme, reaction, screenshot/source capture, or evidence/reference/data card. General explainers need motion/generated footage as the primary visual.",
+            "supportRule": "Set stillImageSourceRole/imageSourceRole to evidence-card, reference-card, data-card, or support when a still is only a supporting plate.",
+        },
+    }
+
+
+def _build_internet_source_acquisition_review(manifest: dict) -> dict:
+    required = _internet_source_acquisition_required(manifest)
+    reviewed: list[str] = []
+    motion_ready: list[str] = []
+    missing: list[str] = []
+    scene_details: list[dict] = []
+    for scene in manifest.get("scenes", []):
+        scene_id = str(scene.get("sceneId") or "")
+        visual_asset = _visual_asset_for_scene(manifest, scene_id)
+        is_candidate = _is_internet_source_candidate(scene, visual_asset)
+        if not required and not is_candidate:
+            continue
+        ready, scene_missing, detail = _internet_source_acquisition_scene_status(scene, visual_asset)
+        detail["sceneId"] = scene_id
+        detail["candidate"] = is_candidate
+        scene_details.append(detail)
+        if scene_missing:
+            missing.append(f"{scene_id}:{','.join(dict.fromkeys(scene_missing))}")
+            continue
+        reviewed.append(scene_id)
+        if detail.get("motionReady") is True:
+            motion_ready.append(scene_id)
+    status = "pass"
+    if required and (missing or not reviewed):
+        status = "fail"
+    return {
+        "required": required,
+        "status": status,
+        "proofMode": _internet_source_proof_mode(manifest),
+        "reviewedScenes": reviewed,
+        "motionReadyScenes": motion_ready,
+        "missingScenes": missing,
+        "sceneDetails": scene_details,
+        "policy": {
+            "allowedMediaKinds": sorted(INTERNET_SOURCE_MEDIA_KINDS),
+            "motionKinds": ["gif", "video"],
+            "requiredEvidence": [
+                "sourceUrl",
+                "localPath/sourcePath",
+                "sha256",
+                "sizeBytes",
+                "mediaKind",
+                "sourceFetchStatus=fetched",
+                "sourceAcquisitionVerdict=pass",
+                "sourceAcquisitionReview",
+            ],
+        },
+    }
+
+
+def _build_internet_source_context_review(manifest: dict) -> dict:
+    required = _internet_source_context_required(manifest)
+    reviewed: list[str] = []
+    missing: list[str] = []
+    image_ready: list[str] = []
+    motion_ready: list[str] = []
+    media_kinds: set[str] = set()
+    scene_details: list[dict] = []
+    for scene in manifest.get("scenes", []):
+        scene_id = str(scene.get("sceneId") or "")
+        visual_asset = _visual_asset_for_scene(manifest, scene_id)
+        is_candidate = _is_internet_source_candidate(scene, visual_asset)
+        if not required and not is_candidate:
+            continue
+        ready, scene_missing, detail = _internet_source_context_scene_status(manifest, scene, visual_asset)
+        detail["sceneId"] = scene_id
+        detail["candidate"] = is_candidate
+        scene_details.append(detail)
+        media_kind = str(detail.get("mediaKind") or "")
+        if media_kind:
+            media_kinds.add(media_kind)
+        if scene_missing:
+            missing.append(f"{scene_id}:{','.join(dict.fromkeys(scene_missing))}")
+            continue
+        reviewed.append(scene_id)
+        if media_kind == "image":
+            image_ready.append(scene_id)
+        elif media_kind in {"gif", "video"}:
+            motion_ready.append(scene_id)
+    mix_required = _truthy_metadata(manifest.get("sourceTypeMixRequired"))
+    mix_missing = []
+    if mix_required:
+        if not image_ready:
+            mix_missing.append("image")
+        if not motion_ready:
+            mix_missing.append("gif/video")
+    status = "pass"
+    if required and (missing or not reviewed or mix_missing):
+        status = "fail"
+    return {
+        "required": required,
+        "status": status,
+        "proofMode": _internet_source_proof_mode(manifest),
+        "mixRequired": mix_required,
+        "mediaKinds": sorted(media_kinds),
+        "reviewedScenes": reviewed,
+        "imageReadyScenes": image_ready,
+        "motionReadyScenes": motion_ready,
+        "missingScenes": missing,
+        "mixMissing": mix_missing,
+        "sceneDetails": scene_details,
+        "policy": {
+            "sourceFirstRule": "Fetched internet media needs topic, scene purpose, viewer job, selection rationale, media-type decision, and source-fit verdict.",
+            "mediaChoiceRule": "Use GIF/video or generated/local MP4 for general explainer motion; use primary still images only when the still itself is the subject, such as meme, reaction, screenshot/source capture, or evidence/reference/data card.",
+            "mixRule": "When sourceTypeMixRequired is true, at least one image and one GIF/video source must be context-approved.",
+        },
+    }
+
+
+def _internet_source_editorial_integration_required(manifest: dict) -> bool:
+    return _internet_source_context_required(manifest) or (
+        _internet_source_proof_mode(manifest) and _source_editorial_layout_required(manifest)
+    )
+
+
+def _source_context_keywords(*values: object) -> set[str]:
+    keywords: set[str] = set()
+    korean_suffixes = (
+        "에서는",
+        "에서",
+        "으로",
+        "에게",
+        "보다",
+        "처럼",
+        "까지",
+        "부터",
+        "이라는",
+        "라는",
+        "입니다",
+        "이다",
+        "이라",
+        "하고",
+        "하게",
+        "합니다",
+        "한다",
+        "이에요",
+        "예요",
+        "어요",
+        "아요",
+        "네요",
+        "죠",
+        "요",
+        "네",
+        "까",
+        "되는",
+        "하는",
+        "있다",
+        "없다",
+        "이며",
+        "은",
+        "는",
+        "이",
+        "가",
+        "을",
+        "를",
+        "과",
+        "와",
+        "도",
+        "만",
+        "의",
+        "에",
+    )
+    for value in values:
+        text = str(value or "").lower()
+        for raw_token in re.findall(r"[a-z0-9]+|[가-힣]+", text):
+            candidates = {raw_token}
+            if re.fullmatch(r"[가-힣]+", raw_token):
+                for suffix in korean_suffixes:
+                    if raw_token.endswith(suffix) and len(raw_token) > len(suffix) + 1:
+                        candidates.add(raw_token[: -len(suffix)])
+                        break
+            for token in candidates:
+                if len(token) < 2 or token in INTERNET_SOURCE_INTEGRATION_STOPWORDS:
+                    continue
+                keywords.add(token)
+    return keywords
+
+
+def _source_context_overlap(context_keywords: set[str], *values: object) -> list[str]:
+    return sorted(context_keywords & _source_context_keywords(*values))
+
+
+def _contains_editorial_term(value: object, terms: tuple[str, ...]) -> bool:
+    lowered = str(value or "").lower()
+    compact = re.sub(r"\s+", "", lowered)
+    return any(term.lower() in lowered or term.lower() in compact for term in terms)
+
+
+def _internet_source_caption_quality_issue(subtitle_text: str) -> str:
+    stripped = str(subtitle_text or "").strip()
+    if not stripped:
+        return "empty subtitle"
+    lowered = stripped.lower()
+    compact = re.sub(r"\s+", "", lowered)
+    for term in INTERNET_SOURCE_WEAK_CAPTION_TERMS:
+        term_lower = term.lower()
+        if term_lower in lowered or re.sub(r"\s+", "", term_lower) in compact:
+            return f"weak internal-label caption: {term}"
+    if re.search(r"(?:scene|beat|proof)\s*\d*$", lowered) and len(stripped) <= 32:
+        return "weak internal-label caption: scene/beat/proof"
+    if re.search(r"장면$", compact) and _compact_text_length(stripped) <= 14:
+        return "weak internal-label caption: short Korean caption ending with 장면"
+    if compact in {"조건이다름", "맥락확인", "움직임확인", "소스확인"}:
+        return "weak internal-label caption: fragment"
+    return ""
+
+
+def _internet_source_editorial_integration_scene_status(
+    manifest: dict,
+    scene: dict,
+    visual_asset: dict,
+) -> tuple[bool, list[str], dict]:
+    context_ready, context_missing, context_detail = _internet_source_context_scene_status(
+        manifest,
+        scene,
+        visual_asset,
+    )
+    source_context = _source_context_payload(scene, visual_asset)
+    topic = str(context_detail.get("topic") or "").strip()
+    scene_purpose = str(context_detail.get("scenePurpose") or "").strip()
+    viewer_job = str(context_detail.get("viewerJob") or "").strip()
+    media_kind = str(context_detail.get("mediaKind") or "").strip()
+    visual_kind = str(context_detail.get("visualKind") or "").strip()
+    selection_rationale = _source_context_value(
+        scene,
+        visual_asset,
+        "selectionRationale",
+        "sourceRationale",
+        "contextRationale",
+    ) or str(scene.get("sourceRationale") or "").strip()
+    media_choice = _source_context_value(
+        scene,
+        visual_asset,
+        "mediaChoiceRationale",
+        "whyGifOrImage",
+        "sourceTypeDecision",
+    )
+    motion_fit = _source_context_value(scene, visual_asset, "motionFit", "whyMotionFits")
+    still_fit = _source_context_value(scene, visual_asset, "stillFit", "whyStillImageFits")
+    title = str(scene.get("title") or "").strip()
+    subtitle_text = str(scene.get("subtitleText") or "").strip()
+    narration_text = str(scene.get("narrationText") or "").strip()
+    caption_purpose = str(scene.get("captionPurpose") or "").strip().lower()
+    layout_note = str(scene.get("layoutVariantNote") or "").strip()
+    quality_review = str(scene.get("qualityReviewNote") or "").strip()
+    caption_preset = str(scene.get("captionPreset") or "lower-info").strip()
+    source_keywords = _source_context_keywords(
+        topic,
+        scene_purpose,
+        viewer_job,
+        selection_rationale,
+        media_choice,
+        motion_fit,
+        still_fit,
+    )
+    subtitle_overlap = _source_context_overlap(source_keywords, subtitle_text)
+    narration_overlap = _source_context_overlap(source_keywords, narration_text)
+    layout_overlap = _source_context_overlap(source_keywords, layout_note, quality_review)
+    combined_overlap = _source_context_overlap(
+        source_keywords,
+        subtitle_text,
+        narration_text,
+        layout_note,
+        quality_review,
+    )
+    caption_quality_issue = _internet_source_caption_quality_issue(subtitle_text)
+    editorial_text = " ".join([
+        title,
+        subtitle_text,
+        narration_text,
+        layout_note,
+        quality_review,
+        media_choice,
+        motion_fit,
+        still_fit,
+    ])
+    missing: list[str] = []
+    if not context_ready:
+        missing.append(f"internetSourceContextReady({','.join(context_missing)})")
+    if len(source_keywords) < 3:
+        missing.append("sourceContextKeywords>=3")
+    if _compact_text_length(subtitle_text) < 4:
+        missing.append("subtitleText>=4")
+    if caption_quality_issue:
+        missing.append("viewerFacingSubtitle")
+    if caption_purpose.startswith("viewer-"):
+        caption_purpose = caption_purpose.removeprefix("viewer-")
+    if caption_purpose not in CAPTION_PURPOSES:
+        missing.append("captionPurpose")
+    if _compact_text_length(narration_text) < 24 and not _short_source_loop_callout_scene(scene, str(manifest.get("contentTemplate") or manifest.get("templateType") or "")):
+        missing.append("narrationText>=24")
+    if len(subtitle_overlap) < 1:
+        missing.append("subtitleMatchesSourceContext")
+    if len(narration_overlap) < 2:
+        missing.append("narrationMatchesSourceContext>=2")
+    if len(layout_overlap) < 2:
+        missing.append("layoutOrQualityReviewMatchesSourceContext")
+    if len(combined_overlap) < 4:
+        missing.append("combinedEditorialContextOverlap>=4")
+    if len(layout_note) < 36:
+        missing.append("layoutVariantNote>=36")
+    if len(quality_review) < 36:
+        missing.append("qualityReviewNote>=36")
+    if not _caption_layout_reviewed(caption_preset, quality_review):
+        missing.append("captionLayoutReview")
+    if media_kind in {"gif", "video"} and not _contains_editorial_term(
+        editorial_text,
+        INTERNET_SOURCE_MOTION_EDITORIAL_TERMS,
+    ):
+        missing.append("motionLanguageInSubtitleTtsLayout")
+    if media_kind == "image" and not _contains_editorial_term(
+        editorial_text,
+        INTERNET_SOURCE_STILL_EDITORIAL_TERMS,
+    ):
+        missing.append("stillLanguageInSubtitleTtsLayout")
+    return not missing, missing, {
+        "topic": topic,
+        "scenePurpose": scene_purpose,
+        "viewerJob": viewer_job,
+        "mediaKind": media_kind,
+        "visualKind": visual_kind,
+        "sourceContextKeys": sorted(source_context.keys()),
+        "sourceContextKeywords": sorted(source_keywords),
+        "subtitleOverlap": subtitle_overlap,
+        "narrationOverlap": narration_overlap,
+        "layoutOverlap": layout_overlap,
+        "combinedOverlap": combined_overlap,
+        "captionQualityIssue": caption_quality_issue,
+        "layoutVariantNote": layout_note,
+        "captionPurpose": caption_purpose,
+        "captionPreset": caption_preset,
+        "contextReady": context_ready,
+    }
+
+
+def _build_internet_source_editorial_integration_review(manifest: dict) -> dict:
+    required = _internet_source_editorial_integration_required(manifest)
+    reviewed: list[str] = []
+    missing: list[str] = []
+    duplicate_layout_note_scenes: list[str] = []
+    scene_details: list[dict] = []
+    seen_layout_notes: dict[str, str] = {}
+    for scene in manifest.get("scenes", []):
+        scene_id = str(scene.get("sceneId") or "")
+        visual_asset = _visual_asset_for_scene(manifest, scene_id)
+        is_candidate = _is_internet_source_candidate(scene, visual_asset)
+        if not required and not is_candidate:
+            continue
+        ready, scene_missing, detail = _internet_source_editorial_integration_scene_status(
+            manifest,
+            scene,
+            visual_asset,
+        )
+        detail["sceneId"] = scene_id
+        detail["candidate"] = is_candidate
+        layout_note_key = re.sub(r"\s+", " ", str(detail.get("layoutVariantNote") or "").strip().lower())
+        if len(layout_note_key) >= 24:
+            first_seen = seen_layout_notes.get(layout_note_key)
+            if first_seen and first_seen != scene_id:
+                duplicate_layout_note_scenes.append(f"{scene_id}:same-as-{first_seen}")
+                scene_missing.append("layoutVariantNote unique")
+            else:
+                seen_layout_notes[layout_note_key] = scene_id
+        scene_details.append(detail)
+        if scene_missing:
+            missing.append(f"{scene_id}:{','.join(dict.fromkeys(scene_missing))}")
+            continue
+        reviewed.append(scene_id)
+    status = "pass"
+    if required and (missing or not reviewed):
+        status = "fail"
+    return {
+        "required": required,
+        "status": status,
+        "reviewedScenes": reviewed,
+        "missingScenes": missing,
+        "duplicateLayoutNoteScenes": duplicate_layout_note_scenes,
+        "sceneDetails": scene_details,
+        "policy": {
+            "textRule": "Internet-source scenes must tie subtitle, TTS narration, and layout/quality review back to the same source context.",
+            "captionRule": "Viewer-facing captions must be claims/hooks/payoffs, not internal labels such as source beat, proof scene, or short captions ending with 장면.",
+            "mediaRule": "GIF/video scenes need motion language in viewer-facing or layout text; image scenes need still/context language.",
+            "layoutRule": "Scene layout notes must be specific, not repeated boilerplate across internet source scenes.",
+        },
+    }
+
+
+def _topic_hook_payoff_payload(manifest: dict) -> tuple[str, dict]:
+    for key in (
+        "topicHookPayoff",
+        "topicHookPayoffStructure",
+        "narrativeSpine",
+        "sourceProofSpine",
+        "storySpine",
+    ):
+        payload = manifest.get(key)
+        if isinstance(payload, dict):
+            return key, payload
+    return "", {}
+
+
+def _payload_text(payload: dict, manifest: dict, *keys: str) -> str:
+    for key in keys:
+        value = str(payload.get(key) or manifest.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _scene_intent_role(scene: dict, visual_asset: dict) -> str:
+    role = _source_context_value(
+        scene,
+        visual_asset,
+        "intentRole",
+        "sceneIntentRole",
+        "sourceIntentRole",
+        "proofRole",
+        "storyRole",
+    ).lower()
+    return role.removeprefix("viewer-").strip()
+
+
+def _build_topic_hook_payoff_structure_review(manifest: dict) -> dict:
+    required = _internet_source_editorial_integration_required(manifest)
+    payload_key, payload = _topic_hook_payoff_payload(manifest)
+    topic = _payload_text(payload, manifest, "topic", "sourceTopic", "projectTopic")
+    hook = _payload_text(payload, manifest, "hook", "topicHook", "openingHook", "viewerHook")
+    payoff = _payload_text(payload, manifest, "payoff", "finalPayoff", "answer", "viewerPayoff")
+    viewer_takeaway = _payload_text(
+        payload,
+        manifest,
+        "viewerTakeaway",
+        "takeaway",
+        "finalTakeaway",
+    )
+    scenes = manifest.get("scenes", [])
+    first_scene = scenes[0] if scenes else {}
+    final_scene = scenes[-1] if scenes else {}
+    first_asset = _visual_asset_for_scene(manifest, str(first_scene.get("sceneId") or "")) if first_scene else {}
+    final_asset = _visual_asset_for_scene(manifest, str(final_scene.get("sceneId") or "")) if final_scene else {}
+    first_purpose = str(first_scene.get("captionPurpose") or "").strip().lower().removeprefix("viewer-")
+    final_purpose = str(
+        final_scene.get("endingPurpose")
+        or final_scene.get("captionPurpose")
+        or ""
+    ).strip().lower().removeprefix("viewer-")
+    first_role = _scene_intent_role(first_scene, first_asset) if first_scene else ""
+    final_role = _scene_intent_role(final_scene, final_asset) if final_scene else ""
+    hook_scene_ready = first_purpose == "hook" or first_role == "hook"
+    payoff_scene_ready = (
+        final_purpose in {"payoff", "summary", "loop-close", "callback"}
+        or final_role in {"payoff", "callback"}
+    )
+    source_scene_roles = sorted({
+        _scene_intent_role(scene, _visual_asset_for_scene(manifest, str(scene.get("sceneId") or "")))
+        for scene in scenes
+        if _is_internet_source_candidate(scene, _visual_asset_for_scene(manifest, str(scene.get("sceneId") or "")))
+        and _scene_intent_role(scene, _visual_asset_for_scene(manifest, str(scene.get("sceneId") or "")))
+    })
+
+    missing: list[str] = []
+    if not payload:
+        missing.append("topicHookPayoff/narrativeSpine")
+    if len(topic) < 8:
+        missing.append("topic>=8")
+    if len(hook) < 8:
+        missing.append("hook>=8")
+    if len(payoff) < 12:
+        missing.append("payoff>=12")
+    if len(viewer_takeaway) < 16:
+        missing.append("viewerTakeaway>=16")
+    if not hook_scene_ready:
+        missing.append("firstSceneHookRole")
+    if not payoff_scene_ready:
+        missing.append("finalScenePayoffRole")
+    if "proof" not in source_scene_roles and "replay" not in source_scene_roles and "closeup" not in source_scene_roles:
+        missing.append("sourceProofSceneRole")
+    hook_copy_overlap = _source_context_overlap(
+        _source_context_keywords(hook),
+        first_scene.get("subtitleText"),
+        first_scene.get("narrationText"),
+    )
+    payoff_copy_overlap = _source_context_overlap(
+        _source_context_keywords(payoff),
+        final_scene.get("subtitleText"),
+        final_scene.get("narrationText"),
+    )
+    if len(_source_context_keywords(hook)) >= 2 and not hook_copy_overlap:
+        missing.append("hookAppearsInViewerCopy")
+    if len(_source_context_keywords(payoff)) >= 2 and not payoff_copy_overlap:
+        missing.append("payoffAppearsInViewerCopy")
+
+    return {
+        "required": required,
+        "status": "fail" if required and missing else "pass",
+        "payloadKey": payload_key,
+        "missingFields": missing,
+        "topic": topic,
+        "hook": hook,
+        "payoff": payoff,
+        "viewerTakeaway": viewer_takeaway,
+        "firstSceneId": str(first_scene.get("sceneId") or ""),
+        "firstScenePurpose": first_purpose,
+        "firstSceneRole": first_role,
+        "finalSceneId": str(final_scene.get("sceneId") or ""),
+        "finalScenePurpose": final_purpose,
+        "finalSceneRole": final_role,
+        "hookCopyOverlap": hook_copy_overlap,
+        "payoffCopyOverlap": payoff_copy_overlap,
+        "sourceSceneRoles": source_scene_roles,
+        "policy": {
+            "spineRule": "Internet-source renders must start from topic/hook/payoff before selecting GIFs or images.",
+            "hookRule": "The first scene must explicitly serve the viewer hook.",
+            "payoffRule": "The final scene must close the same question with a payoff, summary, callback, or loop-close beat.",
+            "copyRule": "The opening hook and final payoff must be visible in viewer-facing subtitle or TTS, not only in internal planning notes.",
+        },
+    }
+
+
+def _audience_interest_payload(manifest: dict) -> tuple[str, dict]:
+    for key in (
+        "audienceInterest",
+        "audienceInterestFit",
+        "topicDemand",
+        "topicDemandSignal",
+        "trendFit",
+        "viewerDemand",
+    ):
+        payload = manifest.get(key)
+        if isinstance(payload, dict):
+            return key, payload
+    return "", {}
+
+
+def _audience_interest_required(manifest: dict) -> bool:
+    return bool(
+        _truthy_metadata(manifest.get("audienceInterestRequired"))
+        or _upload_candidate_required(manifest)
+        or _truthy_metadata(manifest.get("qualitySampleSetRequired"))
+        or _sample_set_payload(manifest)
+    )
+
+
+def _interest_score(payload: dict) -> int:
+    for key in ("interestScore", "audienceInterestScore", "demandScore", "curiosityScore"):
+        try:
+            return int(payload.get(key))
+        except (TypeError, ValueError):
+            continue
+    return -1
+
+
+def _valid_interest_evidence_count(payload: dict) -> int:
+    raw = payload.get("evidenceItems") or payload.get("signals") or payload.get("interestEvidenceItems") or []
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return 0
+    count = 0
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        source = _sample_text(item.get("source") or item.get("surface") or item.get("url") or item.get("label"))
+        signal = _sample_text(item.get("signal") or item.get("evidence") or item.get("metric"))
+        relevance = _sample_text(item.get("relevance") or item.get("whyItMatters") or item.get("viewerReason"))
+        if len(source) >= 4 and len(signal) >= 8 and len(relevance) >= 16:
+            count += 1
+    return count
+
+
+def _build_audience_interest_source_fit_review(manifest: dict) -> dict:
+    required = _audience_interest_required(manifest)
+    concrete_signal_required = bool(
+        _truthy_metadata(manifest.get("qualitySampleSetRequired"))
+        or _sample_set_payload(manifest)
+        or _upload_candidate_required(manifest)
+    )
+    payload_key, payload = _audience_interest_payload(manifest)
+    topic_payload_key, topic_payload = _topic_hook_payoff_payload(manifest)
+    target_audience = _payload_text(
+        payload,
+        manifest,
+        "targetAudience",
+        "audience",
+        "viewerSegment",
+        "market",
+    )
+    interest_driver = _payload_text(
+        payload,
+        manifest,
+        "interestDriver",
+        "whyPeopleCare",
+        "curiosityAngle",
+        "viewerCuriosity",
+    )
+    why_now = _payload_text(
+        payload,
+        manifest,
+        "whyNow",
+        "whyNowOrEvergreen",
+        "evergreenReason",
+        "recencyReason",
+    )
+    evidence = _payload_text(
+        payload,
+        manifest,
+        "trendEvidence",
+        "socialProofEvidence",
+        "searchEvidence",
+        "currentConversationEvidence",
+        "interestEvidence",
+    )
+    scroll_stop_hook = _payload_text(
+        payload,
+        topic_payload,
+        "scrollStopHook",
+        "hook",
+        "viewerHook",
+        "openingHook",
+    )
+    source_strategy = _payload_text(
+        payload,
+        manifest,
+        "sourceStrategy",
+        "sourceSelectionBrief",
+        "sourceFit",
+        "sourcePlan",
+    )
+    comment_or_share_reason = _payload_text(
+        payload,
+        manifest,
+        "commentPrompt",
+        "shareReason",
+        "viewerParticipation",
+        "commentReason",
+    )
+    verdict = str(
+        payload.get("audienceInterestVerdict")
+        or payload.get("interestVerdict")
+        or payload.get("verdict")
+        or ""
+    ).strip().lower()
+    if verdict in {"ok", "approved", "good", "fit", "accepted"}:
+        verdict = "pass"
+    score = _interest_score(payload)
+    evidence_count = _valid_interest_evidence_count(payload)
+    combined_claim = " ".join(
+        [
+            str(manifest.get("topic") or ""),
+            _payload_text(topic_payload, manifest, "topic", "hook", "payoff"),
+            target_audience,
+            interest_driver,
+            why_now,
+            evidence,
+            scroll_stop_hook,
+            source_strategy,
+        ]
+    ).lower()
+    generic_hits = [
+        term
+        for term in AUDIENCE_INTEREST_GENERIC_TERMS
+        if term.lower() in combined_claim
+    ]
+
+    missing: list[str] = []
+    if not payload:
+        missing.append("audienceInterest")
+    if len(target_audience) < 8:
+        missing.append("targetAudience>=8")
+    if len(interest_driver) < 20:
+        missing.append("interestDriver>=20")
+    if len(why_now) < 20:
+        missing.append("whyNowOrEvergreen>=20")
+    if len(evidence) < 28 and evidence_count < 1:
+        missing.append("interestEvidence>=28 or evidenceItems>=1")
+    if concrete_signal_required and evidence_count < 2:
+        missing.append("concreteInterestSignals>=2")
+    if len(scroll_stop_hook) < 12:
+        missing.append("scrollStopHook>=12")
+    if len(source_strategy) < 24:
+        missing.append("sourceStrategy>=24")
+    if len(comment_or_share_reason) < 12:
+        missing.append("commentOrShareReason>=12")
+    if score < 4:
+        missing.append("interestScore>=4")
+    if verdict != "pass":
+        missing.append("audienceInterestVerdict=pass")
+    if generic_hits and evidence_count < 2:
+        missing.append("nonGenericInterestEvidence")
+
+    return {
+        "required": required,
+        "status": "fail" if required and missing else "pass",
+        "payloadKey": payload_key,
+        "topicPayloadKey": topic_payload_key,
+        "targetAudience": target_audience,
+        "interestDriver": interest_driver,
+        "whyNowOrEvergreen": why_now,
+        "interestEvidence": evidence,
+        "validEvidenceCount": evidence_count,
+        "concreteSignalRequired": concrete_signal_required,
+        "scrollStopHook": scroll_stop_hook,
+        "sourceStrategy": source_strategy,
+        "commentOrShareReason": comment_or_share_reason,
+        "interestScore": score,
+        "verdict": verdict,
+        "genericInterestTerms": generic_hits,
+        "missingFields": missing,
+        "policy": {
+            "topicRule": "Source-led quality claims must prove why the topic is worth a viewer's attention before source/layout/TTS quality can count.",
+            "evidenceRule": "Generic claims such as viral, trending, popular, or people are interested need at least two concrete source/signal/relevance evidence items for sample-set or upload-level claims.",
+            "sourceRule": "The source plan must say how fetched GIF/image/video assets prove the curiosity hook, not just that they match context.",
+            "sampleRule": "Accepted sample-set proofs need audience-interest evidence so engineering fixtures cannot stand in for viewer-worthy topics.",
+        },
+    }
+
+
+def _source_intent_generic_hits(*values: object) -> list[str]:
+    text = " ".join(str(value or "") for value in values).lower()
+    compact = re.sub(r"\s+", "", text)
+    hits: list[str] = []
+    for term in SOURCE_INTENT_GENERIC_TERMS:
+        term_lower = term.lower()
+        if term_lower in text or re.sub(r"\s+", "", term_lower) in compact:
+            hits.append(term)
+    return hits
+
+
+def _scene_source_intent_status(scene: dict, visual_asset: dict) -> tuple[bool, list[str], dict]:
+    role = _scene_intent_role(scene, visual_asset)
+    media_kind = _normalized_source_tag(
+        _source_acquisition_value(scene, visual_asset, "sourceMediaKind", "mediaKind")
+    )
+    caption_purpose = str(scene.get("captionPurpose") or "").strip().lower().removeprefix("viewer-")
+    proof_claim = _source_context_value(
+        scene,
+        visual_asset,
+        "proofClaim",
+        "sourceProofClaim",
+        "visualProofClaim",
+        "sceneClaim",
+        "viewerClaim",
+    )
+    viewer_question = _source_context_value(
+        scene,
+        visual_asset,
+        "viewerQuestion",
+        "hookQuestion",
+        "viewerQuestionAnswered",
+        "questionAnswered",
+    )
+    viewer_task = _source_context_value(
+        scene,
+        visual_asset,
+        "viewerTask",
+        "sceneViewerTask",
+        "sourceViewerTask",
+        "visualProofTask",
+        "viewerJob",
+    )
+    binding_review = _source_context_value(
+        scene,
+        visual_asset,
+        "sceneSourceBindingReview",
+        "sourceIntentBindingReview",
+        "sourceProofReview",
+    )
+    binding_verdict = _source_context_value(
+        scene,
+        visual_asset,
+        "sceneSourceBindingVerdict",
+        "sourceIntentBindingVerdict",
+        "sourceProofVerdict",
+    )
+    media_choice = _source_context_value(
+        scene,
+        visual_asset,
+        "mediaChoiceRationale",
+        "whyGifOrImage",
+        "sourceTypeDecision",
+    )
+    motion_fit = _source_context_value(scene, visual_asset, "motionFit", "whyMotionFits")
+    still_fit = _source_context_value(scene, visual_asset, "stillFit", "whyStillImageFits")
+    subtitle_text = str(scene.get("subtitleText") or "").strip()
+    narration_text = str(scene.get("narrationText") or "").strip()
+    layout_note = str(scene.get("layoutVariantNote") or "").strip()
+    quality_review = str(scene.get("qualityReviewNote") or "").strip()
+    claim_keywords = _source_context_keywords(proof_claim, viewer_question, viewer_task)
+    viewer_overlap = _source_context_overlap(
+        claim_keywords,
+        subtitle_text,
+        narration_text,
+        layout_note,
+        quality_review,
+    )
+    generic_hits = _source_intent_generic_hits(proof_claim, viewer_question, viewer_task, binding_review)
+
+    missing: list[str] = []
+    if role not in SOURCE_INTENT_ROLES:
+        missing.append("intentRole")
+    if role == "hook" and caption_purpose != "hook":
+        missing.append("hookCaptionPurpose")
+    if role in {"payoff", "callback"} and caption_purpose not in {"payoff", "context", "proof"}:
+        missing.append("payoffCaptionPurpose")
+    if len(proof_claim) < 24:
+        missing.append("sourceProofClaim>=24")
+    if len(viewer_task) < 18:
+        missing.append("sourceViewerTask>=18")
+    if len(binding_review) < 40:
+        missing.append("sourceIntentBindingReview>=40")
+    if _manual_visual_verdict_status(binding_verdict) != "pass":
+        missing.append("sourceIntentBindingVerdict=pass")
+    if generic_hits:
+        missing.append("sourceIntentNotGeneric")
+    if len(claim_keywords) < 2:
+        missing.append("sourceClaimKeywords>=2")
+    elif len(viewer_overlap) < 1:
+        missing.append("sourceClaimAppearsInViewerTextOrLayout")
+    if media_kind in {"gif", "video"} and not _contains_editorial_term(
+        " ".join([proof_claim, media_choice, motion_fit, binding_review]),
+        INTERNET_SOURCE_MOTION_EDITORIAL_TERMS,
+    ):
+        missing.append("motionIntentForGifVideo")
+    if media_kind == "image" and not _contains_editorial_term(
+        " ".join([proof_claim, media_choice, still_fit, binding_review]),
+        INTERNET_SOURCE_STILL_EDITORIAL_TERMS,
+    ):
+        missing.append("stillIntentForImage")
+
+    return not missing, missing, {
+        "role": role,
+        "captionPurpose": caption_purpose,
+        "mediaKind": media_kind,
+        "proofClaim": proof_claim,
+        "viewerQuestion": viewer_question,
+        "viewerTask": viewer_task,
+        "bindingReview": binding_review,
+        "bindingVerdict": binding_verdict,
+        "claimKeywords": sorted(claim_keywords),
+        "viewerOverlap": viewer_overlap,
+        "genericHits": generic_hits,
+    }
+
+
+def _build_scene_source_intent_binding_review(manifest: dict) -> dict:
+    required = _internet_source_editorial_integration_required(manifest)
+    reviewed: list[str] = []
+    missing: list[str] = []
+    scene_details: list[dict] = []
+    role_counts: dict[str, int] = {}
+    for scene in manifest.get("scenes", []):
+        scene_id = str(scene.get("sceneId") or "")
+        visual_asset = _visual_asset_for_scene(manifest, scene_id)
+        is_candidate = _is_internet_source_candidate(scene, visual_asset)
+        if not required and not is_candidate:
+            continue
+        ready, scene_missing, detail = _scene_source_intent_status(scene, visual_asset)
+        detail["sceneId"] = scene_id
+        detail["candidate"] = is_candidate
+        scene_details.append(detail)
+        role = str(detail.get("role") or "")
+        if role:
+            role_counts[role] = role_counts.get(role, 0) + 1
+        if scene_missing:
+            missing.append(f"{scene_id}:{','.join(dict.fromkeys(scene_missing))}")
+        else:
+            reviewed.append(scene_id)
+
+    status = "pass"
+    if required and (missing or not reviewed):
+        status = "fail"
+    return {
+        "required": required,
+        "status": status,
+        "reviewedScenes": reviewed,
+        "missingScenes": missing,
+        "roleCounts": role_counts,
+        "sceneDetails": scene_details,
+        "policy": {
+            "intentRule": "Every fetched source scene needs an explicit intent role, proof claim, viewer task, and pass verdict.",
+            "bindingRule": "The source proof claim must appear in viewer-facing copy or layout review, not only in an internal note.",
+            "mediaRule": "GIF/video must be selected because motion proves the beat; image must be selected because a still frame/context proves the beat.",
+        },
+    }
+
+
+def _visual_frame_review_payload(manifest: dict) -> tuple[str, dict]:
+    for key in (
+        "visualFrameReview",
+        "phoneFrameReview",
+        "phoneSizedFrameReview",
+        "contactSheetReview",
+        "humanVisualReview",
+    ):
+        payload = manifest.get(key)
+        if isinstance(payload, dict):
+            return key, payload
+    return "", {}
+
+
+def _visual_frame_scene_reviews(payload: dict) -> dict[str, dict]:
+    raw = payload.get("sceneReviews") or payload.get("scenes") or payload.get("sceneFrameReviews")
+    if isinstance(raw, dict):
+        return {
+            str(scene_id): review
+            for scene_id, review in raw.items()
+            if isinstance(review, dict)
+        }
+    if isinstance(raw, list):
+        reviews: dict[str, dict] = {}
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            scene_id = str(item.get("sceneId") or item.get("id") or "").strip()
+            if scene_id:
+                reviews[scene_id] = item
+        return reviews
+    return {}
+
+
+def _frame_review_verdict(payload: dict, *keys: str) -> str:
+    for key in keys:
+        value = payload.get(key)
+        if value is not None:
+            return _manual_visual_verdict_status(value)
+    return ""
+
+
+def _frame_review_text_present(payload: dict, *keys: str, min_length: int = 48) -> bool:
+    for key in keys:
+        value = payload.get(key)
+        if len(str(value or "").strip()) >= min_length:
+            return True
+    return False
+
+
+def _build_visual_frame_review_evidence(manifest: dict) -> dict:
+    required = _internet_source_editorial_integration_required(manifest)
+    payload_key, payload = _visual_frame_review_payload(manifest)
+    contact_sheet = str(
+        payload.get("contactSheetPath")
+        or payload.get("frameReviewPath")
+        or payload.get("phoneReviewPath")
+        or ""
+    ).strip()
+    reviewer_type = str(payload.get("reviewerType") or payload.get("reviewMode") or "").strip()
+    review_notes = str(payload.get("reviewNotes") or payload.get("notes") or payload.get("summary") or "").strip()
+    scene_reviews = _visual_frame_scene_reviews(payload)
+    source_scene_ids: list[str] = []
+    missing_scenes: list[str] = []
+    reviewed_scenes: list[str] = []
+    loop_required = False
+    for scene in manifest.get("scenes", []):
+        scene_id = str(scene.get("sceneId") or "")
+        visual_asset = _visual_asset_for_scene(manifest, scene_id)
+        if not _is_internet_source_candidate(scene, visual_asset):
+            continue
+        source_scene_ids.append(scene_id)
+        if _source_loop_group_id(scene, visual_asset):
+            loop_required = True
+        review = scene_reviews.get(scene_id) or {}
+        scene_missing: list[str] = []
+        if _frame_review_verdict(review, "sourceVisibleVerdict", "sourceVisibilityVerdict") != "pass":
+            scene_missing.append("sourceVisibleVerdict=pass")
+        if _frame_review_verdict(review, "sourceDominanceVerdict", "sourceFramingVerdict") != "pass":
+            scene_missing.append("sourceDominanceVerdict=pass")
+        if _frame_review_verdict(review, "captionClearVerdict", "captionOcclusionVerdict") != "pass":
+            scene_missing.append("captionClearVerdict=pass")
+        if _frame_review_verdict(review, "motionStabilityVerdict", "cameraStabilityVerdict") != "pass":
+            scene_missing.append("motionStabilityVerdict=pass")
+        if _frame_review_verdict(review, "sourceRepetitionVerdict", "sourceReuseVerdict") != "pass":
+            scene_missing.append("sourceRepetitionVerdict=pass")
+        if len(str(review.get("review") or review.get("notes") or "").strip()) < 32:
+            scene_missing.append("sceneFrameReview>=32")
+        if scene_missing:
+            missing_scenes.append(f"{scene_id}:{','.join(dict.fromkeys(scene_missing))}")
+        else:
+            reviewed_scenes.append(scene_id)
+
+    missing: list[str] = []
+    if not payload:
+        missing.append("visualFrameReview")
+    if len(contact_sheet) < 8:
+        missing.append("contactSheetPath/frameReviewPath")
+    if len(reviewer_type) < 4:
+        missing.append("reviewerType")
+    if len(review_notes) < 80:
+        missing.append("reviewNotes>=80")
+    for key in VISUAL_FRAME_REVIEW_REQUIRED_VERDICTS:
+        if _frame_review_verdict(payload, key) != "pass":
+            missing.append(f"{key}=pass")
+    if not _frame_review_text_present(
+        payload,
+        "captionTtsReview",
+        "captionTtsHumanReview",
+        "ttsCaptionReview",
+        min_length=80,
+    ):
+        missing.append("captionTtsReview>=80")
+    if not _frame_review_text_present(
+        payload,
+        "motionStabilityReview",
+        "cameraStabilityReview",
+        "visualStabilityReview",
+        min_length=80,
+    ):
+        missing.append("motionStabilityReview>=80")
+    if not _frame_review_text_present(
+        payload,
+        "sourceRepetitionReview",
+        "sourceReuseReview",
+        "sourceVarietyReview",
+        min_length=80,
+    ):
+        missing.append("sourceRepetitionReview>=80")
+    if loop_required and _frame_review_verdict(payload, "loopNaturalnessVerdict") != "pass":
+        missing.append("loopNaturalnessVerdict=pass")
+    if source_scene_ids and len(reviewed_scenes) < len(source_scene_ids):
+        missing.append("allSourceScenesFrameReviewed")
+
+    status = "pass"
+    if required and (missing or missing_scenes):
+        status = "fail"
+    return {
+        "required": required,
+        "status": status,
+        "payloadKey": payload_key,
+        "contactSheetPath": contact_sheet,
+        "reviewerType": reviewer_type,
+        "reviewedScenes": reviewed_scenes,
+        "missingFields": missing,
+        "missingScenes": missing_scenes,
+        "sourceSceneIds": source_scene_ids,
+        "loopRequired": loop_required,
+        "policy": {
+            "evidenceRule": "Render-gate pass is not enough for source-led meme/GIF proof; phone-sized/contact-sheet review evidence must be structured in the manifest.",
+            "layoutRule": "Frame review must confirm source dominance, caption non-occlusion, layout naturalness, TTS/caption sync, motion stability, source repetition control, and ending resolution.",
+            "sceneRule": "Every internet source scene needs a per-scene frame review so tiny framed sources, hidden subjects, shaky derived motion, and repeated sources cannot pass by self-description only.",
+        },
+    }
+
+
+def _copy_style_prompt_payload(manifest: dict) -> tuple[str, dict]:
+    for key in CONVERSATIONAL_COPY_PROMPT_KEYS:
+        payload = manifest.get(key)
+        if isinstance(payload, dict):
+            return key, payload
+    return "", {}
+
+
+def _copy_style_prompt_list(payload: dict, *keys: str) -> list[str]:
+    values: list[str] = []
+    for key in keys:
+        raw = payload.get(key)
+        if isinstance(raw, list):
+            values.extend(str(item).strip() for item in raw if str(item).strip())
+        elif isinstance(raw, str) and raw.strip():
+            values.append(raw.strip())
+    return values
+
+
+def _copy_has_conversational_marker(text: str) -> bool:
+    lowered = str(text or "").lower()
+    if re.search(r"[가-힣]", lowered):
+        return any(marker in lowered for marker in CONVERSATIONAL_COPY_KOREAN_MARKERS)
+    return any(marker in lowered for marker in CONVERSATIONAL_COPY_ENGLISH_MARKERS)
+
+
+def _copy_prompt_has_script_quality_rule(prompt: dict) -> bool:
+    text = " ".join(
+        str(prompt.get(key) or "")
+        for key in (
+            "captionRule",
+            "subtitleRule",
+            "onscreenTextRule",
+            "narrationRule",
+            "scriptRule",
+            "ttsRule",
+            "scriptQualityRule",
+            "sceneCopyRule",
+            "beatQualityRule",
+            "captionNarrationQualityRule",
+        )
+    ).lower()
+    compact = re.sub(r"\s+", "", text)
+    if len(compact) < 48:
+        return False
+    has_label_guard = any(term in text or re.sub(r"\s+", "", term) in compact for term in SCRIPT_QUALITY_PROMPT_LABEL_TERMS)
+    has_arc_rule = any(term in text or re.sub(r"\s+", "", term) in compact for term in SCRIPT_QUALITY_PROMPT_PAYOFF_TERMS)
+    return has_label_guard and has_arc_rule
+
+
+def _copy_has_viewer_turn(text: str, purpose: str = "") -> bool:
+    lowered = str(text or "").lower()
+    compact = re.sub(r"\s+", "", lowered)
+    terms = VIEWER_COPY_ARC_TERMS_BY_PURPOSE.get(purpose, ()) + VIEWER_COPY_TURN_TERMS
+    return any(term in lowered or re.sub(r"\s+", "", term) in compact for term in terms)
+
+
+def _copy_bare_label_question_issue(text: str) -> bool:
+    stripped = str(text or "").strip()
+    if "?" not in stripped:
+        return False
+    compact = re.sub(r"[\s?!.,;:·'\"“”‘’()\[\]{}-]+", "", stripped.lower())
+    if len(compact) > 14:
+        return False
+    tokens = re.findall(r"[가-힣]+|[a-z0-9']+", stripped.lower())
+    if len(tokens) > 3:
+        return False
+    return not _copy_has_viewer_turn(stripped)
+
+
+def _copy_is_thin_reaction_line(text: str) -> bool:
+    stripped = str(text or "").strip()
+    if not stripped or _compact_text_length(stripped) > 18:
+        return False
+    lowered = stripped.lower()
+    compact = re.sub(r"[\s?!.,;:·'\"“”‘’()\[\]{}-]+", "", lowered)
+    if not any(compact.endswith(re.sub(r"\s+", "", ending.lower()).rstrip("?")) for ending in SCRIPT_QUALITY_THIN_REACTION_ENDINGS):
+        return False
+    return not any(term in lowered or re.sub(r"\s+", "", term.lower()) in compact for term in SCRIPT_QUALITY_SUBSTANTIVE_TURN_TERMS)
+
+
+def _viewer_copy_script_quality_issues(
+    subtitle_text: str,
+    narration_text: str,
+    caption_purpose: str,
+    short_source_loop_callout: bool,
+) -> list[str]:
+    issues: list[str] = []
+    combined = " ".join([subtitle_text, narration_text])
+    narration_len = _compact_text_length(narration_text)
+    if _copy_bare_label_question_issue(subtitle_text):
+        issues.append("subtitleBareLabelQuestion")
+    if caption_purpose in {"proof", "context", "payoff"} and not _copy_has_viewer_turn(combined, caption_purpose):
+        issues.append(f"{caption_purpose}ViewerTurn")
+    min_narration_chars = SCRIPT_QUALITY_MIN_NARRATION_CHARS_BY_PURPOSE.get(caption_purpose, 0)
+    if min_narration_chars and narration_len < min_narration_chars:
+        issues.append(f"{caption_purpose}NarrationTooThin")
+    if _copy_is_thin_reaction_line(narration_text):
+        issues.append("narrationThinReactionLine")
+    if short_source_loop_callout and caption_purpose in {"proof", "context", "payoff"} and narration_len < 10:
+        issues.append("shortCalloutTooThinForScriptQuality")
+    if caption_purpose == "payoff" and narration_len < 12:
+        issues.append("payoffNarrationTooThin")
+    return issues
+
+
+def _conversational_copy_scene_status(scene: dict, content_template: str) -> tuple[bool, list[str], dict]:
+    subtitle_text = str(scene.get("subtitleText") or "").strip()
+    narration_text = str(scene.get("narrationText") or "").strip()
+    caption_purpose = str(scene.get("captionPurpose") or "").strip().lower()
+    if caption_purpose.startswith("viewer-"):
+        caption_purpose = caption_purpose.removeprefix("viewer-")
+    short_source_loop_callout = _short_source_loop_callout_scene(scene, content_template)
+    combined_viewer_text = " ".join([subtitle_text, narration_text])
+    forbidden_terms = [
+        term
+        for term in CONVERSATIONAL_COPY_FORBIDDEN_TERMS
+        if _contains_editorial_term(combined_viewer_text, (term,))
+    ]
+    formal_endings = KOREAN_FORMAL_ENDING_PATTERN.findall(narration_text)
+    missing: list[str] = []
+    if _compact_text_length(subtitle_text) < 4:
+        missing.append("subtitleText>=4")
+    if not short_source_loop_callout and not _copy_has_conversational_marker(subtitle_text):
+        missing.append("subtitleConversationalMarker")
+    if caption_purpose == "hook" and "?" not in subtitle_text and "왜" not in subtitle_text:
+        missing.append("hookSubtitleQuestionOrReaction")
+    if _compact_text_length(narration_text) < 24 and not short_source_loop_callout:
+        missing.append("narrationText>=24")
+    if not _copy_has_conversational_marker(narration_text):
+        missing.append("narrationConversationalMarker")
+    if formal_endings:
+        missing.append("narrationFormalEnding")
+    if forbidden_terms:
+        missing.append("viewerCopyForbiddenTerms")
+    script_quality_issues = _viewer_copy_script_quality_issues(
+        subtitle_text,
+        narration_text,
+        caption_purpose,
+        short_source_loop_callout,
+    )
+    missing.extend(script_quality_issues)
+    return not missing, missing, {
+        "subtitleText": subtitle_text,
+        "narrationLength": _compact_text_length(narration_text),
+        "captionPurpose": caption_purpose,
+        "formalEndings": formal_endings,
+        "forbiddenTerms": sorted(set(forbidden_terms)),
+        "subtitleConversational": _copy_has_conversational_marker(subtitle_text),
+        "narrationConversational": _copy_has_conversational_marker(narration_text),
+        "shortSourceLoopCallout": short_source_loop_callout,
+        "scriptQualityIssues": script_quality_issues,
+    }
+
+
+def _viewer_copy_repetition_tokens(text: object) -> set[str]:
+    normalized = str(text or "").replace("\\N", " ").lower()
+    tokens = set(re.findall(r"[가-힣]{2,}|[a-z0-9']{3,}", normalized))
+    stopwords = CONVERSATIONAL_COPY_REPETITION_STOPWORDS | INTERNET_SOURCE_INTEGRATION_STOPWORDS
+    return {
+        token
+        for token in tokens
+        if token not in stopwords and not token.endswith(("입니다", "합니다", "됩니다"))
+    }
+
+
+def _viewer_caption_repetition_review(manifest: dict) -> dict:
+    token_scenes: dict[str, list[str]] = {}
+    scene_tokens: dict[str, list[str]] = {}
+    for scene in manifest.get("scenes", []):
+        scene_id = str(scene.get("sceneId") or "")
+        subtitle_text = str(scene.get("subtitleText") or "").strip()
+        if not scene_id or not subtitle_text:
+            continue
+        tokens = sorted(_viewer_copy_repetition_tokens(subtitle_text))
+        scene_tokens[scene_id] = tokens
+        for token in tokens:
+            token_scenes.setdefault(token, []).append(scene_id)
+
+    repeated_terms = {
+        token: scene_ids
+        for token, scene_ids in sorted(token_scenes.items())
+        if len(scene_ids) >= 3
+    }
+    affected_scenes = sorted({
+        scene_id
+        for scene_ids in repeated_terms.values()
+        for scene_id in scene_ids
+    })
+    return {
+        "status": "fail" if repeated_terms else "pass",
+        "repeatedTerms": repeated_terms,
+        "affectedScenes": affected_scenes,
+        "sceneTokens": scene_tokens,
+    }
+
+
+def _build_conversational_copy_style_review(manifest: dict) -> dict:
+    required = _internet_source_editorial_integration_required(manifest)
+    prompt_key, prompt = _copy_style_prompt_payload(manifest)
+    prompt_missing: list[str] = []
+    if required and not prompt:
+        prompt_missing.append("copyStylePrompt")
+    tone = " ".join(str(prompt.get(key) or "") for key in ("tone", "style", "voice", "copyTone"))
+    if required and not any(term in tone.lower() for term in CONVERSATIONAL_COPY_TONE_TERMS):
+        prompt_missing.append("tone=conversational/구어체")
+    subtitle_rule = " ".join(
+        str(prompt.get(key) or "") for key in ("captionRule", "subtitleRule", "onscreenTextRule")
+    )
+    narration_rule = " ".join(
+        str(prompt.get(key) or "") for key in ("narrationRule", "scriptRule", "ttsRule")
+    )
+    forbidden_patterns = _copy_style_prompt_list(prompt, "forbiddenPatterns", "banPatterns", "neverUse")
+    reference_takeaways = _copy_style_prompt_list(
+        prompt,
+        "referenceTakeaways",
+        "externalReferenceTakeaways",
+        "shortformReferenceTakeaways",
+    )
+    if required and len(subtitle_rule.strip()) < 32:
+        prompt_missing.append("captionRule>=32")
+    if required and len(narration_rule.strip()) < 32:
+        prompt_missing.append("narrationRule>=32")
+    if required and not _copy_prompt_has_script_quality_rule(prompt):
+        prompt_missing.append("scriptQualityRule=labelGuard+hookTurnPayoff")
+    if required and len(forbidden_patterns) < 3:
+        prompt_missing.append("forbiddenPatterns>=3")
+    if required and len(reference_takeaways) < 2:
+        prompt_missing.append("referenceTakeaways>=2")
+
+    reviewed: list[str] = []
+    missing_scenes: list[str] = []
+    scene_details: list[dict] = []
+    repetition_review = _viewer_caption_repetition_review(manifest)
+    for scene in manifest.get("scenes", []):
+        scene_id = str(scene.get("sceneId") or "")
+        visual_asset = _visual_asset_for_scene(manifest, scene_id)
+        is_candidate = _is_internet_source_candidate(scene, visual_asset)
+        if not required and not is_candidate:
+            continue
+        ready, scene_missing, detail = _conversational_copy_scene_status(scene, str(manifest.get("contentTemplate") or manifest.get("templateType") or ""))
+        detail["sceneId"] = scene_id
+        detail["candidate"] = is_candidate
+        scene_details.append(detail)
+        if ready:
+            reviewed.append(scene_id)
+        else:
+            missing_scenes.append(f"{scene_id}:{','.join(dict.fromkeys(scene_missing))}")
+
+    status = "pass"
+    if prompt_missing or missing_scenes or repetition_review["status"] == "fail" or (required and not reviewed):
+        status = "fail"
+    return {
+        "required": required,
+        "status": status,
+        "promptKey": prompt_key,
+        "promptMissing": prompt_missing,
+        "reviewedScenes": reviewed,
+        "missingScenes": missing_scenes,
+        "repetitionReview": repetition_review,
+        "sceneDetails": scene_details,
+        "policy": {
+            "promptRule": "Source-led renders must include a copyStylePrompt with conversational tone, caption/script rules, forbidden phrases, and external short-form reference takeaways.",
+            "subtitleRule": "Viewer captions should read like a spoken question, reaction, or payoff; production labels and scene descriptions cannot pass.",
+            "narrationRule": "TTS script should sound spoken, carry a hook/turn/payoff beat, and avoid Korean report-style endings such as -습니다/-입니다/-합니다.",
+            "scriptQualityRule": "Bare label or noun-only questions cannot pass as viewer copy; proof/context/payoff scenes need a real perceptual turn or audience action.",
+            "repetitionRule": "A viewer-facing caption keyword repeated across three or more scenes fails because it makes the edit feel like the same beat again.",
+        },
+    }
+
+
+def _tts_pacing_prompt_has_timing_rule(prompt: dict) -> bool:
+    text = " ".join(
+        str(prompt.get(key) or "")
+        for key in (
+            "ttsPacingRule",
+            "audioPacingRule",
+            "narrationPacingRule",
+            "scriptPacingRule",
+            "narrationRule",
+        )
+    ).lower()
+    if len(text.strip()) < 32:
+        return False
+    return any(term in text for term in ("속도", "호흡", "pause", "pacing", "tempo", "rate", "장면 길이", "자막"))
+
+
+def _tts_pacing_scene_status(manifest: dict, scene: dict, visual_asset: dict) -> tuple[bool, list[str], dict]:
+    scene_id = str(scene.get("sceneId") or "")
+    audio_asset = _audio_asset_for_scene(manifest, scene_id)
+    subtitle_text = str(scene.get("subtitleText") or "").strip()
+    narration_text = str(scene.get("narrationText") or "").strip()
+    duration_sec = _scene_duration_seconds(scene)
+    subtitle_len = _compact_text_length(subtitle_text)
+    narration_len = _compact_text_length(narration_text)
+    korean_count = sum(1 for char in narration_text if "\uac00" <= char <= "\ud7a3" or "\u3131" <= char <= "\u318e")
+    word_count = len(re.findall(r"[A-Za-z0-9']+", narration_text))
+    narration_density = 0.0
+    narration_density_kind = "none"
+    if duration_sec > 0 and narration_len:
+        if korean_count > max(1, len(narration_text)) * 0.3:
+            narration_density = narration_len / duration_sec
+            narration_density_kind = "koreanCompactCharsPerSec"
+        else:
+            narration_density = word_count / duration_sec
+            narration_density_kind = "englishWordsPerSec"
+
+    subtitle_narration_ratio = (subtitle_len / narration_len) if narration_len else 0.0
+    audio_fit = audio_asset.get("audioDurationFit") if isinstance(audio_asset.get("audioDurationFit"), dict) else {}
+    try:
+        tempo_speed = float(audio_fit.get("speed") or 1.0)
+    except (TypeError, ValueError):
+        tempo_speed = 1.0
+    fit_mode = str(audio_fit.get("mode") or "").strip()
+
+    missing: list[str] = []
+    if duration_sec <= 0:
+        missing.append("sceneDurationSec")
+    if narration_len >= 24 and subtitle_narration_ratio < TTS_PACING_MIN_SUBTITLE_NARRATION_RATIO:
+        missing.append("subtitleNarrationRatio")
+    if narration_density_kind == "koreanCompactCharsPerSec" and narration_density > TTS_PACING_MAX_KOREAN_COMPACT_CHARS_PER_SEC:
+        missing.append("narrationKoreanCharsPerSec")
+    if narration_density_kind == "englishWordsPerSec" and narration_density > TTS_PACING_MAX_ENGLISH_WORDS_PER_SEC:
+        missing.append("narrationEnglishWordsPerSec")
+    if fit_mode == "tempo-fit" and tempo_speed > TTS_PACING_MAX_TEMPO_SPEED:
+        missing.append("audioTempoFitSpeed")
+
+    return not missing, missing, {
+        "sceneId": scene_id,
+        "mediaKind": _normalized_source_tag(
+            _source_acquisition_value(scene, visual_asset, "sourceMediaKind", "mediaKind")
+        ),
+        "durationSec": round(duration_sec, 3),
+        "subtitleCompactLength": subtitle_len,
+        "narrationCompactLength": narration_len,
+        "subtitleNarrationRatio": round(subtitle_narration_ratio, 3),
+        "narrationDensity": round(narration_density, 3),
+        "narrationDensityKind": narration_density_kind,
+        "audioDurationFit": audio_fit,
+        "tempoSpeed": round(tempo_speed, 3),
+    }
+
+
+def _build_tts_pacing_alignment_review(manifest: dict) -> dict:
+    required = _internet_source_editorial_integration_required(manifest)
+    prompt_key, prompt = _copy_style_prompt_payload(manifest)
+    prompt_missing: list[str] = []
+    if required and not _tts_pacing_prompt_has_timing_rule(prompt):
+        prompt_missing.append("ttsPacingRule>=32")
+
+    reviewed: list[str] = []
+    missing_scenes: list[str] = []
+    scene_details: list[dict] = []
+    for scene in manifest.get("scenes", []):
+        scene_id = str(scene.get("sceneId") or "")
+        visual_asset = _visual_asset_for_scene(manifest, scene_id)
+        is_candidate = _is_internet_source_candidate(scene, visual_asset)
+        if not required and not is_candidate:
+            continue
+        ready, scene_missing, detail = _tts_pacing_scene_status(manifest, scene, visual_asset)
+        detail["candidate"] = is_candidate
+        scene_details.append(detail)
+        if ready:
+            reviewed.append(scene_id)
+        else:
+            missing_scenes.append(f"{scene_id}:{','.join(dict.fromkeys(scene_missing))}")
+
+    status = "pass"
+    if prompt_missing or missing_scenes or (required and not reviewed):
+        status = "fail"
+    return {
+        "required": required,
+        "status": status,
+        "promptKey": prompt_key,
+        "promptMissing": prompt_missing,
+        "reviewedScenes": reviewed,
+        "missingScenes": missing_scenes,
+        "sceneDetails": scene_details,
+        "policy": {
+            "tempoRule": f"TTS tempo-fit speed must stay <= {TTS_PACING_MAX_TEMPO_SPEED:.2f}; do not compress long narration into short scenes.",
+            "densityRule": f"Korean narration density must stay <= {TTS_PACING_MAX_KOREAN_COMPACT_CHARS_PER_SEC:.1f} compact chars/sec for source-led proof scenes.",
+            "alignmentRule": f"Subtitle compact length should be at least {TTS_PACING_MIN_SUBTITLE_NARRATION_RATIO:.2f} of narration compact length when narration is substantial.",
+        },
+    }
+
+
+def _build_source_loop_rhythm_review(manifest: dict) -> dict:
+    groups: dict[str, list[tuple[dict, dict]]] = {}
+    for scene in manifest.get("scenes", []):
+        scene_id = str(scene.get("sceneId") or "")
+        visual_asset = _visual_asset_for_scene(manifest, scene_id)
+        group_id = _source_loop_group_id(scene, visual_asset)
+        if group_id:
+            groups.setdefault(group_id, []).append((scene, visual_asset))
+
+    reviewed_groups: list[str] = []
+    missing_groups: list[str] = []
+    group_details: list[dict] = []
+    for group_id, members in groups.items():
+        scene_ids = [str(scene.get("sceneId") or "") for scene, _asset in members]
+        subtitles = [
+            re.sub(r"\s+", "", str(scene.get("subtitleText") or "").strip().lower())
+            for scene, _asset in members
+            if str(scene.get("subtitleText") or "").strip()
+        ]
+        identities = sorted({
+            _visual_asset_identity(asset)
+            for _scene, asset in members
+            if _visual_asset_identity(asset)
+        })
+        media_kinds = sorted({
+            _normalized_source_tag(_source_acquisition_value(scene, asset, "sourceMediaKind", "mediaKind"))
+            for scene, asset in members
+        })
+        reviews = [_source_loop_review_text(scene, asset) for scene, asset in members]
+        combined_review = " ".join(reviews).strip()
+        review_has_term = any(term in combined_review.lower() for term in SOURCE_LOOP_REVIEW_TERMS)
+        render_paths = [
+            str(
+                scene.get("sourcePath")
+                or asset.get("sourcePath")
+                or asset.get("outputPath")
+                or scene.get("sourceLocalPath")
+                or asset.get("sourceLocalPath")
+                or ""
+            ).strip()
+            for scene, asset in members
+        ]
+        reframe_evidence_by_scene = {
+            str(scene.get("sceneId") or ""): _scene_field_text(
+                scene,
+                "sourceLoopReframeEvidence",
+                "sourceLoopRetimingEvidence",
+                "sourceLoopVisualChangeReview",
+            ) or _scene_field_text(
+                asset,
+                "sourceLoopReframeEvidence",
+                "sourceLoopRetimingEvidence",
+                "sourceLoopVisualChangeReview",
+            )
+            for scene, asset in members
+        }
+
+        issues: list[str] = []
+        if len(members) < 2:
+            issues.append("sourceLoopGroupScenes>=2")
+        if len(identities) != 1:
+            issues.append("singleSourceIdentity")
+        if any(kind not in {"gif", "video"} for kind in media_kinds):
+            issues.append("loopMediaKind=gif/video")
+        for scene, asset in members:
+            scene_id = str(scene.get("sceneId") or "")
+            if not _source_loop_repeat_approved(scene, asset):
+                issues.append(f"{scene_id}:sourceLoopRepeatApproved")
+            if len(_source_loop_review_text(scene, asset)) < SOURCE_LOOP_RHYTHM_REVIEW_MIN_CHARS:
+                issues.append(f"{scene_id}:sourceLoopRhythmReview>={SOURCE_LOOP_RHYTHM_REVIEW_MIN_CHARS}")
+        if len(set(subtitles)) < min(2, len(members)):
+            issues.append("distinctSubtitles")
+        if len(members) > 1:
+            first_path = render_paths[0] if render_paths else ""
+            for index, (scene, _asset) in enumerate(members):
+                if index == 0:
+                    continue
+                scene_id = str(scene.get("sceneId") or "")
+                evidence = reframe_evidence_by_scene.get(scene_id) or ""
+                if len(evidence) < 24:
+                    issues.append(f"{scene_id}:sourceLoopReframeEvidence>=24")
+                if first_path and index < len(render_paths) and render_paths[index] == first_path:
+                    issues.append(f"{scene_id}:sourceLoopDerivedPathDistinct")
+        if not review_has_term:
+            issues.append("loopRhythmReviewMentionsLoopOrCaptionRhythm")
+
+        detail = {
+            "groupId": group_id,
+            "sceneIds": scene_ids,
+            "sourceIdentities": identities,
+            "mediaKinds": media_kinds,
+            "renderPaths": render_paths,
+            "reframeEvidenceScenes": sorted(
+                scene_id for scene_id, evidence in reframe_evidence_by_scene.items() if len(evidence) >= 24
+            ),
+            "distinctSubtitleCount": len(set(subtitles)),
+            "reviewChars": len(combined_review),
+            "reviewHasLoopTerm": review_has_term,
+            "issues": issues,
+        }
+        group_details.append(detail)
+        if issues:
+            missing_groups.append(f"{group_id}:{','.join(dict.fromkeys(issues))}")
+        else:
+            reviewed_groups.append(group_id)
+
+    required = bool(groups)
+    status = "fail" if missing_groups else "pass"
+    return {
+        "required": required,
+        "status": status,
+        "reviewedGroups": reviewed_groups,
+        "missingGroups": missing_groups,
+        "groupDetails": group_details,
+        "policy": {
+            "repeatRule": "Repeated internet GIF/video source reuse is allowed only as an intentional loop group, not as default asset recycling.",
+            "captionRule": "Each loop pass needs a distinct viewer caption or callout so the repeat changes meaning.",
+            "reframeRule": "A second pass over the same GIF/video source needs a distinct derived path plus reframe/retime evidence, or it reads as accidental replay.",
+            "reviewRule": f"Each loop scene needs a rhythm review of at least {SOURCE_LOOP_RHYTHM_REVIEW_MIN_CHARS} chars that explains loop/caption timing.",
+        },
+    }
+
+
+def _build_ending_payoff_review(manifest: dict) -> dict:
+    required = _upload_candidate_required(manifest) or _source_editorial_layout_required(manifest)
+    scenes = manifest.get("scenes", [])
+    final_scene = scenes[-1] if scenes else {}
+    final_scene_id = str(final_scene.get("sceneId") or "")
+    ending = manifest.get("endingSystem") if isinstance(manifest.get("endingSystem"), dict) else {}
+    purpose = str(
+        final_scene.get("endingPurpose")
+        or ending.get("purpose")
+        or final_scene.get("captionPurpose")
+        or ""
+    ).strip().lower()
+    if purpose.startswith("viewer-"):
+        purpose = purpose.removeprefix("viewer-")
+    pacing = _scene_field_text(final_scene, "endingPacingReview", "endingReview") or _scene_field_text(ending, "pacingReview", "endingPacingReview")
+    takeaway = _scene_field_text(final_scene, "finalTakeawayReview", "payoffReview") or _scene_field_text(ending, "finalTakeawayReview", "payoffReview")
+    verdict = _scene_field_text(final_scene, "endingVerdict", "abruptEndingVerdict") or _scene_field_text(ending, "endingVerdict", "abruptEndingVerdict")
+    missing: list[str] = []
+    if purpose not in {"payoff", "summary", "next-step", "loop-close", "callback"}:
+        missing.append("endingPurpose=payoff/summary/next-step/loop-close/callback")
+    if len(pacing) < 36:
+        missing.append("endingPacingReview>=36")
+    if len(takeaway) < 36:
+        missing.append("finalTakeawayReview>=36")
+    if _manual_visual_verdict_status(verdict) != "pass":
+        missing.append("endingVerdict=pass")
+    status = "pass"
+    if required and (not scenes or missing):
+        status = "fail"
+    return {
+        "required": required,
+        "status": status,
+        "finalSceneId": final_scene_id,
+        "missingFields": missing,
+        "purpose": purpose,
+        "pacingReview": pacing,
+        "finalTakeawayReview": takeaway,
+    }
+
+
+def _build_ending_tail_pacing_review(manifest: dict) -> dict:
+    required = (
+        _source_editorial_layout_required(manifest)
+        or _internet_source_editorial_integration_required(manifest)
+    )
+    scenes = manifest.get("scenes", [])
+    final_scene = scenes[-1] if scenes else {}
+    final_scene_id = str(final_scene.get("sceneId") or "")
+    ending = manifest.get("endingSystem") if isinstance(manifest.get("endingSystem"), dict) else {}
+    tail_hold_sec = _ending_tail_hold_seconds(final_scene, ending)
+    fade_out_sec = _ending_fade_out_seconds(final_scene, ending)
+    duration_sec = _scene_duration_seconds(final_scene)
+    voice_target_sec = scene_voiceover_target_duration(final_scene) if duration_sec > 0 else 0.0
+    declared_caption_sec = _scene_caption_duration(final_scene)
+    rendered_caption_sec = _rendered_caption_duration_seconds(final_scene, duration_sec)
+    caption_voice_coverage = rendered_caption_sec / voice_target_sec if voice_target_sec > 0 else 0.0
+    has_narration = bool(_scene_field_text(final_scene, "narrationText", "voiceoverText", "script"))
+    audio_asset = _audio_asset_for_scene(manifest, final_scene_id)
+    audio_fit = audio_asset.get("audioDurationFit") if isinstance(audio_asset.get("audioDurationFit"), dict) else {}
+    try:
+        rendered_tail_sec = float(audio_fit.get("tailHoldSec") or tail_hold_sec or 0.0)
+    except (TypeError, ValueError):
+        rendered_tail_sec = tail_hold_sec
+    tail_review = (
+        _scene_field_text(final_scene, "endingTailReview", "tailHoldReview", "endingPacingReview")
+        or _scene_field_text(ending, "tailHoldReview", "endingTailReview", "pacingReview")
+    )
+    verdict = (
+        _scene_field_text(final_scene, "endingTailVerdict", "endingVerdict", "abruptEndingVerdict")
+        or _scene_field_text(ending, "endingTailVerdict", "endingVerdict", "abruptEndingVerdict")
+    )
+    resolution_review = (
+        _scene_field_text(final_scene, "endingResolutionReview", "finalBeatSyncReview", "lastBeatReview")
+        or _scene_field_text(ending, "endingResolutionReview", "finalBeatSyncReview", "lastBeatReview")
+    )
+    screen_action = (
+        _scene_field_text(final_scene, "endingScreenAction", "finalVisualAction", "lastVisualBeat")
+        or _scene_field_text(ending, "endingScreenAction", "finalVisualAction", "lastVisualBeat")
+    )
+    resolution_verdict = (
+        _scene_field_text(final_scene, "endingResolutionVerdict", "finalBeatSyncVerdict")
+        or _scene_field_text(ending, "endingResolutionVerdict", "finalBeatSyncVerdict")
+    )
+
+    missing: list[str] = []
+    if tail_hold_sec < ENDING_TAIL_MIN_HOLD_SEC:
+        missing.append(f"endingTailHoldSec>={ENDING_TAIL_MIN_HOLD_SEC:.1f}")
+    if rendered_tail_sec < ENDING_TAIL_MIN_HOLD_SEC:
+        missing.append(f"audioTailHoldSec>={ENDING_TAIL_MIN_HOLD_SEC:.1f}")
+    if tail_hold_sec > ENDING_TAIL_MAX_HOLD_SEC:
+        missing.append(f"endingTailHoldSec<={ENDING_TAIL_MAX_HOLD_SEC:.1f}")
+    if rendered_tail_sec > ENDING_TAIL_MAX_HOLD_SEC:
+        missing.append(f"audioTailHoldSec<={ENDING_TAIL_MAX_HOLD_SEC:.1f}")
+    if fade_out_sec < ENDING_FADE_OUT_MIN_SEC:
+        missing.append(f"endingFadeOutSec>={ENDING_FADE_OUT_MIN_SEC:.1f}")
+    if has_narration and voice_target_sec > ENDING_FINAL_VOICE_MAX_SEC:
+        missing.append(f"endingVoiceTargetSec<={ENDING_FINAL_VOICE_MAX_SEC:.1f}")
+    if has_narration and caption_voice_coverage < ENDING_FINAL_CAPTION_MIN_VOICE_COVERAGE_RATIO:
+        missing.append(f"endingCaptionVoiceCoverage>={ENDING_FINAL_CAPTION_MIN_VOICE_COVERAGE_RATIO:.2f}")
+    if duration_sec <= tail_hold_sec + 0.5:
+        missing.append("finalSceneHasVoiceOrVisualBeforeTail")
+    if len(tail_review) < 36:
+        missing.append("endingTailReview>=36")
+    if _manual_visual_verdict_status(verdict) != "pass":
+        missing.append("endingTailVerdict=pass")
+    if len(resolution_review) < 40:
+        missing.append("endingResolutionReview>=40")
+    if len(screen_action) < 18:
+        missing.append("endingScreenAction>=18")
+    if _manual_visual_verdict_status(resolution_verdict) != "pass":
+        missing.append("endingResolutionVerdict=pass")
+
+    status = "pass"
+    if required and (not scenes or missing):
+        status = "fail"
+    return {
+        "required": required,
+        "status": status,
+        "finalSceneId": final_scene_id,
+        "tailHoldSec": round(tail_hold_sec, 3),
+        "fadeOutSec": round(fade_out_sec, 3),
+        "renderedAudioTailHoldSec": round(rendered_tail_sec, 3),
+        "durationSec": round(duration_sec, 3),
+        "voiceTargetDurationSec": round(voice_target_sec, 3),
+        "declaredCaptionDurationSec": round(declared_caption_sec, 3),
+        "renderedCaptionDurationSec": round(rendered_caption_sec, 3),
+        "captionVoiceCoverage": round(caption_voice_coverage, 3),
+        "audioDurationFit": audio_fit,
+        "missingFields": missing,
+        "tailReview": tail_review,
+        "endingResolutionReview": resolution_review,
+        "endingScreenAction": screen_action,
+        "policy": {
+            "tailRule": (
+                f"Source-led or upload-facing renders need {ENDING_TAIL_MIN_HOLD_SEC:.1f}-"
+                f"{ENDING_TAIL_MAX_HOLD_SEC:.1f}s of final visual/BGM hold after the last spoken idea, "
+                "not silent padding."
+            ),
+            "audioRule": "TTS must not be stretched to fill the entire final scene when an ending tail hold is requested.",
+            "fadeRule": f"The final render needs at least {ENDING_FADE_OUT_MIN_SEC:.1f}s of visual/audio fade-out so the MP4 does not hard-cut at the tail.",
+            "resolutionRule": (
+                f"Final narration should stay <= {ENDING_FINAL_VOICE_MAX_SEC:.1f}s and the rendered payoff "
+                f"caption should cover at least {ENDING_FINAL_CAPTION_MIN_VOICE_COVERAGE_RATIO:.0%} of that spoken close; "
+                "the last visual, caption, and spoken idea must resolve the same beat instead of adding blank padding."
+            ),
+        },
+    }
+
+
 def _text_present(value: object) -> bool:
     return bool(str(value or "").strip())
 
@@ -872,6 +3928,33 @@ def _visual_asset_for_scene(manifest: dict, scene_id: str) -> dict:
         if asset.get("sceneId") == scene_id and asset.get("role") == "visual":
             return asset
     return {}
+
+
+def _audio_asset_for_scene(manifest: dict, scene_id: str) -> dict:
+    for asset in manifest.get("assets", []):
+        if asset.get("sceneId") == scene_id and asset.get("role") == "audio":
+            if str(asset.get("kind") or "").strip().lower() == "bgm":
+                continue
+            return asset
+    return {}
+
+
+def _scene_duration_seconds(scene: dict) -> float:
+    for key in ("durationSec", "duration_sec"):
+        try:
+            value = float(scene.get(key) or 0)
+            if value > 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+    try:
+        start = float(scene.get("startSec") if scene.get("startSec") is not None else scene.get("start_sec") or 0)
+        end = float(scene.get("endSec") if scene.get("endSec") is not None else scene.get("end_sec") or 0)
+        if end > start:
+            return end - start
+    except (TypeError, ValueError):
+        pass
+    return _scene_caption_duration(scene)
 
 
 def _compact_text_length(value: object) -> int:
@@ -1200,6 +4283,290 @@ def _is_grok_handoff_visual(provider: str, source_origin: str, source_intent: st
     )
 
 
+def _is_gemini_handoff_visual(provider: str, source_origin: str, source_intent: str, visual_asset: dict) -> bool:
+    generator = _normalized_source_tag(visual_asset.get("sourceGenerator"))
+    source_path = str(visual_asset.get("sourcePath") or "").strip().lower().replace("\\", "/")
+    return (
+        provider in {"upload", *GEMINI_VIDEO_SOURCE_TAGS}
+        and (
+            source_intent in GEMINI_VIDEO_SOURCE_TAGS
+            or source_origin in GEMINI_VIDEO_SOURCE_TAGS
+            or generator in GEMINI_VIDEO_SOURCE_TAGS
+            or "storage/gemini-handoffs/" in source_path
+            or "browser-handoffs/gemini" in source_path
+        )
+    )
+
+
+def _source_first_required(manifest: dict) -> bool:
+    if any(_truthy_metadata(manifest.get(flag)) for flag in SOURCE_FIRST_REQUIRED_FLAGS):
+        return True
+    if str(manifest.get("referenceProfilePath") or manifest.get("reference_profile_path") or "").strip():
+        return True
+    project_id = str(manifest.get("projectId") or manifest.get("project_id") or "").strip().lower()
+    render_purpose = str(manifest.get("renderPurpose") or manifest.get("render_purpose") or "").strip().lower()
+    return project_id.startswith("reference-") or "source-first" in render_purpose or "reference-profile" in render_purpose
+
+
+def _local_generated_video_source_ready(provider: str, source_intent: str, visual_asset: dict) -> bool:
+    generator = _normalized_source_tag(visual_asset.get("sourceGenerator"))
+    if provider not in LOCAL_ORIGINAL_VIDEO_INTENTS and source_intent not in LOCAL_ORIGINAL_VIDEO_INTENTS and generator not in LOCAL_ORIGINAL_VIDEO_INTENTS:
+        return False
+    return all(
+        str(visual_asset.get(key) or "").strip()
+        for key in (
+            "sourceGenerator",
+            "sourceGeneratorRequestPath",
+            "sourceGeneratorPromptPath",
+            "sourceGeneratorLogPath",
+        )
+    )
+
+
+def _internet_source_proof_mode(manifest: dict) -> bool:
+    if _truthy_metadata(manifest.get("internetSourceProofMode")):
+        return True
+    if _truthy_metadata(manifest.get("internetSourceAcquisitionRequired")):
+        return True
+    project_id = str(manifest.get("projectId") or manifest.get("project_id") or "").lower()
+    render_purpose = str(manifest.get("renderPurpose") or manifest.get("render_purpose") or "").lower()
+    return any(term in f"{project_id} {render_purpose}" for term in ("internet-meme", "meme-gif", "internet-gif", "web-gif"))
+
+
+def _internet_source_acquisition_required(manifest: dict) -> bool:
+    if _truthy_metadata(manifest.get("internetSourceAcquisitionRequired")):
+        return True
+    return _internet_source_proof_mode(manifest)
+
+
+def _source_acquisition_payload(scene: dict, visual_asset: dict) -> dict:
+    payload: dict = {}
+    for container in (visual_asset.get("sourceFetch"), visual_asset.get("sourceAcquisition"), scene.get("sourceFetch"), scene.get("sourceAcquisition")):
+        if isinstance(container, dict):
+            payload.update(container)
+    return payload
+
+
+def _source_context_payload(scene: dict, visual_asset: dict) -> dict:
+    payload: dict = {}
+    for container in (visual_asset.get("sourceContext"), scene.get("sourceContext")):
+        if isinstance(container, dict):
+            payload.update(container)
+    return payload
+
+
+def _source_acquisition_value(scene: dict, visual_asset: dict, *keys: str) -> str:
+    payload = _source_acquisition_payload(scene, visual_asset)
+    for key in keys:
+        for container in (payload, visual_asset, scene):
+            if isinstance(container, dict):
+                value = str(container.get(key) or "").strip()
+                if value:
+                    return value
+    return ""
+
+
+def _source_context_value(scene: dict, visual_asset: dict, *keys: str) -> str:
+    payload = _source_context_payload(scene, visual_asset)
+    for key in keys:
+        for container in (payload, visual_asset, scene):
+            if isinstance(container, dict):
+                value = str(container.get(key) or "").strip()
+                if value:
+                    return value
+    return ""
+
+
+def _source_acquisition_int(scene: dict, visual_asset: dict, *keys: str) -> int:
+    raw = _source_acquisition_value(scene, visual_asset, *keys)
+    try:
+        number = int(raw or 0)
+    except (TypeError, ValueError):
+        return 0
+    return number if number > 0 else 0
+
+
+def _is_internet_source_candidate(scene: dict, visual_asset: dict) -> bool:
+    payload = _source_acquisition_payload(scene, visual_asset)
+    text = " ".join(
+        str(value or "")
+        for value in (
+            scene.get("visualSourceIntent"),
+            scene.get("sourceOrigin"),
+            scene.get("sourceType"),
+            scene.get("sourceUrl"),
+            scene.get("sourcePath"),
+            visual_asset.get("provider"),
+            visual_asset.get("sourceOrigin"),
+            visual_asset.get("sourceType"),
+            visual_asset.get("sourceUrl"),
+            visual_asset.get("sourcePath"),
+            payload.get("sourceUrl"),
+            payload.get("localPath"),
+            payload.get("mediaKind"),
+        )
+    ).strip().lower().replace("_", "-")
+    return bool(payload) or any(tag in text for tag in INTERNET_SOURCE_TAGS)
+
+
+def _internet_source_acquisition_scene_status(scene: dict, visual_asset: dict) -> tuple[bool, list[str], dict]:
+    source_url = _source_acquisition_value(scene, visual_asset, "sourceUrl", "downloadUrl", "assetUrl", "url")
+    local_path = _source_acquisition_value(scene, visual_asset, "sourceLocalPath", "localPath", "fetchedPath", "sourcePath")
+    sha256 = _source_acquisition_value(scene, visual_asset, "sourceSha256", "sha256")
+    size_bytes = _source_acquisition_int(scene, visual_asset, "sourceBytes", "sizeBytes", "bytes")
+    content_type = _source_acquisition_value(scene, visual_asset, "contentType", "sourceContentType")
+    media_kind = _normalized_source_tag(_source_acquisition_value(scene, visual_asset, "sourceMediaKind", "mediaKind"))
+    fetch_status = _normalized_source_tag(_source_acquisition_value(scene, visual_asset, "sourceFetchStatus", "fetchStatus", "status"))
+    verdict = _normalized_source_tag(
+        _source_acquisition_value(scene, visual_asset, "sourceAcquisitionVerdict", "sourceFetchVerdict", "verdict")
+    )
+    review = _source_acquisition_value(scene, visual_asset, "sourceAcquisitionReview", "sourceFetchReview", "review")
+    visual_kind = str(scene.get("visualKind") or visual_asset.get("kind") or "").strip()
+    missing: list[str] = []
+    if not source_url:
+        missing.append("sourceUrl")
+    if not local_path:
+        missing.append("localPath")
+    if len(sha256) < 12:
+        missing.append("sha256")
+    if size_bytes <= 0:
+        missing.append("sizeBytes")
+    if media_kind not in INTERNET_SOURCE_MEDIA_KINDS:
+        missing.append("mediaKind")
+    if visual_kind == "video" and media_kind not in {"gif", "video"}:
+        missing.append("motionMediaKind=gif/video")
+    if fetch_status not in INTERNET_SOURCE_FETCH_PASS_STATUSES:
+        missing.append("sourceFetchStatus=fetched")
+    if verdict not in {"pass", "approved", "ready", "ok"}:
+        missing.append("sourceAcquisitionVerdict=pass")
+    if len(review) < 32:
+        missing.append("sourceAcquisitionReview>=32")
+    detail = {
+        "sourceUrl": source_url,
+        "localPath": local_path,
+        "sha256": sha256,
+        "sizeBytes": size_bytes,
+        "contentType": content_type,
+        "mediaKind": media_kind,
+        "fetchStatus": fetch_status,
+        "verdict": verdict,
+        "reviewReady": len(review) >= 32,
+        "motionReady": visual_kind == "video" and media_kind in {"gif", "video"},
+    }
+    return not missing, missing, detail
+
+
+def _internet_source_context_required(manifest: dict) -> bool:
+    return (
+        _internet_source_acquisition_required(manifest)
+        or _truthy_metadata(manifest.get("internetSourceContextRequired"))
+        or _truthy_metadata(manifest.get("sourceTypeMixRequired"))
+    )
+
+
+def _internet_source_context_scene_status(manifest: dict, scene: dict, visual_asset: dict) -> tuple[bool, list[str], dict]:
+    acquisition_ready, _acquisition_missing, acquisition_detail = _internet_source_acquisition_scene_status(scene, visual_asset)
+    manifest_topic = str(
+        manifest.get("topic")
+        or manifest.get("sourceTopic")
+        or manifest.get("storyPremise")
+        or manifest.get("prompt")
+        or manifest.get("title")
+        or ""
+    ).strip()
+    topic = _source_context_value(scene, visual_asset, "topic", "sourceTopic", "projectTopic") or manifest_topic
+    scene_purpose = _source_context_value(scene, visual_asset, "scenePurpose", "storyBeat", "beatPurpose", "captionPurpose")
+    viewer_job = _source_context_value(scene, visual_asset, "viewerJob", "sourceJob", "visualJob")
+    selection_rationale = _source_context_value(
+        scene,
+        visual_asset,
+        "selectionRationale",
+        "sourceRationale",
+        "contextRationale",
+    ) or str(scene.get("sourceRationale") or "").strip()
+    media_choice = _source_context_value(
+        scene,
+        visual_asset,
+        "mediaChoiceRationale",
+        "whyGifOrImage",
+        "sourceTypeDecision",
+    )
+    motion_fit = _source_context_value(scene, visual_asset, "motionFit", "whyMotionFits")
+    still_fit = _source_context_value(scene, visual_asset, "stillFit", "whyStillImageFits")
+    verdict = _source_context_value(
+        scene,
+        visual_asset,
+        "verdict",
+        "sourceContextVerdict",
+        "sourceFitVerdict",
+        "contextFitVerdict",
+    )
+    verdict_status = _manual_visual_verdict_status(verdict)
+    media_kind = str(acquisition_detail.get("mediaKind") or "").strip()
+    visual_kind = str(scene.get("visualKind") or visual_asset.get("kind") or "").strip()
+    missing: list[str] = []
+    if not acquisition_ready:
+        missing.append("sourceAcquisitionReady")
+    if len(topic) < 8:
+        missing.append("topic>=8")
+    if len(scene_purpose) < 12:
+        missing.append("scenePurpose>=12")
+    if len(viewer_job) < 16:
+        missing.append("viewerJob>=16")
+    if len(selection_rationale) < 40:
+        missing.append("selectionRationale>=40")
+    if len(media_choice) < 32:
+        missing.append("mediaChoiceRationale>=32")
+    if media_kind in {"gif", "video"} and len(motion_fit) < 24:
+        missing.append("motionFit>=24")
+    if media_kind == "image" and len(still_fit) < 24:
+        missing.append("stillFit>=24")
+    if visual_kind == "image" and media_kind in {"gif", "video"}:
+        missing.append("visualKind/mediaKind mismatch")
+    if visual_kind == "video" and media_kind == "image":
+        missing.append("visualKind/mediaKind mismatch")
+    if verdict_status != "pass":
+        missing.append("sourceContextVerdict=pass")
+    detail = {
+        "topic": topic,
+        "scenePurpose": scene_purpose,
+        "viewerJob": viewer_job,
+        "selectionRationaleReady": len(selection_rationale) >= 40,
+        "mediaChoiceRationaleReady": len(media_choice) >= 32,
+        "motionFitReady": len(motion_fit) >= 24,
+        "stillFitReady": len(still_fit) >= 24,
+        "mediaKind": media_kind,
+        "visualKind": visual_kind,
+        "verdictStatus": verdict_status,
+        "acquisitionReady": acquisition_ready,
+    }
+    return not missing, missing, detail
+
+
+def _internet_context_source_ready(manifest: dict, scene: dict, visual_asset: dict, visual_kind: str) -> bool:
+    if visual_kind not in {"image", "video"} or not _is_internet_source_candidate(scene, visual_asset):
+        return False
+    ready, _missing, detail = _internet_source_context_scene_status(manifest, scene, visual_asset)
+    visual_verdict = _manual_visual_verdict_status(
+        scene.get("visualQualityVerdict")
+        or scene.get("manualVisualVerdict")
+        or scene.get("sourceFitVerdict")
+    )
+    return ready and visual_verdict == "pass" and detail.get("mediaKind") in INTERNET_SOURCE_MEDIA_KINDS
+
+
+def _internet_motion_source_ready(scene: dict, visual_asset: dict, visual_kind: str) -> bool:
+    if visual_kind != "video" or not _is_internet_source_candidate(scene, visual_asset):
+        return False
+    ready, _missing, detail = _internet_source_acquisition_scene_status(scene, visual_asset)
+    visual_verdict = _manual_visual_verdict_status(
+        scene.get("visualQualityVerdict")
+        or scene.get("manualVisualVerdict")
+        or scene.get("sourceFitVerdict")
+    )
+    return ready and detail.get("motionReady") is True and visual_verdict == "pass"
+
+
 def _source_provenance_confirmation_required(source_provenance: dict) -> bool:
     status = str(source_provenance.get("status") or "").strip()
     return status in GROK_SOURCE_CONFIRMATION_REQUIRED_STATUSES
@@ -1262,6 +4629,13 @@ def _build_template_source_review(production_review: dict) -> dict:
     local_model = int(summary.get("localModelVideoScenes", 0) or 0)
     stock = int(summary.get("stockVideoScenes", 0) or 0)
     image_fallback = int(summary.get("imageFallbackScenes", 0) or 0)
+    image_fallback_scene_ids = [str(item) for item in summary.get("imageFallbackSceneIds") or []]
+    internet_context_source_scene_ids = [str(item) for item in summary.get("internetContextSourceSceneIds") or []]
+    blocking_image_fallback_scene_ids = [
+        scene_id
+        for scene_id in image_fallback_scene_ids
+        if scene_id not in internet_context_source_scene_ids
+    ]
     repeated = summary.get("repeatedVisualAssetScenes") or []
     missing_visual_provenance = summary.get("missingFreeAssetProvenanceScenes") or []
     missing_audio_provenance = summary.get("missingFreeAudioProvenanceAssets") or []
@@ -1287,9 +4661,9 @@ def _build_template_source_review(production_review: dict) -> dict:
         recommended_fixes.append(
             "Record free visual/audio source URL, ID, creator, license, and attribution evidence."
         )
-    if image_fallback:
+    if blocking_image_fallback_scene_ids:
         recommended_fixes.append(
-            f"Replace {image_fallback} still-image fallback scene(s) with moving MP4 unless the still is intentional."
+            f"Replace or context-approve still-image fallback scene(s): {blocking_image_fallback_scene_ids}."
         )
     if missing_rationale:
         recommended_fixes.append(f"Add source-selection rationale for scenes: {missing_rationale}.")
@@ -1403,13 +4777,24 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
     stock_video_scenes = 0
     uploaded_video_scenes = 0
     grok_handoff_scenes = 0
+    gemini_handoff_scenes = 0
     local_model_video_scenes = 0
+    internet_motion_source_scenes = 0
+    internet_context_source_scenes = 0
     image_fallback_scenes = 0
     video_scenes = 0
     stock_video_scene_ids: list[str] = []
     uploaded_video_scene_ids: list[str] = []
     grok_handoff_scene_ids: list[str] = []
+    gemini_handoff_scene_ids: list[str] = []
     local_model_video_scene_ids: list[str] = []
+    internet_motion_source_scene_ids: list[str] = []
+    internet_context_source_scene_ids: list[str] = []
+    source_first_generated_scene_ids: list[str] = []
+    source_first_internet_source_scene_ids: list[str] = []
+    source_first_internet_context_scene_ids: list[str] = []
+    source_first_blocked_scene_ids: list[str] = []
+    source_first_block_reasons_by_scene: dict[str, str] = {}
     original_clip_scene_ids: list[str] = []
     weak_uploaded_originality_scenes: list[str] = []
     procedural_placeholder_scenes: list[str] = []
@@ -1430,6 +4815,7 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
     missing_narration_scenes: list[str] = []
     thin_narration_scenes: list[str] = []
     short_voiceover_callout_scenes: list[str] = []
+    final_payoff_short_narration_scenes: list[str] = []
     production_meta_narration_scenes: list[str] = []
     production_meta_subtitle_scenes: list[str] = []
     production_meta_terms_by_scene: dict[str, list[str]] = {}
@@ -1482,9 +4868,14 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
     rejected_grok_source_review_scenes: list[str] = []
     grok_preview_caveat_scenes: list[str] = []
     visual_identity_first_seen: dict[str, str] = {}
+    approved_source_loop_repeat_scenes: list[str] = []
+    approved_source_loop_repeat_groups: dict[str, list[str]] = {}
     caption_preset_counts: dict[str, int] = {}
     layout_variant_counts: dict[str, int] = {}
     content_template = str(manifest.get("templateType") or manifest.get("template_type") or manifest.get("contentTemplate") or "")
+    upload_candidate_required = _upload_candidate_required(manifest)
+    source_first_required = _source_first_required(manifest)
+    internet_source_proof_mode = _internet_source_proof_mode(manifest)
     manifest_audio_design_mode = _normalized_audio_design_mode(
         manifest.get("audioDesignMode") or manifest.get("audio_design_mode")
     )
@@ -1574,6 +4965,7 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
         )
     )
     first_scene_id = str((scenes[0] if scenes else {}).get("sceneId") or "")
+    final_scene_id = str((scenes[-1] if scenes else {}).get("sceneId") or "")
     for scene in scenes:
         scene_id = str(scene.get("sceneId") or "")
         visual_asset = _visual_asset_for_scene(manifest, scene_id)
@@ -1670,6 +5062,25 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
             _normalized_source_tag(source_intent),
             visual_asset,
         )
+        is_gemini_handoff_source = _is_gemini_handoff_visual(
+            _normalized_source_tag(provider),
+            _normalized_source_tag(source_origin),
+            _normalized_source_tag(source_intent),
+            visual_asset,
+        )
+        local_generated_source_ready = _local_generated_video_source_ready(
+            _normalized_source_tag(provider),
+            _normalized_source_tag(source_intent),
+            visual_asset,
+        )
+        internet_motion_source_ready = _internet_motion_source_ready(scene, visual_asset, visual_kind)
+        internet_context_source_ready = _internet_context_source_ready(manifest, scene, visual_asset, visual_kind)
+        if internet_motion_source_ready:
+            internet_motion_source_scenes += 1
+            internet_motion_source_scene_ids.append(scene_id)
+        if internet_context_source_ready:
+            internet_context_source_scenes += 1
+            internet_context_source_scene_ids.append(scene_id)
         grok_source_curation_issues: list[str] = []
         if is_grok_handoff_source:
             grok_source_curation_scenes.append(scene_id)
@@ -1721,6 +5132,40 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
             else:
                 grok_source_curation_ready_scenes.append(scene_id)
 
+        if is_gemini_handoff_source:
+            gemini_handoff_scenes += 1
+            gemini_handoff_scene_ids.append(scene_id)
+
+        if source_first_required:
+            source_first_reason = ""
+            if is_grok_handoff_source:
+                if grok_source_curation_issues:
+                    source_first_reason = "grok-source-curation-incomplete"
+                else:
+                    source_first_generated_scene_ids.append(scene_id)
+            elif is_gemini_handoff_source:
+                if visual_quality_verdict_status != "pass":
+                    source_first_reason = "gemini-source-visual-review-missing"
+                elif not selected_file_name:
+                    source_first_reason = "gemini-source-selected-file-missing"
+                else:
+                    source_first_generated_scene_ids.append(scene_id)
+            elif local_generated_source_ready:
+                source_first_generated_scene_ids.append(scene_id)
+            elif internet_motion_source_ready and (
+                not _internet_source_context_required(manifest)
+                or internet_context_source_ready
+            ):
+                source_first_internet_source_scene_ids.append(scene_id)
+            elif internet_context_source_ready:
+                source_first_internet_context_scene_ids.append(scene_id)
+            else:
+                source_first_reason = "requires-grok-gemini-local-generated-or-context-approved-internet-source"
+            if source_first_reason:
+                source_first_blocked_scene_ids.append(scene_id)
+                source_first_block_reasons_by_scene[scene_id] = source_first_reason
+                caveats.append(f"source-first gate blocked: {source_first_reason}")
+
         if visual_kind == "video":
             video_scenes += 1
             if provider == "pexels-video":
@@ -1771,6 +5216,9 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
                 grok_handoff_scene_ids.append(scene_id)
                 upload_originality_status = "grok-handoff"
                 is_original_video = True
+            elif is_gemini_handoff_source:
+                upload_originality_status = "gemini-handoff"
+                is_original_video = True
             elif (
                 provider in LOCAL_ORIGINAL_VIDEO_INTENTS
                 or source_intent in LOCAL_ORIGINAL_VIDEO_INTENTS
@@ -1788,13 +5236,16 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
                     source_intent,
                 )
                 if not is_original_video:
-                    weak_uploaded_originality_scenes.append(scene_id)
+                    if internet_motion_source_ready:
+                        upload_originality_status = "internet-source-proof"
+                    else:
+                        weak_uploaded_originality_scenes.append(scene_id)
                     if upload_originality_status == "procedural-placeholder":
                         procedural_placeholder_scenes.append(scene_id)
                         caveats.append("uploaded MP4 appears to be procedural/test-pattern placeholder, not owned footage")
                     elif upload_originality_status == "stock-rewrapped-upload":
                         caveats.append("uploaded MP4 retains stock/free-source provenance, not owned footage")
-                    else:
+                    elif upload_originality_status != "internet-source-proof":
                         caveats.append("uploaded MP4 lacks owned/direct source proof")
         else:
             image_fallback_scenes += 1
@@ -1805,8 +5256,23 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
         if visual_identity:
             first_seen_scene = visual_identity_first_seen.get(visual_identity)
             if first_seen_scene and first_seen_scene != scene_id:
-                repeated_visual_asset_scenes.append(scene_id)
-                caveats.append(f"reused visual asset from {first_seen_scene}")
+                first_scene = next(
+                    (item for item in manifest.get("scenes", []) if str(item.get("sceneId") or "") == first_seen_scene),
+                    {},
+                )
+                first_visual_asset = _visual_asset_for_scene(manifest, first_seen_scene)
+                if _source_loop_repeat_pair_approved(first_scene, first_visual_asset, scene, visual_asset):
+                    group_id = _source_loop_group_id(scene, visual_asset)
+                    approved_source_loop_repeat_scenes.append(scene_id)
+                    group_scenes = approved_source_loop_repeat_groups.setdefault(group_id, [])
+                    if first_seen_scene not in group_scenes:
+                        group_scenes.append(first_seen_scene)
+                    if scene_id not in group_scenes:
+                        group_scenes.append(scene_id)
+                    caveats.append(f"intentional source loop repeat from {first_seen_scene}")
+                else:
+                    repeated_visual_asset_scenes.append(scene_id)
+                    caveats.append(f"reused visual asset from {first_seen_scene}")
             else:
                 visual_identity_first_seen[visual_identity] = scene_id
 
@@ -1868,9 +5334,18 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
                 subtitle_length,
                 scene_duration,
             )
+            final_payoff_short_narration_approved = _final_payoff_short_narration_approved(
+                scene,
+                scene_id,
+                final_scene_id,
+                narration_length,
+                subtitle_length,
+            )
             if short_callout_approved:
                 short_voiceover_callout_scenes.append(scene_id)
-            if narration_length < min_chars and not short_callout_approved:
+            if final_payoff_short_narration_approved:
+                final_payoff_short_narration_scenes.append(scene_id)
+            if narration_length < min_chars and not short_callout_approved and not final_payoff_short_narration_approved:
                 thin_narration_scenes.append(scene_id)
                 caveats.append(f"thin narration for TTS ({narration_length}/{min_chars})")
             if narration_meta_terms:
@@ -2009,6 +5484,7 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
                 "subtitleTextLength": subtitle_length,
                 "requiredNarrationTextLength": min_chars,
                 "shortVoiceoverCalloutApproved": scene_id in short_voiceover_callout_scenes,
+                "finalPayoffShortNarrationApproved": scene_id in final_payoff_short_narration_scenes,
                 "audioDesignMode": audio_design_mode,
                 "voiceoverRequiredNoVoice": scene_id in voiceover_required_no_voice_scenes,
                 "visualLedNoVoiceApproved": visual_led_no_voice_approved,
@@ -2045,6 +5521,18 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
                 "sourceProvenanceConfirmed": source_provenance_confirmed,
                 "sourceProvenanceNote": source_provenance_note,
                 "uploadOriginalityStatus": upload_originality_status,
+                "internetMotionSourceReady": internet_motion_source_ready,
+                "internetContextSourceReady": internet_context_source_ready,
+                "internetSourceAcquisition": _internet_source_acquisition_scene_status(scene, visual_asset)[2]
+                if _is_internet_source_candidate(scene, visual_asset)
+                else {},
+                "internetSourceContext": _internet_source_context_scene_status(manifest, scene, visual_asset)[2]
+                if _is_internet_source_candidate(scene, visual_asset)
+                else {},
+                "sourceLoopGroupId": _source_loop_group_id(scene, visual_asset),
+                "sourceLoopRepeatApproved": _source_loop_repeat_approved(scene, visual_asset),
+                "approvedSourceLoopRepeat": scene_id in approved_source_loop_repeat_scenes,
+                "sourceLoopRhythmReview": _source_loop_review_text(scene, visual_asset),
                 "localGenerationProvenance": provenance,
                 "grokSourceCuration": {
                     "required": is_grok_handoff_source,
@@ -2096,6 +5584,14 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
         and len(captioned_scene_ids) <= 1
         and int(caption_preset_counts.get("none", 0) or 0) >= len(scenes) - 1
     )
+    source_context_cut_density_ready = (
+        len(scenes) >= 4
+        and internet_context_source_scenes == len(scenes)
+        and video_scenes >= 1
+        and not repeated_visual_asset_scenes
+        and len(short_form_reference_scenes) == len(scenes)
+        and not missing_caption_layout_review_scenes
+    )
     shorts_cut_density_ready = (
         len(scenes) < 4
         or (
@@ -2103,6 +5599,7 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
             and image_fallback_scenes == 0
             and not repeated_visual_asset_scenes
         )
+        or source_context_cut_density_ready
     )
     average_scene_duration_sec = (
         round(sum(scene_duration_by_id.values()) / len(scene_duration_by_id), 2)
@@ -2121,6 +5618,7 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
     if (
         len(scenes) >= 4
         and average_scene_duration_sec > float(REFERENCE_EDIT_GRAMMAR_POLICY["targetAverageCutSec"])
+        and not source_context_cut_density_ready
     ):
         reference_edit_grammar_issues.append(
             f"average scene duration {average_scene_duration_sec:.2f}s exceeds {REFERENCE_EDIT_GRAMMAR_POLICY['targetAverageCutSec']}s reference pacing"
@@ -2138,6 +5636,24 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
         if source_mix_required and not original_source_mix_ready and stock_video_scenes > 0
         else []
     )
+    source_first_accepted_scene_ids = sorted(set(
+        source_first_generated_scene_ids
+        + source_first_internet_source_scene_ids
+        + source_first_internet_context_scene_ids
+    ))
+    source_first_blocking_image_fallback_scene_ids = [
+        scene_id
+        for scene_id in image_fallback_scene_ids
+        if scene_id not in source_first_internet_context_scene_ids
+    ]
+    source_first_ready = (
+        not source_first_required
+        or (
+            not source_first_blocked_scene_ids
+            and not source_first_blocking_image_fallback_scene_ids
+            and len(source_first_accepted_scene_ids) == len(scenes)
+        )
+    )
     ai_slop_visual_fit_status = (
         "fail"
         if failed_visual_verdict_scenes
@@ -2153,6 +5669,7 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
             or stock_source_mix_gap_scene_ids
             or failed_stock_ai_clip_fit_verdict_scenes
             or missing_stock_ai_clip_fit_verdict_scenes
+            or source_first_blocked_scene_ids
         )
         else "warn"
         if stock_only or weak_uploaded_originality_scenes or missing_visual_verdict_scenes
@@ -2166,17 +5683,33 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
             "stockVideoScenes": stock_video_scenes,
             "uploadedVideoScenes": uploaded_video_scenes,
             "grokHandoffScenes": grok_handoff_scenes,
+            "geminiHandoffScenes": gemini_handoff_scenes,
             "localModelVideoScenes": local_model_video_scenes,
+            "internetMotionSourceScenes": internet_motion_source_scenes,
+            "internetContextSourceScenes": internet_context_source_scenes,
             "imageFallbackScenes": image_fallback_scenes,
             "stockVideoSceneIds": stock_video_scene_ids,
             "uploadedVideoSceneIds": uploaded_video_scene_ids,
             "grokHandoffSceneIds": grok_handoff_scene_ids,
+            "geminiHandoffSceneIds": gemini_handoff_scene_ids,
             "localModelVideoSceneIds": local_model_video_scene_ids,
+            "internetMotionSourceSceneIds": internet_motion_source_scene_ids,
+            "internetContextSourceSceneIds": internet_context_source_scene_ids,
             "originalClipSceneIds": original_clip_scene_ids,
             "originalSourceMixRequired": source_mix_required,
             "originalSourceMixReady": original_source_mix_ready,
             "minOriginalScenesForSourceMix": min_original_scene_count,
             "stockSourceMixGapSceneIds": stock_source_mix_gap_scene_ids,
+            "sourceFirstRequired": source_first_required,
+            "sourceFirstReady": source_first_ready,
+            "sourceFirstGeneratedSceneIds": source_first_generated_scene_ids,
+            "sourceFirstInternetSourceSceneIds": source_first_internet_source_scene_ids,
+            "sourceFirstInternetContextSceneIds": source_first_internet_context_scene_ids,
+            "sourceFirstAcceptedSceneIds": source_first_accepted_scene_ids,
+            "sourceFirstBlockedSceneIds": source_first_blocked_scene_ids,
+            "sourceFirstBlockReasonsByScene": source_first_block_reasons_by_scene,
+            "sourceFirstBlockingImageFallbackSceneIds": source_first_blocking_image_fallback_scene_ids,
+            "internetSourceProofMode": internet_source_proof_mode,
             "weakUploadedOriginalityScenes": weak_uploaded_originality_scenes,
             "proceduralPlaceholderScenes": procedural_placeholder_scenes,
             "imageFallbackSceneIds": image_fallback_scene_ids,
@@ -2203,6 +5736,7 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
             "missingNarrationScenes": missing_narration_scenes,
             "thinNarrationScenes": thin_narration_scenes,
             "shortVoiceoverCalloutScenes": short_voiceover_callout_scenes,
+            "finalPayoffShortNarrationScenes": final_payoff_short_narration_scenes,
             "productionMetaNarrationScenes": production_meta_narration_scenes,
             "productionMetaSubtitleScenes": production_meta_subtitle_scenes,
             "productionMetaTermsByScene": production_meta_terms_by_scene,
@@ -2227,12 +5761,15 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
             "referenceEditGrammarReady": reference_edit_grammar_ready,
             "referenceEditGrammarIssues": reference_edit_grammar_issues,
             "referenceEditTermsByScene": reference_edit_terms_by_scene,
+            "sourceContextCutDensityReady": source_context_cut_density_ready,
             "shortFormReferenceScenes": short_form_reference_scenes,
             "missingReferenceEditGrammarScenes": missing_reference_edit_grammar_scenes,
             "longHoldSceneIds": long_hold_scene_ids,
             "averageSceneDurationSec": average_scene_duration_sec,
             "sceneDurationById": scene_duration_by_id,
             "repeatedVisualAssetScenes": repeated_visual_asset_scenes,
+            "approvedSourceLoopRepeatScenes": approved_source_loop_repeat_scenes,
+            "approvedSourceLoopRepeatGroups": approved_source_loop_repeat_groups,
             "freeAssetProvenanceScenes": free_asset_provenance_scenes,
             "missingFreeAssetProvenanceScenes": missing_free_asset_provenance_scenes,
             "freeAudioProvenanceAssets": free_audio_provenance_assets,
@@ -2275,6 +5812,7 @@ def _build_production_review(manifest: dict, local_media: list[dict]) -> dict:
             "stockOnly": stock_only,
             "curatedStockReady": curated_stock_ready,
             "contentTemplate": content_template,
+            "uploadCandidateRequired": upload_candidate_required,
         },
         "scenes": scenes_payload,
     }
@@ -2372,6 +5910,38 @@ def _build_publish_readiness(
         True,
     )
     add_criterion(
+        "providerConsistency",
+        "Provider-homogeneous final candidate",
+        check_status("providerConsistency"),
+        check_detail("providerConsistency"),
+        "For upload candidates, use Grok-only or Gemini-only sources; local-only is proof/fallback only and mixed providers require a separate proof path.",
+        check_status("providerConsistency") == "fail",
+    )
+    add_criterion(
+        "antiAiNaturalness",
+        "Anti-AI naturalness review",
+        check_status("antiAiNaturalness"),
+        check_detail("antiAiNaturalness"),
+        "Record per-scene naturalness proof: not generic AI/ad footage, same-world hands/objects/light, and a physical reason for each action.",
+        check_status("antiAiNaturalness") == "fail",
+    )
+    add_criterion(
+        "captionSystem",
+        "Caption system consistency",
+        check_status("captionSystem"),
+        check_detail("captionSystem"),
+        "Use a fixed caption position policy and record hook/friction/action/payoff/context purpose plus subject/UI clearance for every captioned scene.",
+        check_status("captionSystem") == "fail",
+    )
+    add_criterion(
+        "viewerTakeaway",
+        "Viewer takeaway",
+        check_status("viewerTakeaway"),
+        check_detail("viewerTakeaway"),
+        "State what the viewer understands, what action they can take, and what emotional state the video should leave.",
+        check_status("viewerTakeaway") == "fail",
+    )
+    add_criterion(
         "subtitleArtifact",
         "Subtitle artifact exists",
         check_status("subtitleArtifact"),
@@ -2416,6 +5986,118 @@ def _build_publish_readiness(
         True,
     )
     add_criterion(
+        "sourceEditorialLayout",
+        "Source/editorial image layout fit",
+        check_status("sourceEditorialLayout"),
+        check_detail("sourceEditorialLayout"),
+        "For source-first/editorial image renders, record image fit, subject zone, caption zone, crop review, caption-collision, no-overlap, and no black-divider pass verdict for every captioned image scene.",
+        check_status("sourceEditorialLayout") == "fail",
+    )
+    add_criterion(
+        "sourceEditorialImageContext",
+        "Source/editorial situation-image fit",
+        check_status("sourceEditorialImageContext"),
+        check_detail("sourceEditorialImageContext"),
+        "Give every source-editorial situation a distinct visual identity and a scene-specific image fit review; repeated or mismatched images cannot pass.",
+        check_status("sourceEditorialImageContext") == "fail",
+    )
+    add_criterion(
+        "stillImageSourcePolicy",
+        "Still image source role is appropriate",
+        check_status("stillImageSourcePolicy"),
+        check_detail("stillImageSourcePolicy"),
+        "Do not use generic web still images as the main visual source for non-meme explainers; replace them with Grok/Gemini/local MP4 or mark stills as support/evidence/reference cards.",
+        check_status("stillImageSourcePolicy") == "fail",
+    )
+    add_criterion(
+        "internetSourceAcquisition",
+        "Internet source acquisition proof",
+        check_status("internetSourceAcquisition"),
+        check_detail("internetSourceAcquisition"),
+        "Fetch each internet GIF/image/video source into local storage with source URL, local path, sha256, byte size, media kind, and manual source-fit verdict before render proof.",
+        check_status("internetSourceAcquisition") == "fail",
+    )
+    add_criterion(
+        "internetSourceContext",
+        "Internet source topic and scene fit",
+        check_status("internetSourceContext"),
+        check_detail("internetSourceContext"),
+        "Bind every fetched internet source to an explicit topic, scene purpose, viewer job, and GIF/image choice rationale; do not pass random source dumps.",
+        check_status("internetSourceContext") == "fail",
+    )
+    add_criterion(
+        "internetSourceEditorialIntegration",
+        "Internet source text/layout integration",
+        check_status("internetSourceEditorialIntegration"),
+        check_detail("internetSourceEditorialIntegration"),
+        "Make subtitle, TTS narration, and layout notes explicitly match the selected internet source context and media choice; repeated boilerplate source notes cannot pass.",
+        check_status("internetSourceEditorialIntegration") == "fail",
+    )
+    add_criterion(
+        "topicHookPayoffStructure",
+        "Topic, hook, and payoff spine",
+        check_status("topicHookPayoffStructure"),
+        check_detail("topicHookPayoffStructure"),
+        "Define the topic, opening hook, final payoff, and viewer takeaway before attaching internet GIF/image sources; random context-fit source dumps cannot pass.",
+        check_status("topicHookPayoffStructure") == "fail",
+    )
+    add_criterion(
+        "sceneSourceIntentBinding",
+        "Scene-source intent binding",
+        check_status("sceneSourceIntentBinding"),
+        check_detail("sceneSourceIntentBinding"),
+        "For every internet source scene, record what the source proves, why GIF/video or image is the right medium, and how that claim appears in caption, TTS, or layout.",
+        check_status("sceneSourceIntentBinding") == "fail",
+    )
+    add_criterion(
+        "visualFrameReviewEvidence",
+        "Contact-sheet/phone-frame visual evidence",
+        check_status("visualFrameReviewEvidence"),
+        check_detail("visualFrameReviewEvidence"),
+        "Add structured contact-sheet or phone-sized frame review evidence confirming source visibility, caption non-occlusion, TTS/caption sync, and a resolved final beat.",
+        check_status("visualFrameReviewEvidence") == "fail",
+    )
+    add_criterion(
+        "conversationalCopyStyle",
+        "Conversational subtitle/script prompt",
+        check_status("conversationalCopyStyle"),
+        check_detail("conversationalCopyStyle"),
+        "Rewrite source-led subtitles and TTS script with a conversational copy prompt, explicit forbidden phrases, and short-form reference takeaways.",
+        check_status("conversationalCopyStyle") == "fail",
+    )
+    add_criterion(
+        "ttsPacingAlignment",
+        "TTS pacing and subtitle alignment",
+        check_status("ttsPacingAlignment"),
+        check_detail("ttsPacingAlignment"),
+        "Shorten narration, lengthen scene timing, or revise captions until TTS no longer needs aggressive tempo compression and captions match the spoken density.",
+        check_status("ttsPacingAlignment") == "fail",
+    )
+    add_criterion(
+        "sourceLoopRhythm",
+        "Intentional source-loop rhythm",
+        check_status("sourceLoopRhythm"),
+        check_detail("sourceLoopRhythm"),
+        "When reusing the same internet GIF/video source as a loop, mark it as an intentional loop group with distinct captions and a loop rhythm review; otherwise replace the repeated asset.",
+        check_status("sourceLoopRhythm") == "fail",
+    )
+    add_criterion(
+        "endingPayoff",
+        "Ending payoff and pacing",
+        check_status("endingPayoff"),
+        check_detail("endingPayoff"),
+        "Define the final scene as payoff, summary, next-step, loop-close, or callback, with pacing and final-takeaway review so the video does not end abruptly.",
+        check_status("endingPayoff") == "fail",
+    )
+    add_criterion(
+        "endingTailPacing",
+        "Ending tail hold",
+        check_status("endingTailPacing"),
+        check_detail("endingTailPacing"),
+        "Leave a short visual/BGM tail after the final spoken idea instead of stretching TTS to the exact end of the video.",
+        check_status("endingTailPacing") == "fail",
+    )
+    add_criterion(
         "grokSourceCuration",
         "Grok-main selected take and source provenance",
         check_status("grokSourceCuration"),
@@ -2423,8 +6105,17 @@ def _build_publish_readiness(
         "Before publish, every Grok-main scene must carry 2-take comparison, selected MP4 filename, direct-import or already-saved-local provenance, and no rejected source review verdict.",
         True,
     )
+    add_criterion(
+        "sourceFirstSourceGate",
+        "Reference/profile source-first footage gate",
+        check_status("sourceFirstSourceGate"),
+        check_detail("sourceFirstSourceGate"),
+        "Generate/import Grok/Gemini/local model MP4 sources, or fetch context-approved internet GIF/image/video sources, for every reference/profile scene before using local prototype or generic stock fallback footage.",
+        True,
+    )
 
     image_fallback_scenes = int(production_summary.get("imageFallbackScenes", 0) or 0)
+    image_fallback_blocking_scenes = production_summary.get("sourceFirstBlockingImageFallbackSceneIds") or []
     stock_only = bool(production_summary.get("stockOnly"))
     curated_stock_ready = bool(production_summary.get("curatedStockReady"))
     missing_rationale = production_summary.get("missingRationaleScenes") or []
@@ -2452,9 +6143,13 @@ def _build_publish_readiness(
     add_criterion(
         "imageFallback",
         "Video-first scene mix",
-        "warn" if image_fallback_scenes else "pass",
-        f"imageFallbackScenes={image_fallback_scenes}",
-        "Replace static fallback scenes with short MP4 clips unless the still frame is intentional.",
+        "warn" if image_fallback_blocking_scenes else "pass",
+        (
+            f"imageFallbackScenes={image_fallback_scenes}, "
+            f"contextApprovedImageFallbackScenes={production_summary.get('sourceFirstInternetContextSceneIds') or []}, "
+            f"blockingImageFallbackScenes={image_fallback_blocking_scenes}"
+        ),
+        "Replace static fallback scenes with short MP4 clips unless the still frame is context-approved for that scene.",
         False,
     )
     add_criterion(
@@ -2635,6 +6330,7 @@ def _audio_design_ready(production_summary: dict) -> bool:
 
 
 def _build_channel_readiness(
+    checks: dict,
     publish_readiness: dict,
     production_review: dict,
     local_media_summary: dict,
@@ -2671,17 +6367,35 @@ def _build_channel_readiness(
         elif status == "pass":
             strengths.append(label)
 
+    def check_status(key: str) -> str:
+        return str((checks.get(key) or {}).get("status") or "warn")
+
+    def check_detail(key: str) -> str:
+        return str((checks.get(key) or {}).get("detail") or "")
+
     uploaded_video_scenes = int(production_summary.get("uploadedVideoScenes", 0) or 0)
     grok_handoff_scenes = int(production_summary.get("grokHandoffScenes", 0) or 0)
     local_model_video_scenes = int(production_summary.get("localModelVideoScenes", 0) or 0)
     stock_video_scenes = int(production_summary.get("stockVideoScenes", 0) or 0)
     total_scenes = int(production_summary.get("totalScenes", 0) or 0)
     original_clip_scene_ids = [str(item) for item in production_summary.get("originalClipSceneIds") or []]
-    original_clip_scenes = len(original_clip_scene_ids)
-    ai_or_local_clip_scenes = grok_handoff_scenes + local_model_video_scenes
+    gemini_handoff_scenes = int(production_summary.get("geminiHandoffScenes", 0) or 0)
+    internet_source_proof_mode = bool(production_summary.get("internetSourceProofMode"))
+    internet_motion_source_scene_ids = [str(item) for item in production_summary.get("internetMotionSourceSceneIds") or []]
+    internet_context_source_scene_ids = [str(item) for item in production_summary.get("internetContextSourceSceneIds") or []]
+    source_proof_clip_scene_ids = sorted(
+        set(original_clip_scene_ids + internet_motion_source_scene_ids + internet_context_source_scene_ids)
+    ) if internet_source_proof_mode else original_clip_scene_ids
+    original_clip_scenes = len(source_proof_clip_scene_ids)
+    ai_or_web_clip_scenes = grok_handoff_scenes + gemini_handoff_scenes + (
+        len(set(internet_motion_source_scene_ids + internet_context_source_scene_ids))
+        if internet_source_proof_mode
+        else 0
+    )
     review_scenes = production_review.get("scenes") or []
     first_scene_id = str((review_scenes[0] if review_scenes else {}).get("sceneId") or "scene-01")
     grok_handoff_scene_ids = [str(item) for item in production_summary.get("grokHandoffSceneIds") or []]
+    gemini_handoff_scene_ids = [str(item) for item in production_summary.get("geminiHandoffSceneIds") or []]
     local_model_video_scene_ids = [str(item) for item in production_summary.get("localModelVideoSceneIds") or []]
     weak_uploaded_originality_scenes = production_summary.get("weakUploadedOriginalityScenes") or []
     procedural_placeholder_scenes = production_summary.get("proceduralPlaceholderScenes") or []
@@ -2715,11 +6429,27 @@ def _build_channel_readiness(
     bgm_rotation_ready = not production_summary.get("weakBgmSelectionAssets") and not placeholder_bgm_assets
     template_source_review = production_review.get("templateSourceReview") or {}
     template_source_ready = template_source_review.get("status") == "pass"
+    provider_consistency_ready = check_status("providerConsistency") == "pass"
+    anti_ai_naturalness_ready = check_status("antiAiNaturalness") == "pass"
+    caption_system_ready = check_status("captionSystem") == "pass"
+    viewer_takeaway_ready = check_status("viewerTakeaway") == "pass"
+    internet_source_editorial_integration_ready = check_status("internetSourceEditorialIntegration") == "pass"
+    conversational_copy_style_ready = check_status("conversationalCopyStyle") == "pass"
+    tts_pacing_alignment_ready = check_status("ttsPacingAlignment") == "pass"
+    source_loop_rhythm_ready = check_status("sourceLoopRhythm") == "pass"
+    ending_tail_pacing_ready = check_status("endingTailPacing") == "pass"
     audio_mix_review_ready = bool(production_summary.get("audioMixReviewScenes"))
     platform_comparison_ready = bool(production_summary.get("platformComparisonScenes"))
-    hero_original_clip_ready = first_scene_id in original_clip_scene_ids
-    hero_originality_evidence_ready = first_scene_id in originality_evidence_scenes
-    hero_ai_or_local_ready = first_scene_id in grok_handoff_scene_ids or first_scene_id in local_model_video_scene_ids
+    hero_original_clip_ready = first_scene_id in source_proof_clip_scene_ids
+    hero_originality_evidence_ready = first_scene_id in originality_evidence_scenes or (
+        internet_source_proof_mode and first_scene_id in source_proof_clip_scene_ids
+    )
+    hero_ai_or_web_ready = (
+        first_scene_id in grok_handoff_scene_ids
+        or first_scene_id in gemini_handoff_scene_ids
+        or first_scene_id in local_model_video_scene_ids
+        or (internet_source_proof_mode and first_scene_id in source_proof_clip_scene_ids)
+    )
 
     add_criterion(
         "publishGate",
@@ -2747,7 +6477,7 @@ def _build_channel_readiness(
         "First hook scene uses original MP4",
         "pass" if hero_original_clip_ready else "fail",
         f"firstSceneId={first_scene_id}, originalClipSceneIds={original_clip_scene_ids}",
-        "Move a direct upload, Grok app/web handoff, or local Wan/LTX/Hunyuan MP4 into the first hook scene before channel upload.",
+        "Move a direct upload, Grok app/web handoff, or Gemini/Veo web handoff MP4 into the first hook scene before channel upload.",
         True,
     )
     add_criterion(
@@ -2761,7 +6491,7 @@ def _build_channel_readiness(
             f"weakUploadedOriginalityScenes={weak_uploaded_originality_scenes}, "
             f"proceduralPlaceholderScenes={procedural_placeholder_scenes}"
         ),
-        "Add explicit evidence that the first hook MP4 is direct footage, a Grok app/web handoff, or a local Wan/LTX/Hunyuan generation, including prompt/source notes.",
+        "Add explicit evidence that the first hook MP4 is direct footage, a Grok app/web handoff, or a Gemini/Veo web handoff, including prompt/source notes.",
         True,
     )
     add_criterion(
@@ -2794,6 +6524,7 @@ def _build_channel_readiness(
             f"missingNarrationScenes={production_summary.get('missingNarrationScenes') or []}, "
             f"thinNarrationScenes={production_summary.get('thinNarrationScenes') or []}, "
             f"shortVoiceoverCalloutScenes={production_summary.get('shortVoiceoverCalloutScenes') or []}, "
+            f"finalPayoffShortNarrationScenes={production_summary.get('finalPayoffShortNarrationScenes') or []}, "
             f"noVoiceAudioDesignScenes={production_summary.get('noVoiceAudioDesignScenes') or []}, "
             f"voiceoverRequiredNoVoiceScenes={production_summary.get('voiceoverRequiredNoVoiceScenes') or []}, "
             f"visualLedNoVoiceApprovedScenes={production_summary.get('visualLedNoVoiceApprovedScenes') or []}, "
@@ -2826,6 +6557,78 @@ def _build_channel_readiness(
             f"longTopHookScenes={production_summary.get('longTopHookScenes') or []}"
         ),
         "Record caption layout review, avoid one long hook plus empty caption plan, and keep lower-info y<=1536 / right-side danger zone clear.",
+        True,
+    )
+    add_criterion(
+        "providerConsistency",
+        "Provider mode is channel-safe",
+        "pass" if provider_consistency_ready else "fail",
+        check_detail("providerConsistency"),
+        "Use Grok-only or Gemini-only for upload candidates; keep local-only as proof/fallback and block unexplained mixed-provider output.",
+        True,
+    )
+    add_criterion(
+        "antiAiNaturalness",
+        "Anti-AI naturalness review",
+        "pass" if anti_ai_naturalness_ready else "fail",
+        check_detail("antiAiNaturalness"),
+        "Record that scenes do not read as generic AI samples, same-world continuity is intact, and every action has a human reason.",
+        True,
+    )
+    add_criterion(
+        "captionSystem",
+        "Caption position and purpose system",
+        "pass" if caption_system_ready else "fail",
+        check_detail("captionSystem"),
+        "Fix caption position and purpose across scenes before channel review; random caption movement is not channel-ready.",
+        True,
+    )
+    add_criterion(
+        "viewerTakeaway",
+        "Viewer takeaway is recorded",
+        "pass" if viewer_takeaway_ready else "fail",
+        check_detail("viewerTakeaway"),
+        "Record what the viewer understands, what action they can take, and what feeling/state remains.",
+        True,
+    )
+    add_criterion(
+        "internetSourceEditorialIntegration",
+        "Internet source drives text and layout",
+        "pass" if internet_source_editorial_integration_ready else "fail",
+        check_detail("internetSourceEditorialIntegration"),
+        "When internet GIF/image sources are used, the subtitle, TTS, and layout note must all point back to the same scene context and media choice.",
+        True,
+    )
+    add_criterion(
+        "conversationalCopyStyle",
+        "Subtitles and TTS sound spoken",
+        "pass" if conversational_copy_style_ready else "fail",
+        check_detail("conversationalCopyStyle"),
+        "When source-led scenes use TTS, the prompt and viewer copy must be conversational, not report-style or production-label copy.",
+        True,
+    )
+    add_criterion(
+        "ttsPacingAlignment",
+        "TTS pace matches caption density",
+        "pass" if tts_pacing_alignment_ready else "fail",
+        check_detail("ttsPacingAlignment"),
+        "Keep TTS at a natural pace and make captions substantial enough that voiceover and on-screen text feel like the same edit.",
+        True,
+    )
+    add_criterion(
+        "sourceLoopRhythm",
+        "Repeated source loops are intentional",
+        "pass" if source_loop_rhythm_ready else "fail",
+        check_detail("sourceLoopRhythm"),
+        "Approve repeated GIF/video source loops only when the repeat has a distinct caption beat and documented loop rhythm.",
+        True,
+    )
+    add_criterion(
+        "endingTailPacing",
+        "Final beat has breathing room",
+        "pass" if ending_tail_pacing_ready else "fail",
+        check_detail("endingTailPacing"),
+        "Leave a short visual/BGM tail after the final spoken idea so channel candidates do not stop abruptly.",
         True,
     )
     add_criterion(
@@ -2875,21 +6678,21 @@ def _build_channel_readiness(
     )
     add_criterion(
         "aiOrLocalClipEvidence",
-        "Grok or local AI clip evidence",
-        "pass" if ai_or_local_clip_scenes > 0 else "warn",
-        f"grokHandoffScenes={grok_handoff_scenes}, localModelVideoScenes={local_model_video_scenes}",
-        "For top-tier AI-assisted Shorts/long-form, replace one hero scene with a Grok app/web MP4 or local Wan/LTX/Hunyuan output and keep its prompt/rationale.",
+        "Grok or Gemini web clip evidence",
+        "pass" if ai_or_web_clip_scenes > 0 else "warn",
+        f"grokHandoffScenes={grok_handoff_scenes}, geminiHandoffScenes={gemini_handoff_scenes}, localModelVideoScenes={local_model_video_scenes}",
+        "For upload candidates, prefer Grok app/web or Gemini/Veo web MP4 evidence; local-only remains a proof/fallback path.",
         False,
     )
     add_criterion(
         "heroAiOrLocalEvidence",
-        "First hook has Grok/local AI option",
-        "pass" if hero_ai_or_local_ready else "warn",
+        "First hook has Grok/Gemini web option",
+        "pass" if hero_ai_or_web_ready else "warn",
         (
             f"firstSceneId={first_scene_id}, grokHandoffSceneIds={grok_handoff_scene_ids}, "
-            f"localModelVideoSceneIds={local_model_video_scene_ids}"
+            f"geminiHandoffSceneIds={gemini_handoff_scene_ids}, localModelVideoSceneIds={local_model_video_scene_ids}"
         ),
-        "For AI-assisted channel targets, prefer the first hook scene as the Grok app/web or local Wan/LTX/Hunyuan MP4.",
+        "For AI-assisted channel targets, prefer the first hook scene as a Grok app/web or Gemini/Veo web MP4.",
         False,
     )
     add_criterion(
@@ -2962,6 +6765,15 @@ def _build_channel_readiness(
         or not asset_diversity_ready
         or not free_asset_provenance_ready
         or not template_source_ready
+        or not provider_consistency_ready
+        or not anti_ai_naturalness_ready
+        or not caption_system_ready
+        or not viewer_takeaway_ready
+        or not internet_source_editorial_integration_ready
+        or not conversational_copy_style_ready
+        or not tts_pacing_alignment_ready
+        or not source_loop_rhythm_ready
+        or not ending_tail_pacing_ready
     ):
         status = "needs-top-tier-evidence"
     else:
@@ -2981,14 +6793,20 @@ def _build_channel_readiness(
             "firstSceneId": first_scene_id,
             "heroOriginalClipReady": hero_original_clip_ready,
             "heroOriginalityEvidenceReady": hero_originality_evidence_ready,
-            "heroAiOrLocalReady": hero_ai_or_local_ready,
+            "heroAiOrLocalReady": hero_ai_or_web_ready,
             "originalClipSceneIds": original_clip_scene_ids,
+            "sourceProofClipSceneIds": source_proof_clip_scene_ids,
+            "internetSourceProofMode": internet_source_proof_mode,
+            "internetMotionSourceSceneIds": internet_motion_source_scene_ids,
+            "internetContextSourceSceneIds": internet_context_source_scene_ids,
             "weakUploadedOriginalityScenes": weak_uploaded_originality_scenes,
             "proceduralPlaceholderScenes": procedural_placeholder_scenes,
             "grokHandoffSceneIds": grok_handoff_scene_ids,
+            "geminiHandoffSceneIds": gemini_handoff_scene_ids,
             "localModelVideoSceneIds": local_model_video_scene_ids,
             "uploadedVideoScenes": uploaded_video_scenes,
             "grokHandoffScenes": grok_handoff_scenes,
+            "geminiHandoffScenes": gemini_handoff_scenes,
             "localModelVideoScenes": local_model_video_scenes,
             "stockVideoScenes": stock_video_scenes,
             "stockOnly": stock_only,
@@ -3013,6 +6831,15 @@ def _build_channel_readiness(
             "placeholderBgmAssets": placeholder_bgm_assets,
             "bgmRotationReady": bgm_rotation_ready,
             "templateSourceReady": template_source_ready,
+            "providerConsistencyReady": provider_consistency_ready,
+            "antiAiNaturalnessReady": anti_ai_naturalness_ready,
+            "captionSystemReady": caption_system_ready,
+            "viewerTakeawayReady": viewer_takeaway_ready,
+            "internetSourceEditorialIntegrationReady": internet_source_editorial_integration_ready,
+            "conversationalCopyStyleReady": conversational_copy_style_ready,
+            "ttsPacingAlignmentReady": tts_pacing_alignment_ready,
+            "sourceLoopRhythmReady": source_loop_rhythm_ready,
+            "endingTailPacingReady": ending_tail_pacing_ready,
             "audioMixReviewReady": audio_mix_review_ready,
             "platformComparisonReady": platform_comparison_ready,
             "placeholderCount": int(local_media_summary.get("placeholder", 0) or 0),
@@ -3081,7 +6908,13 @@ def _build_upload_review(
     local_model_video_scenes = int(production_summary.get("localModelVideoScenes", 0) or 0)
     stock_video_scenes = int(production_summary.get("stockVideoScenes", 0) or 0)
     original_clip_scene_ids = [str(item) for item in production_summary.get("originalClipSceneIds") or []]
-    original_clip_scenes = len(set(original_clip_scene_ids))
+    internet_source_proof_mode = bool(production_summary.get("internetSourceProofMode"))
+    internet_motion_source_scene_ids = [str(item) for item in production_summary.get("internetMotionSourceSceneIds") or []]
+    internet_context_source_scene_ids = [str(item) for item in production_summary.get("internetContextSourceSceneIds") or []]
+    source_proof_clip_scene_ids = sorted(
+        set(original_clip_scene_ids + internet_motion_source_scene_ids + internet_context_source_scene_ids)
+    ) if internet_source_proof_mode else original_clip_scene_ids
+    original_clip_scenes = len(set(source_proof_clip_scene_ids))
     min_original_scene_count = 1 if total_scenes <= 1 else max(2, (total_scenes + 1) // 2)
     source_mix_required = total_scenes > 1 and content_template in UPLOAD_SOURCE_MIX_REQUIRED_TEMPLATES
     original_source_mix_ready = original_clip_scenes >= min_original_scene_count
@@ -3114,6 +6947,15 @@ def _build_upload_review(
     bgm_rotation_ready = not production_summary.get("weakBgmSelectionAssets") and not placeholder_bgm_assets
     template_source_review = production_review.get("templateSourceReview") or {}
     template_source_ready = template_source_review.get("status") == "pass"
+    provider_consistency_ready = check_status("providerConsistency") == "pass"
+    anti_ai_naturalness_ready = check_status("antiAiNaturalness") == "pass"
+    caption_system_ready = check_status("captionSystem") == "pass"
+    viewer_takeaway_ready = check_status("viewerTakeaway") == "pass"
+    internet_source_editorial_integration_ready = check_status("internetSourceEditorialIntegration") == "pass"
+    conversational_copy_style_ready = check_status("conversationalCopyStyle") == "pass"
+    tts_pacing_alignment_ready = check_status("ttsPacingAlignment") == "pass"
+    source_loop_rhythm_ready = check_status("sourceLoopRhythm") == "pass"
+    ending_tail_pacing_ready = check_status("endingTailPacing") == "pass"
 
     add_criterion(
         "publishPacketReady",
@@ -3164,6 +7006,78 @@ def _build_upload_review(
         True,
     )
     add_criterion(
+        "providerConsistency",
+        "Provider mode is upload-candidate safe",
+        check_status("providerConsistency"),
+        check_detail("providerConsistency"),
+        "Keep upload candidates provider-homogeneous: Grok-only or Gemini-only. Local-only stays proof/fallback only.",
+        True,
+    )
+    add_criterion(
+        "antiAiNaturalness",
+        "Naturalness is reviewed",
+        check_status("antiAiNaturalness"),
+        check_detail("antiAiNaturalness"),
+        "Block upload when scenes still read like generic AI samples, ad footage, or unexplained pretty transitions.",
+        True,
+    )
+    add_criterion(
+        "captionSystem",
+        "Caption system is fixed and purposeful",
+        check_status("captionSystem"),
+        check_detail("captionSystem"),
+        "Fix caption position/purpose before upload; random top/center/lower movement makes the edit feel automated.",
+        True,
+    )
+    add_criterion(
+        "viewerTakeaway",
+        "Viewer takeaway is clear",
+        check_status("viewerTakeaway"),
+        check_detail("viewerTakeaway"),
+        "Do not upload until the render records what the viewer understands, what they can do, and what feeling/state remains.",
+        True,
+    )
+    add_criterion(
+        "internetSourceEditorialIntegration",
+        "Internet source controls subtitle/TTS/layout",
+        "pass" if internet_source_editorial_integration_ready else "fail",
+        check_detail("internetSourceEditorialIntegration"),
+        "Rewrite source-led scenes until the selected GIF/image source is reflected in the viewer-facing caption, TTS, and layout note.",
+        True,
+    )
+    add_criterion(
+        "conversationalCopyStyle",
+        "Subtitles and TTS are conversational",
+        "pass" if conversational_copy_style_ready else "fail",
+        check_detail("conversationalCopyStyle"),
+        "Rewrite upload-facing subtitles and TTS so they sound spoken, avoid report-style Korean endings, and follow the recorded short-form reference takeaways.",
+        True,
+    )
+    add_criterion(
+        "ttsPacingAlignment",
+        "TTS pace matches caption density",
+        "pass" if tts_pacing_alignment_ready else "fail",
+        check_detail("ttsPacingAlignment"),
+        "Upload review must block rap-speed TTS or overly tiny captions that do not match the spoken script.",
+        True,
+    )
+    add_criterion(
+        "sourceLoopRhythm",
+        "Repeated GIF/video loops are deliberate",
+        "pass" if source_loop_rhythm_ready else "fail",
+        check_detail("sourceLoopRhythm"),
+        "Upload review must block repeated internet GIF/video reuse unless it is an intentional loop group with distinct captions and rhythm review.",
+        True,
+    )
+    add_criterion(
+        "endingTailPacing",
+        "Ending has a tail hold",
+        "pass" if ending_tail_pacing_ready else "fail",
+        check_detail("endingTailPacing"),
+        "Upload review must leave a short visual/BGM tail after the final spoken line instead of stopping on the last syllable.",
+        True,
+    )
+    add_criterion(
         "heroOriginalityEvidence",
         "Hero originality evidence recorded",
         "pass" if hero_evidence_ready else "fail",
@@ -3204,6 +7118,7 @@ def _build_upload_review(
             f"missingNarrationScenes={production_summary.get('missingNarrationScenes') or []}, "
             f"thinNarrationScenes={production_summary.get('thinNarrationScenes') or []}, "
             f"shortVoiceoverCalloutScenes={production_summary.get('shortVoiceoverCalloutScenes') or []}, "
+            f"finalPayoffShortNarrationScenes={production_summary.get('finalPayoffShortNarrationScenes') or []}, "
             f"noVoiceAudioDesignScenes={production_summary.get('noVoiceAudioDesignScenes') or []}, "
             f"voiceoverRequiredNoVoiceScenes={production_summary.get('voiceoverRequiredNoVoiceScenes') or []}, "
             f"visualLedNoVoiceApprovedScenes={production_summary.get('visualLedNoVoiceApprovedScenes') or []}, "
@@ -3382,6 +7297,10 @@ def _build_upload_review(
             "grokHandoffScenes": grok_handoff_scenes,
             "localModelVideoScenes": local_model_video_scenes,
             "originalClipSceneIds": original_clip_scene_ids,
+            "sourceProofClipSceneIds": source_proof_clip_scene_ids,
+            "internetSourceProofMode": internet_source_proof_mode,
+            "internetMotionSourceSceneIds": internet_motion_source_scene_ids,
+            "internetContextSourceSceneIds": internet_context_source_scene_ids,
             "firstSceneHookReady": first_hook_ready,
             "qualityReviewScenes": quality_review_scenes,
             "visualVerdictScenes": visual_verdict_scenes,
@@ -3403,6 +7322,15 @@ def _build_upload_review(
             "placeholderBgmAssets": placeholder_bgm_assets,
             "bgmRotationReady": bgm_rotation_ready,
             "templateSourceReady": template_source_ready,
+            "providerConsistencyReady": provider_consistency_ready,
+            "antiAiNaturalnessReady": anti_ai_naturalness_ready,
+            "captionSystemReady": caption_system_ready,
+            "viewerTakeawayReady": viewer_takeaway_ready,
+            "internetSourceEditorialIntegrationReady": internet_source_editorial_integration_ready,
+            "conversationalCopyStyleReady": conversational_copy_style_ready,
+            "ttsPacingAlignmentReady": tts_pacing_alignment_ready,
+            "sourceLoopRhythmReady": source_loop_rhythm_ready,
+            "endingTailPacingReady": ending_tail_pacing_ready,
             "totalScenes": total_scenes,
         },
     }
@@ -3430,7 +7358,13 @@ def _build_top_tier_readiness(
     local_model_video_scenes = int(production_summary.get("localModelVideoScenes", 0) or 0)
     stock_video_scenes = int(production_summary.get("stockVideoScenes", 0) or 0)
     original_clip_scene_ids = [str(item) for item in production_summary.get("originalClipSceneIds") or []]
-    original_clip_scenes = len(set(original_clip_scene_ids))
+    internet_source_proof_mode = bool(production_summary.get("internetSourceProofMode"))
+    internet_motion_source_scene_ids = [str(item) for item in production_summary.get("internetMotionSourceSceneIds") or []]
+    internet_context_source_scene_ids = [str(item) for item in production_summary.get("internetContextSourceSceneIds") or []]
+    source_proof_clip_scene_ids = sorted(
+        set(original_clip_scene_ids + internet_motion_source_scene_ids + internet_context_source_scene_ids)
+    ) if internet_source_proof_mode else original_clip_scene_ids
+    original_clip_scenes = len(set(source_proof_clip_scene_ids))
     min_original_scene_count = 1 if total_scenes <= 1 else max(2, (total_scenes + 1) // 2)
     original_source_mix_ready = original_clip_scenes >= min_original_scene_count
     hero_ai_or_local_ready = channel_summary.get("heroAiOrLocalReady") is True
@@ -3465,6 +7399,42 @@ def _build_top_tier_readiness(
         channel_summary.get("templateSourceReady") is True
         or upload_summary.get("templateSourceReady") is True
         or template_source_review.get("status") == "pass"
+    )
+    provider_consistency_ready = (
+        upload_summary.get("providerConsistencyReady") is True
+        and (checks.get("providerConsistency") or {}).get("status") == "pass"
+    )
+    anti_ai_naturalness_ready = (
+        upload_summary.get("antiAiNaturalnessReady") is True
+        and (checks.get("antiAiNaturalness") or {}).get("status") == "pass"
+    )
+    caption_system_ready = (
+        upload_summary.get("captionSystemReady") is True
+        and (checks.get("captionSystem") or {}).get("status") == "pass"
+    )
+    viewer_takeaway_ready = (
+        upload_summary.get("viewerTakeawayReady") is True
+        and (checks.get("viewerTakeaway") or {}).get("status") == "pass"
+    )
+    internet_source_editorial_integration_ready = (
+        upload_summary.get("internetSourceEditorialIntegrationReady") is True
+        and (checks.get("internetSourceEditorialIntegration") or {}).get("status") == "pass"
+    )
+    conversational_copy_style_ready = (
+        upload_summary.get("conversationalCopyStyleReady") is True
+        and (checks.get("conversationalCopyStyle") or {}).get("status") == "pass"
+    )
+    tts_pacing_alignment_ready = (
+        upload_summary.get("ttsPacingAlignmentReady") is True
+        and (checks.get("ttsPacingAlignment") or {}).get("status") == "pass"
+    )
+    source_loop_rhythm_ready = (
+        upload_summary.get("sourceLoopRhythmReady") is True
+        and (checks.get("sourceLoopRhythm") or {}).get("status") == "pass"
+    )
+    ending_tail_pacing_ready = (
+        upload_summary.get("endingTailPacingReady") is True
+        and (checks.get("endingTailPacing") or {}).get("status") == "pass"
     )
     first_hook_ready = production_summary.get("firstSceneHookReady") is True
 
@@ -3558,6 +7528,74 @@ def _build_top_tier_readiness(
         caption_layout_ready and (checks.get("captionLayoutReview") or {}).get("status") == "pass",
         (checks.get("captionLayoutReview") or {}).get("detail") or f"captionLayoutReady={caption_layout_ready}",
         "Record per-scene caption placement review and keep captions out of subject and Shorts UI danger zones.",
+    )
+    add_criterion(
+        "providerConsistency",
+        "Provider mode is homogeneous",
+        provider_consistency_ready,
+        (checks.get("providerConsistency") or {}).get("detail") or "provider consistency check missing",
+        "Top-tier candidates should be Grok-only or Gemini-only; do not rely on local-only or unexplained mixed-provider output.",
+    )
+    add_criterion(
+        "antiAiNaturalness",
+        "Anti-AI naturalness passed",
+        anti_ai_naturalness_ready,
+        (checks.get("antiAiNaturalness") or {}).get("detail") or "anti-AI naturalness check missing",
+        "Reject output that still reads as generic AI/ad footage, same-looking samples, or action without human cause.",
+    )
+    add_criterion(
+        "captionSystem",
+        "Caption system supports the edit",
+        caption_system_ready,
+        (checks.get("captionSystem") or {}).get("detail") or "caption system check missing",
+        "Use a fixed caption position/purpose policy so captions feel intentionally edited, not randomly generated.",
+    )
+    add_criterion(
+        "viewerTakeaway",
+        "Viewer takeaway is explicit",
+        viewer_takeaway_ready,
+        (checks.get("viewerTakeaway") or {}).get("detail") or "viewer takeaway check missing",
+        "Do not call the output top-tier until the viewer understanding, action, and emotional state are recorded.",
+    )
+    add_criterion(
+        "internetSourceEditorialIntegration",
+        "Internet source is integrated into text/layout",
+        internet_source_editorial_integration_ready,
+        (checks.get("internetSourceEditorialIntegration") or {}).get("detail")
+        or "internet source editorial integration check missing",
+        "Source-led scenes must prove the chosen GIF/image source shaped the subtitle, TTS, and layout rather than only passing acquisition.",
+    )
+    add_criterion(
+        "conversationalCopyStyle",
+        "Subtitle/TTS copy sounds spoken",
+        conversational_copy_style_ready,
+        (checks.get("conversationalCopyStyle") or {}).get("detail")
+        or "conversational copy style check missing",
+        "Top-tier source-led videos need a conversational subtitle/script prompt and viewer copy that avoids report-style or production-label wording.",
+    )
+    add_criterion(
+        "ttsPacingAlignment",
+        "TTS pacing matches captions",
+        tts_pacing_alignment_ready,
+        (checks.get("ttsPacingAlignment") or {}).get("detail")
+        or "TTS pacing alignment check missing",
+        "Top-tier source-led videos cannot use aggressively compressed TTS or tiny captions that do not match the spoken script density.",
+    )
+    add_criterion(
+        "sourceLoopRhythm",
+        "Repeated source loops have edit rhythm",
+        source_loop_rhythm_ready,
+        (checks.get("sourceLoopRhythm") or {}).get("detail")
+        or "source loop rhythm check missing",
+        "Top-tier source-led videos can repeat a GIF/video source only when the repeat is a documented loop beat with distinct captions.",
+    )
+    add_criterion(
+        "endingTailPacing",
+        "Ending leaves a final hold",
+        ending_tail_pacing_ready,
+        (checks.get("endingTailPacing") or {}).get("detail")
+        or "ending tail pacing check missing",
+        "Top-tier videos need a short visual/BGM tail after the final spoken idea instead of cutting on the last syllable.",
     )
     add_criterion(
         "captionDensityAndSafeZone",
@@ -3712,6 +7750,10 @@ def _build_top_tier_readiness(
             "grokHandoffScenes": grok_handoff_scenes,
             "localModelVideoScenes": local_model_video_scenes,
             "originalClipSceneIds": original_clip_scene_ids,
+            "sourceProofClipSceneIds": source_proof_clip_scene_ids,
+            "internetSourceProofMode": internet_source_proof_mode,
+            "internetMotionSourceSceneIds": internet_motion_source_scene_ids,
+            "internetContextSourceSceneIds": internet_context_source_scene_ids,
             "firstSceneHookReady": first_hook_ready,
             "narrationReady": narration_ready,
             "captionLayoutReady": caption_layout_ready,
@@ -3727,6 +7769,11 @@ def _build_top_tier_readiness(
             "audioMixReviewReady": audio_mix_review_ready,
             "platformComparisonReady": platform_comparison_ready,
             "templateSourceReady": template_source_ready,
+            "internetSourceEditorialIntegrationReady": internet_source_editorial_integration_ready,
+            "conversationalCopyStyleReady": conversational_copy_style_ready,
+            "ttsPacingAlignmentReady": tts_pacing_alignment_ready,
+            "sourceLoopRhythmReady": source_loop_rhythm_ready,
+            "endingTailPacingReady": ending_tail_pacing_ready,
             "topTierEvidenceReady": top_tier_ready,
             "benchmarkGap": "none" if top_tier_ready else "; ".join(required_fixes[:4]),
         },
@@ -3938,7 +7985,32 @@ def write_render_quality_report(
         if not production_summary["missingGrokSourceCurationScenes"]
         else "fail"
     )
+    source_first_source_status = (
+        "pass"
+        if not production_summary.get("sourceFirstRequired") or production_summary.get("sourceFirstReady")
+        else "fail"
+    )
     quality_ratchet = _build_quality_ratchet_review(manifest)
+    quality_sample_set = _build_quality_sample_set_review(manifest, project_root)
+    provider_consistency = _provider_consistency_review(manifest, production_summary)
+    anti_ai_naturalness = _build_anti_ai_naturalness_review(manifest)
+    caption_system = _build_caption_system_review(manifest, production_summary)
+    viewer_takeaway = _build_viewer_takeaway_review(manifest)
+    source_editorial_layout = _build_source_editorial_layout_review(manifest)
+    source_editorial_image_context = _build_source_editorial_image_context_review(manifest)
+    still_image_source_policy = _build_still_image_source_policy_review(manifest)
+    internet_source_acquisition = _build_internet_source_acquisition_review(manifest)
+    internet_source_context = _build_internet_source_context_review(manifest)
+    internet_source_editorial_integration = _build_internet_source_editorial_integration_review(manifest)
+    topic_hook_payoff_structure = _build_topic_hook_payoff_structure_review(manifest)
+    audience_interest_source_fit = _build_audience_interest_source_fit_review(manifest)
+    scene_source_intent_binding = _build_scene_source_intent_binding_review(manifest)
+    visual_frame_review_evidence = _build_visual_frame_review_evidence(manifest)
+    conversational_copy_style = _build_conversational_copy_style_review(manifest)
+    tts_pacing_alignment = _build_tts_pacing_alignment_review(manifest)
+    source_loop_rhythm = _build_source_loop_rhythm_review(manifest)
+    ending_payoff = _build_ending_payoff_review(manifest)
+    ending_tail_pacing = _build_ending_tail_pacing_review(manifest)
 
     checks = {
         "outputSpec": _check(
@@ -3971,6 +8043,227 @@ def write_render_quality_report(
         "captionSafePresets": _check(
             "pass" if not unsafe_caption_scenes else "fail",
             f"unsafeCaptionScenes={unsafe_caption_scenes}",
+        ),
+        "providerConsistency": _check(
+            provider_consistency["status"],
+            (
+                f"required={provider_consistency['required']}, "
+                f"mode={provider_consistency['mode']}, "
+                f"counts={provider_consistency['counts']}, "
+                f"issues={provider_consistency['issues']}"
+            ),
+        ),
+        "antiAiNaturalness": _check(
+            anti_ai_naturalness["status"],
+            (
+                f"required={anti_ai_naturalness['required']}, "
+                f"reviewedScenes={anti_ai_naturalness['reviewedScenes']}, "
+                f"missingScenes={anti_ai_naturalness['missingScenes']}, "
+                f"rejectedScenes={anti_ai_naturalness['rejectedScenes']}"
+            ),
+        ),
+        "captionSystem": _check(
+            caption_system["status"],
+            (
+                f"required={caption_system['required']}, "
+                f"fixedPreset={caption_system['fixedPreset']}, "
+                f"mismatchedPresetScenes={caption_system['mismatchedPresetScenes']}, "
+                f"missingPurposeScenes={caption_system['missingPurposeScenes']}, "
+                f"missingLayoutReviewScenes={caption_system['missingLayoutReviewScenes']}, "
+                f"longTopHookScenes={caption_system['longTopHookScenes']}, "
+                f"captionSparsePlan={caption_system['captionSparsePlan']}"
+            ),
+        ),
+        "viewerTakeaway": _check(
+            viewer_takeaway["status"],
+            (
+                f"required={viewer_takeaway['required']}, "
+                f"missingFields={viewer_takeaway['missingFields']}, "
+                f"payload={viewer_takeaway['payload']}"
+            ),
+        ),
+        "sourceEditorialLayout": _check(
+            source_editorial_layout["status"],
+            (
+                f"required={source_editorial_layout['required']}, "
+                f"reviewedScenes={source_editorial_layout['reviewedScenes']}, "
+                f"missingScenes={source_editorial_layout['missingScenes']}, "
+                f"rejectedScenes={source_editorial_layout['rejectedScenes']}, "
+                f"riskyImageFitScenes={source_editorial_layout['riskyImageFitScenes']}, "
+                f"captionCollisionRiskScenes={source_editorial_layout['captionCollisionRiskScenes']}, "
+                f"imageOverlapRiskScenes={source_editorial_layout['imageOverlapRiskScenes']}, "
+                f"dividerLineRiskScenes={source_editorial_layout['dividerLineRiskScenes']}, "
+                f"policy={source_editorial_layout['policy']}"
+            ),
+        ),
+        "sourceEditorialImageContext": _check(
+            source_editorial_image_context["status"],
+            (
+                f"required={source_editorial_image_context['required']}, "
+                f"reviewedScenes={source_editorial_image_context['reviewedScenes']}, "
+                f"missingScenes={source_editorial_image_context['missingScenes']}, "
+                f"duplicateVisualScenes={source_editorial_image_context['duplicateVisualScenes']}, "
+                f"policy={source_editorial_image_context['policy']}"
+            ),
+        ),
+        "stillImageSourcePolicy": _check(
+            still_image_source_policy["status"],
+            (
+                f"required={still_image_source_policy['required']}, "
+                f"reviewedScenes={still_image_source_policy['reviewedScenes']}, "
+                f"allowedPrimaryStillScenes={still_image_source_policy['allowedPrimaryStillScenes']}, "
+                f"supportOnlyStillScenes={still_image_source_policy['supportOnlyStillScenes']}, "
+                f"blockedScenes={still_image_source_policy['blockedScenes']}, "
+                f"policy={still_image_source_policy['policy']}"
+            ),
+        ),
+        "internetSourceAcquisition": _check(
+            internet_source_acquisition["status"],
+            (
+                f"required={internet_source_acquisition['required']}, "
+                f"proofMode={internet_source_acquisition['proofMode']}, "
+                f"reviewedScenes={internet_source_acquisition['reviewedScenes']}, "
+                f"motionReadyScenes={internet_source_acquisition['motionReadyScenes']}, "
+                f"missingScenes={internet_source_acquisition['missingScenes']}, "
+                f"policy={internet_source_acquisition['policy']}"
+            ),
+        ),
+        "internetSourceContext": _check(
+            internet_source_context["status"],
+            (
+                f"required={internet_source_context['required']}, "
+                f"proofMode={internet_source_context['proofMode']}, "
+                f"mixRequired={internet_source_context['mixRequired']}, "
+                f"mediaKinds={internet_source_context['mediaKinds']}, "
+                f"reviewedScenes={internet_source_context['reviewedScenes']}, "
+                f"imageReadyScenes={internet_source_context['imageReadyScenes']}, "
+                f"motionReadyScenes={internet_source_context['motionReadyScenes']}, "
+                f"missingScenes={internet_source_context['missingScenes']}, "
+                f"mixMissing={internet_source_context['mixMissing']}, "
+                f"policy={internet_source_context['policy']}"
+            ),
+        ),
+        "internetSourceEditorialIntegration": _check(
+            internet_source_editorial_integration["status"],
+            (
+                f"required={internet_source_editorial_integration['required']}, "
+                f"reviewedScenes={internet_source_editorial_integration['reviewedScenes']}, "
+                f"missingScenes={internet_source_editorial_integration['missingScenes']}, "
+                f"duplicateLayoutNoteScenes={internet_source_editorial_integration['duplicateLayoutNoteScenes']}, "
+                f"policy={internet_source_editorial_integration['policy']}"
+            ),
+        ),
+        "topicHookPayoffStructure": _check(
+            topic_hook_payoff_structure["status"],
+            (
+                f"required={topic_hook_payoff_structure['required']}, "
+                f"payloadKey={topic_hook_payoff_structure['payloadKey']}, "
+                f"missingFields={topic_hook_payoff_structure['missingFields']}, "
+                f"firstScene={topic_hook_payoff_structure['firstSceneId']}:{topic_hook_payoff_structure['firstSceneRole']}/{topic_hook_payoff_structure['firstScenePurpose']}, "
+                f"finalScene={topic_hook_payoff_structure['finalSceneId']}:{topic_hook_payoff_structure['finalSceneRole']}/{topic_hook_payoff_structure['finalScenePurpose']}, "
+                f"hookCopyOverlap={topic_hook_payoff_structure['hookCopyOverlap']}, "
+                f"payoffCopyOverlap={topic_hook_payoff_structure['payoffCopyOverlap']}, "
+                f"sourceSceneRoles={topic_hook_payoff_structure['sourceSceneRoles']}, "
+                f"policy={topic_hook_payoff_structure['policy']}"
+            ),
+        ),
+        "audienceInterestSourceFit": _check(
+            audience_interest_source_fit["status"],
+            (
+                f"required={audience_interest_source_fit['required']}, "
+                f"payloadKey={audience_interest_source_fit['payloadKey']}, "
+                f"targetAudience={audience_interest_source_fit['targetAudience']}, "
+                f"interestScore={audience_interest_source_fit['interestScore']}, "
+                f"validEvidenceCount={audience_interest_source_fit['validEvidenceCount']}, "
+                f"concreteSignalRequired={audience_interest_source_fit['concreteSignalRequired']}, "
+                f"genericInterestTerms={audience_interest_source_fit['genericInterestTerms']}, "
+                f"missingFields={audience_interest_source_fit['missingFields']}, "
+                f"policy={audience_interest_source_fit['policy']}"
+            ),
+        ),
+        "sceneSourceIntentBinding": _check(
+            scene_source_intent_binding["status"],
+            (
+                f"required={scene_source_intent_binding['required']}, "
+                f"reviewedScenes={scene_source_intent_binding['reviewedScenes']}, "
+                f"missingScenes={scene_source_intent_binding['missingScenes']}, "
+                f"roleCounts={scene_source_intent_binding['roleCounts']}, "
+                f"policy={scene_source_intent_binding['policy']}"
+            ),
+        ),
+        "visualFrameReviewEvidence": _check(
+            visual_frame_review_evidence["status"],
+            (
+                f"required={visual_frame_review_evidence['required']}, "
+                f"payloadKey={visual_frame_review_evidence['payloadKey']}, "
+                f"contactSheetPath={visual_frame_review_evidence['contactSheetPath']}, "
+                f"reviewerType={visual_frame_review_evidence['reviewerType']}, "
+                f"reviewedScenes={visual_frame_review_evidence['reviewedScenes']}, "
+                f"missingFields={visual_frame_review_evidence['missingFields']}, "
+                f"missingScenes={visual_frame_review_evidence['missingScenes']}, "
+                f"policy={visual_frame_review_evidence['policy']}"
+            ),
+        ),
+        "conversationalCopyStyle": _check(
+            conversational_copy_style["status"],
+            (
+                f"required={conversational_copy_style['required']}, "
+                f"promptKey={conversational_copy_style['promptKey']}, "
+                f"promptMissing={conversational_copy_style['promptMissing']}, "
+                f"reviewedScenes={conversational_copy_style['reviewedScenes']}, "
+                f"missingScenes={conversational_copy_style['missingScenes']}, "
+                f"repeatedCaptionTerms={conversational_copy_style['repetitionReview']['repeatedTerms']}, "
+                f"policy={conversational_copy_style['policy']}"
+            ),
+        ),
+        "ttsPacingAlignment": _check(
+            tts_pacing_alignment["status"],
+            (
+                f"required={tts_pacing_alignment['required']}, "
+                f"promptKey={tts_pacing_alignment['promptKey']}, "
+                f"promptMissing={tts_pacing_alignment['promptMissing']}, "
+                f"reviewedScenes={tts_pacing_alignment['reviewedScenes']}, "
+                f"missingScenes={tts_pacing_alignment['missingScenes']}, "
+                f"policy={tts_pacing_alignment['policy']}"
+            ),
+        ),
+        "sourceLoopRhythm": _check(
+            source_loop_rhythm["status"],
+            (
+                f"required={source_loop_rhythm['required']}, "
+                f"reviewedGroups={source_loop_rhythm['reviewedGroups']}, "
+                f"missingGroups={source_loop_rhythm['missingGroups']}, "
+                f"groupDetails={source_loop_rhythm['groupDetails']}, "
+                f"policy={source_loop_rhythm['policy']}"
+            ),
+        ),
+        "endingPayoff": _check(
+            ending_payoff["status"],
+            (
+                f"required={ending_payoff['required']}, "
+                f"finalSceneId={ending_payoff['finalSceneId']}, "
+                f"purpose={ending_payoff['purpose']}, "
+                f"missingFields={ending_payoff['missingFields']}, "
+                f"pacingReview={ending_payoff['pacingReview']}, "
+                f"finalTakeawayReview={ending_payoff['finalTakeawayReview']}"
+            ),
+        ),
+        "endingTailPacing": _check(
+            ending_tail_pacing["status"],
+            (
+                f"required={ending_tail_pacing['required']}, "
+                f"finalSceneId={ending_tail_pacing['finalSceneId']}, "
+                f"tailHoldSec={ending_tail_pacing['tailHoldSec']}, "
+                f"fadeOutSec={ending_tail_pacing['fadeOutSec']}, "
+                f"renderedAudioTailHoldSec={ending_tail_pacing['renderedAudioTailHoldSec']}, "
+                f"voiceTargetDurationSec={ending_tail_pacing['voiceTargetDurationSec']}, "
+                f"renderedCaptionDurationSec={ending_tail_pacing['renderedCaptionDurationSec']}, "
+                f"captionVoiceCoverage={ending_tail_pacing['captionVoiceCoverage']}, "
+                f"endingScreenAction={ending_tail_pacing['endingScreenAction']}, "
+                f"endingResolutionReview={ending_tail_pacing['endingResolutionReview']}, "
+                f"missingFields={ending_tail_pacing['missingFields']}, "
+                f"policy={ending_tail_pacing['policy']}"
+            ),
         ),
         "subtitleArtifact": _check(
             "pass" if subtitle_file_path.with_suffix(".ass").exists() or subtitle_file_path.exists() else "fail",
@@ -4019,7 +8312,8 @@ def write_render_quality_report(
                 f"failedVisualVerdictScenes={production_summary.get('failedVisualVerdictScenes') or []}, "
                 f"stockAiClipFitVerdictScenes={production_summary.get('stockAiClipFitVerdictScenes') or []}, "
                 f"missingStockAiClipFitVerdictScenes={production_summary.get('missingStockAiClipFitVerdictScenes') or []}, "
-                f"failedStockAiClipFitVerdictScenes={production_summary.get('failedStockAiClipFitVerdictScenes') or []}"
+                f"failedStockAiClipFitVerdictScenes={production_summary.get('failedStockAiClipFitVerdictScenes') or []}, "
+                f"sourceFirstBlockedSceneIds={production_summary.get('sourceFirstBlockedSceneIds') or []}"
             ),
         ),
         "thumbnailFirstFrameStrength": _check(
@@ -4046,6 +8340,24 @@ def write_render_quality_report(
                 f"previewCaveats={production_summary['grokPreviewCaveatScenes']}"
             ),
         ),
+        "sourceFirstSourceGate": _check(
+            source_first_source_status,
+            (
+                f"sourceFirstRequired={production_summary.get('sourceFirstRequired')}, "
+                f"sourceFirstReady={production_summary.get('sourceFirstReady')}, "
+                f"grokScenes={production_summary.get('grokHandoffSceneIds') or []}, "
+                f"geminiScenes={production_summary.get('geminiHandoffSceneIds') or []}, "
+                f"localGeneratedScenes={production_summary.get('localModelVideoSceneIds') or []}, "
+                f"internetMotionScenes={production_summary.get('internetMotionSourceSceneIds') or []}, "
+                f"sourceFirstGeneratedSceneIds={production_summary.get('sourceFirstGeneratedSceneIds') or []}, "
+                f"sourceFirstInternetSourceSceneIds={production_summary.get('sourceFirstInternetSourceSceneIds') or []}, "
+                f"sourceFirstInternetContextSceneIds={production_summary.get('sourceFirstInternetContextSceneIds') or []}, "
+                f"sourceFirstAcceptedSceneIds={production_summary.get('sourceFirstAcceptedSceneIds') or []}, "
+                f"sourceFirstBlockedSceneIds={production_summary.get('sourceFirstBlockedSceneIds') or []}, "
+                f"sourceFirstBlockingImageFallbackSceneIds={production_summary.get('sourceFirstBlockingImageFallbackSceneIds') or []}, "
+                f"sourceFirstBlockReasonsByScene={production_summary.get('sourceFirstBlockReasonsByScene') or {}}"
+            ),
+        ),
         "stockOnlyCaveat": _check(
             "warn" if production_summary["stockOnly"] else "pass",
             (
@@ -4064,6 +8376,7 @@ def write_render_quality_report(
                 f"missingNarrationScenes={production_summary['missingNarrationScenes']}, "
                 f"thinNarrationScenes={production_summary['thinNarrationScenes']}, "
                 f"shortVoiceoverCalloutScenes={production_summary.get('shortVoiceoverCalloutScenes') or []}, "
+                f"finalPayoffShortNarrationScenes={production_summary.get('finalPayoffShortNarrationScenes') or []}, "
                 f"noVoiceAudioDesignScenes={production_summary['noVoiceAudioDesignScenes']}, "
                 f"voiceoverRequiredNoVoiceScenes={production_summary.get('voiceoverRequiredNoVoiceScenes') or []}, "
                 f"visualLedNoVoiceApprovedScenes={production_summary.get('visualLedNoVoiceApprovedScenes') or []}, "
@@ -4178,6 +8491,19 @@ def write_render_quality_report(
                 f"recommended={production_review['templateSourceReview']['recommendedFixes']}"
             ),
         ),
+        "qualitySampleSet": _check(
+            quality_sample_set["status"],
+            (
+                f"required={quality_sample_set['required']}, "
+                f"minAccepted={quality_sample_set['minAcceptedSamples']}, "
+                f"accepted={quality_sample_set['acceptedSampleIds']}, "
+                f"rejectedBaselines={quality_sample_set['rejectedBaselineIds']}, "
+                f"acceptedTopicCount={quality_sample_set['acceptedTopicCount']}, "
+                f"sourceFamilies={quality_sample_set['acceptedSourceFamilies']}, "
+                f"currentProjectIncluded={quality_sample_set['currentProjectIncluded']}, "
+                f"missingFields={quality_sample_set['missingFields']}"
+            ),
+        ),
         "qualityRatchet": _check(
             quality_ratchet["status"],
             (
@@ -4190,7 +8516,7 @@ def write_render_quality_report(
         ),
     }
     publish_readiness = _build_publish_readiness(checks, production_review, local_media_summary)
-    channel_readiness = _build_channel_readiness(publish_readiness, production_review, local_media_summary)
+    channel_readiness = _build_channel_readiness(checks, publish_readiness, production_review, local_media_summary)
     upload_review = _build_upload_review(checks, publish_readiness, channel_readiness, production_review)
     checks["publishReadinessGate"] = _check(
         "pass" if publish_readiness["status"] == "ready" else ("fail" if publish_readiness["status"] == "blocked" else "warn"),
@@ -4247,7 +8573,27 @@ def write_render_quality_report(
         "productionReview": production_review,
         "operatingTemplate": (production_review.get("templateSourceReview") or {}).get("operatingTemplate"),
         "sourceMotionEvidence": source_motion_evidence,
+        "qualitySampleSet": quality_sample_set,
         "qualityRatchet": quality_ratchet,
+        "providerConsistency": provider_consistency,
+        "antiAiNaturalness": anti_ai_naturalness,
+        "captionSystem": caption_system,
+        "viewerTakeaway": viewer_takeaway,
+        "sourceEditorialLayout": source_editorial_layout,
+        "sourceEditorialImageContext": source_editorial_image_context,
+        "stillImageSourcePolicy": still_image_source_policy,
+        "internetSourceAcquisition": internet_source_acquisition,
+        "internetSourceContext": internet_source_context,
+        "internetSourceEditorialIntegration": internet_source_editorial_integration,
+        "topicHookPayoffStructure": topic_hook_payoff_structure,
+        "audienceInterestSourceFit": audience_interest_source_fit,
+        "sceneSourceIntentBinding": scene_source_intent_binding,
+        "visualFrameReviewEvidence": visual_frame_review_evidence,
+        "conversationalCopyStyle": conversational_copy_style,
+        "ttsPacingAlignment": tts_pacing_alignment,
+        "sourceLoopRhythm": source_loop_rhythm,
+        "endingPayoff": ending_payoff,
+        "endingTailPacing": ending_tail_pacing,
         "publishReadiness": publish_readiness,
         "channelReadiness": channel_readiness,
         "uploadReview": upload_review,
@@ -4577,6 +8923,97 @@ def _audio_duration_seconds(ffmpeg_path: str, input_path: Path) -> float | None:
     return duration if duration > 0 else None
 
 
+def _media_duration_seconds(ffmpeg_path: str, input_path: Path) -> float | None:
+    try:
+        completed = subprocess.run(
+            [
+                _ffprobe_for_ffmpeg(ffmpeg_path),
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=nokey=1:noprint_wrappers=1",
+                str(input_path),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+            creationflags=CREATE_NO_WINDOW,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    try:
+        duration = float((completed.stdout or "").strip())
+    except ValueError:
+        return None
+    return duration if duration > 0 else None
+
+
+def apply_final_outro_fade(
+    ffmpeg_path: str,
+    video_path: Path,
+    output_path: Path,
+    fade_out_sec: float,
+    log_lines: list[str],
+) -> bool:
+    """Apply final visual/audio fade-out so an accepted tail does not hard-cut."""
+    try:
+        fade_out_sec = float(fade_out_sec)
+    except (TypeError, ValueError):
+        fade_out_sec = 0.0
+    if fade_out_sec <= 0:
+        log_lines.append("final_outro_fade=skipped fade_out_sec=0")
+        return False
+    if not video_path.exists():
+        log_lines.append(f"final_outro_fade=skipped missing_input={video_path}")
+        return False
+
+    duration_sec = _media_duration_seconds(ffmpeg_path, video_path)
+    if not duration_sec or duration_sec <= fade_out_sec + 0.2:
+        log_lines.append(
+            f"final_outro_fade=skipped duration={duration_sec} fade_out={fade_out_sec:.2f}"
+        )
+        return False
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    same_path = video_path.resolve() == output_path.resolve()
+    source_path = video_path
+    preserved_path = output_path.with_name(f"{output_path.stem}.pre-outro-fade{output_path.suffix}")
+    temp_output = output_path.with_name(f"{output_path.stem}.outro-fade.tmp{output_path.suffix}")
+    if same_path:
+        shutil.copy2(output_path, preserved_path)
+        source_path = preserved_path
+
+    fade_start = max(0.0, duration_sec - fade_out_sec)
+    run_ffmpeg(
+        ffmpeg_path,
+        [
+            "-y",
+            "-i", str(source_path),
+            "-vf", f"fade=t=out:st={fade_start:.3f}:d={fade_out_sec:.3f}:color=black,format=yuv420p",
+            "-af", f"afade=t=out:st={fade_start:.3f}:d={fade_out_sec:.3f}",
+            *H264_RENDER_ARGS,
+            "-c:a", "aac",
+            "-movflags", "+faststart",
+            str(temp_output if same_path else output_path),
+        ],
+        log_lines,
+    )
+    if same_path:
+        temp_output.replace(output_path)
+    log_lines.append(
+        f"final_outro_fade=applied duration={duration_sec:.2f}s "
+        f"fade_start={fade_start:.2f}s fade_out={fade_out_sec:.2f}s"
+    )
+    return True
+
+
 def _atempo_filter_chain(speed: float) -> str:
     filters: list[str] = []
     remaining = max(speed, 0.01)
@@ -4596,23 +9033,45 @@ def normalize_audio_duration(
     output_path: Path,
     duration_sec: float,
     log_lines: list[str],
-) -> None:
+    voice_duration_sec: float | None = None,
+) -> dict:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     input_duration = _audio_duration_seconds(ffmpeg_path, input_path)
+    try:
+        voice_target = float(voice_duration_sec) if voice_duration_sec is not None else float(duration_sec)
+    except (TypeError, ValueError):
+        voice_target = float(duration_sec)
+    voice_target = max(0.5, min(float(duration_sec), voice_target))
+    tail_hold_sec = max(0.0, float(duration_sec) - voice_target)
     audio_filter = f"apad=pad_dur={duration_sec:.2f},atrim=0:{duration_sec:.2f}"
-    if input_duration and input_duration > duration_sec + 0.12:
-        speed = min(max(input_duration / duration_sec, 1.0), 4.0)
+    fit_info = {
+        "inputDurationSec": round(float(input_duration), 3) if input_duration else None,
+        "targetDurationSec": round(float(duration_sec), 3),
+        "voiceTargetDurationSec": round(float(voice_target), 3),
+        "tailHoldSec": round(float(tail_hold_sec), 3),
+        "speed": 1.0,
+        "mode": "pad-trim",
+    }
+    if input_duration and input_duration > voice_target + 0.12:
+        speed = min(max(input_duration / voice_target, 1.0), 4.0)
         audio_filter = f"{_atempo_filter_chain(speed)},{audio_filter}"
+        fit_info["speed"] = round(speed, 3)
+        fit_info["mode"] = "tempo-fit"
         log_lines.append(
             f"audio_duration_fit=input={input_duration:.2f}s target={duration_sec:.2f}s "
+            f"voice_target={voice_target:.2f}s tail={tail_hold_sec:.2f}s "
             f"speed={speed:.3f} mode=tempo-fit"
         )
     elif input_duration:
         log_lines.append(
-            f"audio_duration_fit=input={input_duration:.2f}s target={duration_sec:.2f}s mode=pad-trim"
+            f"audio_duration_fit=input={input_duration:.2f}s target={duration_sec:.2f}s "
+            f"voice_target={voice_target:.2f}s tail={tail_hold_sec:.2f}s mode=pad-trim"
         )
     else:
-        log_lines.append(f"audio_duration_fit=input=unknown target={duration_sec:.2f}s mode=pad-trim")
+        log_lines.append(
+            f"audio_duration_fit=input=unknown target={duration_sec:.2f}s "
+            f"voice_target={voice_target:.2f}s tail={tail_hold_sec:.2f}s mode=pad-trim"
+        )
     run_ffmpeg(
         ffmpeg_path,
         [
@@ -4626,6 +9085,7 @@ def normalize_audio_duration(
         ],
         log_lines,
     )
+    return fit_info
 
 
 def mix_sfx_into_scene_audio(

@@ -1327,6 +1327,34 @@ def test_normalize_audio_duration_tempo_fits_long_tts_instead_of_hard_trim(monke
     assert any("mode=tempo-fit" in line for line in log_lines)
 
 
+def test_normalize_audio_duration_keeps_requested_ending_tail(monkeypatch, tmp_path):
+    captured = {}
+    log_lines = []
+
+    def _capture_ffmpeg(_ffmpeg_path, args, _log_lines):
+        captured["args"] = args
+
+    monkeypatch.setattr(compose_ffmpeg, "_audio_duration_seconds", lambda *_args: 6.2)
+    monkeypatch.setattr(compose_ffmpeg, "run_ffmpeg", _capture_ffmpeg)
+
+    fit = compose_ffmpeg.normalize_audio_duration(
+        ffmpeg_path="ffmpeg",
+        input_path=tmp_path / "final-tts.wav",
+        output_path=tmp_path / "fit.wav",
+        duration_sec=7.8,
+        voice_duration_sec=6.2,
+        log_lines=log_lines,
+    )
+
+    args = captured["args"]
+    audio_filter = args[args.index("-af") + 1]
+    assert "atrim=0:7.80" in audio_filter
+    assert fit["targetDurationSec"] == 7.8
+    assert fit["voiceTargetDurationSec"] == 6.2
+    assert fit["tailHoldSec"] == 1.6
+    assert any("tail=1.60s" in line for line in log_lines)
+
+
 def test_local_model_mp4_handoff_preserves_provider_and_source_intent(tmp_path):
     payload = save_project_bundle(
         prompt="manual local model short",
@@ -1783,7 +1811,7 @@ def test_bgm_final_mix_keeps_music_audible(monkeypatch, tmp_path):
     )
 
     filter_complex = captured["args"][captured["args"].index("-filter_complex") + 1]
-    assert "volume=1.550" in filter_complex
+    assert "volume=0.550" in filter_complex
     assert "threshold=0.080" in filter_complex
     assert "ratio=2.60" in filter_complex
     assert "release=180" in filter_complex
@@ -1820,6 +1848,39 @@ def test_final_audio_loudness_normalization_uses_shorts_targets(monkeypatch, tmp
     assert (tmp_path / "out.pre-loudnorm.mp4").exists()
     assert any(line.startswith("audio_loudnorm=applied") for line in log_lines)
     assert any(line.startswith("audio_peak_limiter=applied TP=-4.0") for line in log_lines)
+
+
+def test_final_outro_fade_applies_video_and_audio_fade(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_run_ffmpeg(ffmpeg_path, args, log_lines, cwd=None):
+        captured["ffmpeg_path"] = ffmpeg_path
+        captured["args"] = args
+        Path(args[-1]).write_bytes(b"faded")
+
+    monkeypatch.setattr(compose_ffmpeg, "_media_duration_seconds", lambda *_args: 20.0)
+    monkeypatch.setattr(compose_ffmpeg, "run_ffmpeg", fake_run_ffmpeg)
+
+    output_path = tmp_path / "out.mp4"
+    output_path.write_bytes(b"original")
+    log_lines = []
+
+    applied = compose_ffmpeg.apply_final_outro_fade(
+        ffmpeg_path="ffmpeg",
+        video_path=output_path,
+        output_path=output_path,
+        fade_out_sec=0.9,
+        log_lines=log_lines,
+    )
+
+    video_filter = captured["args"][captured["args"].index("-vf") + 1]
+    audio_filter = captured["args"][captured["args"].index("-af") + 1]
+    assert applied is True
+    assert "fade=t=out:st=19.100:d=0.900:color=black" in video_filter
+    assert "afade=t=out:st=19.100:d=0.900" in audio_filter
+    assert output_path.read_bytes() == b"faded"
+    assert (tmp_path / "out.pre-outro-fade.mp4").exists()
+    assert any(line.startswith("final_outro_fade=applied") for line in log_lines)
 
 
 def test_render_quality_report_records_pipeline_checks(tmp_path):
@@ -1878,6 +1939,7 @@ def test_render_quality_report_records_pipeline_checks(tmp_path):
     assert report["checks"]["ttsNarrationEvidence"]["status"] == "pass"
     assert report["checks"]["captionLayoutReview"]["status"] == "pass"
     assert report["checks"]["assetReuseDiversity"]["status"] == "pass"
+    assert report["checks"]["sourceFirstSourceGate"]["status"] == "pass"
     assert report["checks"]["stockOnlyCaveat"]["status"] == "pass"
     assert report["checks"]["outputSpec"]["status"] == "fail"
     assert report["checks"]["publishReadinessGate"]["status"] == "fail"
@@ -1886,7 +1948,7 @@ def test_render_quality_report_records_pipeline_checks(tmp_path):
     assert report["gateSystem"]["systemVersion"] == "2026-06-08-unified-quality-gate-system-v1"
     assert report["gateSystem"]["surface"] == "render-quality-report"
     assert report["gateSystem"]["blockingPhaseKey"] == "render-quality"
-    assert report["gateSystem"]["renderQualitySummary"]["checkCount"] == 33
+    assert report["gateSystem"]["renderQualitySummary"]["checkCount"] == 53
     assert "outputSpec" in report["gateSystem"]["renderQualitySummary"]["failedOrMissingKeys"]
     assert report["productionReview"]["summary"]["uploadedVideoScenes"] == 1
     assert report["productionReview"]["scenes"][0]["sourceRationale"].startswith("Operator selected")
@@ -2030,6 +2092,1343 @@ def test_render_quality_report_accepts_complete_quality_ratchet(monkeypatch, tmp
     assert report["checks"]["qualityRatchet"]["status"] == "pass"
     quality_criterion = next(item for item in report["publishReadiness"]["criteria"] if item["key"] == "qualityRatchet")
     assert quality_criterion["status"] == "pass"
+
+
+def test_render_quality_report_blocks_single_video_quality_sample_set(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    manifest = {
+        "projectId": "single-video-quality-claim",
+        "qualitySampleSetRequired": True,
+        "qualitySampleSet": {
+            "minAcceptedSamples": 2,
+            "samples": [
+                {
+                    "projectId": "single-video-quality-claim",
+                    "status": "accepted",
+                    "topic": "one proof topic",
+                    "sourceFamilies": ["gif", "image"],
+                    "mp4Path": "storage/renders/single-video-quality-claim/out.mp4",
+                    "contactSheetPath": "storage/renders/single-video-quality-claim/contact.jpg",
+                    "renderQualityStatus": "pass",
+                    "warnCount": 0,
+                    "humanVisualVerdict": "pass",
+                    "sourceIntentVerdict": "pass",
+                    "captionTtsVerdict": "pass",
+                    "layoutVerdict": "pass",
+                    "endingVerdict": "pass",
+                }
+            ],
+        },
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "One proof",
+                "subtitleText": "One proof",
+                "narrationText": FULL_NARRATION,
+                "visualKind": "video",
+                "captionPreset": "top-hook",
+                "sourceRationale": "Operator selected this clip for visible motion.",
+                "continuityNote": "Same source topic throughout.",
+                "hookNote": "Visible source appears in the first second.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualSourceIntent": "upload",
+            }
+        ],
+        "assets": [
+            {"provider": "upload", "role": "visual", "sceneId": "scene-01", "kind": "video", "sourceOrigin": "uploaded"},
+            {"provider": "edge-tts", "role": "audio", "sceneId": "scene-01", "kind": "voiceover"},
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "single-video-quality-claim.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"sceneId": "scene-01", "status": "uploaded", "outputKind": "video"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    sample_set = report["qualitySampleSet"]
+    assert sample_set["status"] == "fail"
+    assert "acceptedSamples>=2" in sample_set["missingFields"]
+    assert "rejectedBaselines>=1" in sample_set["missingFields"]
+    single_sample_issue = next(
+        field for field in sample_set["missingFields"] if field.startswith("single-video-quality-claim:")
+    )
+    assert "mp4PathExists" in single_sample_issue
+    assert "contactSheetPathExists" in single_sample_issue
+    assert "audienceInterestVerdict=pass" in single_sample_issue
+    assert report["checks"]["audienceInterestSourceFit"]["status"] == "fail"
+    assert report["checks"]["qualitySampleSet"]["status"] == "fail"
+    assert report["gateSystem"]["status"] == "blocked"
+
+
+def test_render_quality_report_accepts_multi_video_quality_sample_set(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+
+    sample_artifacts = [
+        ("old-apollo-proof", tmp_path / "storage" / "renders" / "old-apollo-proof"),
+        ("second-accepted-proof", tmp_path / "storage" / "renders" / "second-accepted-proof"),
+        ("muybridge-proof", tmp_path / "storage" / "renders" / "muybridge-proof"),
+    ]
+    for _sample_id, sample_dir in sample_artifacts:
+        sample_dir.mkdir(parents=True)
+        (sample_dir / "out.mp4").write_bytes(b"fake mp4")
+        (sample_dir / "contact.jpg").write_bytes(b"fake jpg")
+
+    accepted_common = {
+        "status": "accepted",
+        "renderQualityStatus": "pass",
+        "warnCount": 0,
+        "audienceInterestVerdict": "pass",
+        "audienceInterestScore": 4,
+        "interestEvidence": "Search/social evidence shows viewers stop for surprising source-first visual proofs, not generic AI renders.",
+        "uniqueSourceCount": 2,
+        "duplicateSourceCount": 0,
+        "humanVisualVerdict": "pass",
+        "sourceIntentVerdict": "pass",
+        "captionTtsVerdict": "pass",
+        "captionTtsHumanVerdict": "pass",
+        "captionTtsReview": "Caption and TTS were reviewed together at phone playback size; the spoken line lands inside the scene duration and matches the visible caption beat.",
+        "motionStabilityVerdict": "pass",
+        "motionStabilityReview": "The source motion is stable on playback with no artificial shake, floating zoom, or camera wobble introduced by the render.",
+        "sourceRepetitionVerdict": "pass",
+        "sourceRepetitionReview": "Repeated source use is either avoided or assigned a new scene purpose so the viewer does not see the same image recycled as filler.",
+        "layoutVerdict": "pass",
+        "endingVerdict": "pass",
+    }
+    manifest = {
+        "projectId": "second-accepted-proof",
+        "audienceInterest": {
+            "targetAudience": "Korean Shorts viewers who stop for surprising visual proof clips",
+            "interestDriver": "The hook promises a visible one-shot proof instead of another generic AI explainer.",
+            "whyNowOrEvergreen": "AI-looking Shorts are common, so real source proof is the differentiator viewers can notice immediately.",
+            "interestEvidence": "Operator review compares this against source-first visual proof Shorts and rejects generic AI-looking topics.",
+            "evidenceItems": [
+                {
+                    "source": "Operator source review",
+                    "signal": "Specific source-first proof clips held attention when the first frame posed a visible challenge.",
+                    "relevance": "The sample-set proof must choose a viewer task before it chooses GIF or still sources.",
+                },
+                {
+                    "source": "Render comparison notes",
+                    "signal": "Generic AI-looking topics were rejected when the source did not prove the hook.",
+                    "relevance": "The accepted sample needs source-led curiosity, not a broad trending claim.",
+                },
+            ],
+            "scrollStopHook": "잠깐, 이건 진짜 소스로 보이네?",
+            "sourceStrategy": "Use a fetched moving source for the proof beat and a still source only when the still frame clarifies the setup or payoff.",
+            "commentPrompt": "Viewers can argue whether the source actually proves the claim.",
+            "interestScore": 4,
+            "audienceInterestVerdict": "pass",
+        },
+        "qualitySampleSetRequired": True,
+        "qualitySampleSet": {
+            "minAcceptedSamples": 2,
+            "minRejectedBaselines": 1,
+            "samples": [
+                {
+                    "projectId": "old-apollo-proof",
+                    "status": "rejected",
+                    "topic": "moon hammer feather",
+                    "visibleFailure": "Gate pass did not make the GIF loop feel natural.",
+                    "rejectionCause": "Only one proof and no sample diversity.",
+                    "mp4Path": "storage/renders/old-apollo-proof/out.mp4",
+                    "contactSheetPath": "storage/renders/old-apollo-proof/contact.jpg",
+                    "humanVisualVerdict": "fail",
+                },
+                {
+                    **accepted_common,
+                    "projectId": "second-accepted-proof",
+                    "topic": "moon hammer feather v2",
+                    "sourceFamilies": ["gif", "image"],
+                    "mp4Path": "storage/renders/second-accepted-proof/out.mp4",
+                    "contactSheetPath": "storage/renders/second-accepted-proof/contact.jpg",
+                },
+                {
+                    **accepted_common,
+                    "projectId": "muybridge-proof",
+                    "topic": "horse in motion",
+                    "sourceFamilies": ["gif", "still"],
+                    "mp4Path": "storage/renders/muybridge-proof/out.mp4",
+                    "contactSheetPath": "storage/renders/muybridge-proof/contact.jpg",
+                },
+            ],
+        },
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "Second proof",
+                "subtitleText": "Second proof",
+                "narrationText": FULL_NARRATION,
+                "visualKind": "video",
+                "captionPreset": "top-hook",
+                "sourceRationale": "Operator selected this clip for visible motion.",
+                "continuityNote": "Same source topic throughout.",
+                "hookNote": "Visible source appears in the first second.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualSourceIntent": "upload",
+            }
+        ],
+        "assets": [
+            {"provider": "upload", "role": "visual", "sceneId": "scene-01", "kind": "video", "sourceOrigin": "uploaded"},
+            {"provider": "edge-tts", "role": "audio", "sceneId": "scene-01", "kind": "voiceover"},
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "second-accepted-proof.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"sceneId": "scene-01", "status": "uploaded", "outputKind": "video"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    sample_set = report["qualitySampleSet"]
+    assert sample_set["status"] == "pass"
+    assert sample_set["acceptedSampleIds"] == ["second-accepted-proof", "muybridge-proof"]
+    assert sample_set["rejectedBaselineIds"] == ["old-apollo-proof"]
+    assert sample_set["acceptedTopicCount"] == 2
+    assert sample_set["currentProjectIncluded"] is True
+    assert sample_set["missingFields"] == []
+    assert report["checks"]["qualitySampleSet"]["status"] == "pass"
+
+
+def test_quality_sample_set_blocks_accepted_sample_without_human_playback_review(tmp_path):
+    for sample_id in ("baseline-proof", "current-proof", "second-proof"):
+        sample_dir = tmp_path / "storage" / "renders" / sample_id
+        sample_dir.mkdir(parents=True)
+        (sample_dir / "out.mp4").write_bytes(b"fake mp4")
+        (sample_dir / "contact.jpg").write_bytes(b"fake jpg")
+
+    accepted_common = {
+        "status": "accepted",
+        "sourceFamilies": ["gif", "image"],
+        "mp4Path": "storage/renders/current-proof/out.mp4",
+        "contactSheetPath": "storage/renders/current-proof/contact.jpg",
+        "renderQualityStatus": "pass",
+        "warnCount": 0,
+        "audienceInterestVerdict": "pass",
+        "audienceInterestScore": 4,
+        "interestEvidence": "Concrete source and audience evidence explain why viewers would stop for this proof.",
+        "uniqueSourceCount": 1,
+        "duplicateSourceCount": 1,
+        "humanVisualVerdict": "pass",
+        "sourceIntentVerdict": "pass",
+        "captionTtsVerdict": "pass",
+        "layoutVerdict": "pass",
+        "endingVerdict": "pass",
+    }
+    review = compose_ffmpeg._build_quality_sample_set_review(
+        {
+            "projectId": "current-proof",
+            "qualitySampleSetRequired": True,
+            "qualitySampleSet": {
+                "samples": [
+                    {
+                        "projectId": "baseline-proof",
+                        "status": "rejected",
+                        "topic": "old weak proof",
+                        "visibleFailure": "Playback had visible shake and poor caption/TTS sync.",
+                        "mp4Path": "storage/renders/baseline-proof/out.mp4",
+                        "contactSheetPath": "storage/renders/baseline-proof/contact.jpg",
+                        "humanVisualVerdict": "fail",
+                    },
+                    {
+                        **accepted_common,
+                        "projectId": "current-proof",
+                        "topic": "current proof",
+                    },
+                    {
+                        **accepted_common,
+                        "projectId": "second-proof",
+                        "topic": "second proof",
+                        "mp4Path": "storage/renders/second-proof/out.mp4",
+                        "contactSheetPath": "storage/renders/second-proof/contact.jpg",
+                    },
+                ]
+            },
+        },
+        project_root=tmp_path,
+    )
+
+    assert review["status"] == "fail"
+    current_issue = next(field for field in review["missingFields"] if field.startswith("current-proof:"))
+    assert "captionTtsHumanVerdict=pass" in current_issue
+    assert "motionStabilityVerdict=pass" in current_issue
+    assert "sourceRepetitionVerdict=pass" in current_issue
+    assert "uniqueSourceCount>=2" in current_issue
+    assert "intentionalSourceRepeatVerdict=pass" in current_issue
+    assert "captionTtsReview>=48" in current_issue
+    assert "motionStabilityReview>=48" in current_issue
+    assert "sourceRepetitionReview>=48" in current_issue
+
+
+def test_upload_candidate_blocks_local_only_and_missing_naturalness_contract(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    manifest = {
+        "projectId": "local-only-upload-candidate",
+        "renderPurpose": "upload-candidate",
+        "uploadCandidate": True,
+        "providerConsistencyMode": "local-only",
+        "templateType": "authentic_vlog",
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "Desk start",
+                "subtitleText": "Start smaller.",
+                "visualKind": "video",
+                "captionPreset": "top-hook",
+                "sourceRationale": "Local model fallback was used for a quick proof.",
+                "continuityNote": "Same desk and light.",
+                "hookNote": "The hand moves first.",
+                "qualityReviewNote": "Subject remains visible.",
+                "visualQualityVerdict": "pass",
+                "visualSourceIntent": "wan",
+            },
+        ],
+        "assets": [
+            {
+                "provider": "wan",
+                "role": "visual",
+                "sceneId": "scene-01",
+                "kind": "video",
+                "sourceGenerator": "wan",
+                "sourceGeneratorRequestPath": "storage/local/request.json",
+                "sourceGeneratorPromptPath": "storage/local/prompt.txt",
+                "sourceGeneratorLogPath": "storage/local/log.txt",
+            },
+            {
+                "provider": "local-bgm",
+                "role": "audio",
+                "sceneId": "global",
+                "kind": "bgm",
+                "sourceOrigin": "local-library",
+                "sourcePath": "assets/bgm/calm/local.mp3",
+                "sourceLabel": "Local Forecast - Elevator",
+                "sourceUrl": "https://example.test/local-forecast",
+                "sourceLicense": "local reusable music library",
+                "candidateCount": 2,
+                "selectionMethod": "stable-hash",
+                "selectionKey": "local-only-upload-candidate",
+            },
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "local-only.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"sceneId": "scene-01", "status": "uploaded", "outputKind": "video"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    assert report["qualityRatchet"]["required"] is True
+    assert report["checks"]["providerConsistency"]["status"] == "fail"
+    assert "local-only is not allowed" in report["checks"]["providerConsistency"]["detail"]
+    assert report["checks"]["antiAiNaturalness"]["status"] == "fail"
+    assert report["checks"]["captionSystem"]["status"] == "fail"
+    assert report["checks"]["viewerTakeaway"]["status"] == "fail"
+    assert report["checks"]["qualityRatchet"]["status"] == "fail"
+    assert report["publishReadiness"]["status"] == "blocked"
+    assert any("Grok-only or Gemini-only" in item for item in report["publishReadiness"]["requiredFixes"])
+
+
+def test_upload_candidate_accepts_grok_only_naturalness_contract(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    scenes = []
+    assets = []
+    for idx, purpose in enumerate(("hook", "action"), start=1):
+        scene_id = f"scene-{idx:02d}"
+        scenes.append(
+            {
+                "sceneId": scene_id,
+                "title": f"Natural beat {idx}",
+                "subtitleText": "물 한 컵만 먼저" if idx == 1 else "첫 줄만 적기",
+                "visualKind": "video",
+                "captionPreset": "lower-info",
+                "captionDisplayDurationSec": 1.4,
+                "captionPurpose": purpose,
+                "sourceRationale": "Selected Grok handoff take because the first second shows a real hand action with no generic montage.",
+                "continuityNote": "Same Korean office desk, same notebook scale, same morning light, and restrained handheld phone framing.",
+                "worldContinuityNote": "The desk, cup, notebook, hand distance, and natural light stay in the same believable world.",
+                "actionMotivation": "The hand acts because the routine starts with one physical object before work.",
+                "naturalnessReviewNote": "Phone-sized review says this does not read like a glossy AI ad sample; the motion is ordinary, imperfect, and tied to the desk routine.",
+                "antiAiNaturalnessVerdict": "pass",
+                "hookNote": "The hand action starts in the first second and gives the viewer a concrete routine cue.",
+                "originalityEvidence": "Grok app/web MP4 imported through browser-control proof with prompt and selected-file evidence.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualQualityVerdict": "pass",
+                "thumbnailReviewNote": "Use a frame where the hand and object state are readable without large text.",
+                "audioMixReviewNote": "No-voice BGM stays under the visual action and does not fight captions.",
+                "platformComparisonNote": "Compared against quiet Korean routine Shorts for restrained captions, first-second action, and phone-safe framing.",
+                "layoutVariantKey": "grok-first-proof",
+                "selectedFileName": f"{scene_id}.grok.mp4",
+                "selectedCandidateSummary": "Take 2 is less glossy than take 1 and keeps the action readable at phone size.",
+                "sourceReviewVerdict": "pass",
+                "visualSourceIntent": "grok",
+                "audioDesignMode": "no-voice",
+                "visualLedNoVoiceApproved": True,
+                "endingPurpose": "payoff" if idx == 2 else "",
+                "endingPacingReview": (
+                    "Final no-voice desk beat closes the routine with one small action and no abrupt caption-only stop."
+                    if idx == 2
+                    else ""
+                ),
+                "finalTakeawayReview": (
+                    "Viewer leaves understanding that the morning routine works because it starts with one concrete desk action."
+                    if idx == 2
+                    else ""
+                ),
+                "endingVerdict": "pass" if idx == 2 else "",
+            }
+        )
+        assets.append(
+            {
+                "provider": "upload",
+                "role": "visual",
+                "sceneId": scene_id,
+                "kind": "video",
+                "sourceOrigin": "grok-handoff",
+                "sourcePath": f"storage/grok-handoffs/natural/{scene_id}.grok.mp4",
+                "sourceGenerator": "grok-app-web-handoff",
+                "selectedFileName": f"{scene_id}.grok.mp4",
+                "candidateCount": 2,
+                "sourceProvenance": {
+                    "status": "browser-native-original-download",
+                    "acceptAsGrokMainSource": True,
+                },
+            }
+        )
+    assets.append(
+        {
+            "provider": "local-bgm",
+            "role": "audio",
+            "sceneId": "global",
+            "kind": "bgm",
+            "sourceOrigin": "local-library",
+            "sourcePath": "assets/bgm/calm/local-forecast-elevator.mp3",
+            "sourceLabel": "Local Forecast - Elevator",
+            "sourceUrl": "https://example.test/local-forecast-elevator",
+            "sourceLicense": "local reusable music library",
+            "candidateCount": 2,
+            "selectionMethod": "stable-hash",
+            "selectionKey": "grok-only-naturalness-contract",
+        }
+    )
+    manifest = {
+        "projectId": "grok-only-naturalness-contract",
+        "renderPurpose": "upload-candidate",
+        "uploadCandidate": True,
+        "providerConsistencyMode": "grok-only",
+        "sourceFirstRequired": True,
+        "templateType": "authentic_vlog",
+        "audioDesignMode": "no-voice",
+        "captionSystem": {
+            "fixedPreset": "lower-info",
+            "purposeByScene": {"scene-01": "hook", "scene-02": "action"},
+        },
+        "viewerTakeaway": {
+            "understood": "A rushed morning can be stabilized by one small desk action.",
+            "action": "Put water beside the notebook and write only the first task.",
+            "feeling": "Calmer start, less automated productivity pressure.",
+        },
+        "qualityIteration": "v32-naturalness-gate",
+        "qualityRatchet": {
+            "previousBaseline": "v31 rendered technically but felt too AI-like and unclear.",
+            "rejectionCause": "Caption placement and generic advice made the viewer ask what to do next.",
+            "changedLever": ["source", "caption", "storyboard", "pacing"],
+            "expectedVisibleImprovement": "The next render should feel like a small human desk routine, not an AI advice montage.",
+            "actualProof": "Fixture proves Grok-only provider consistency, naturalness notes, caption system, and viewer takeaway are present.",
+            "nextRatchet": "If still artificial, regenerate the source images/videos before touching FFmpeg.",
+        },
+        "scenes": scenes,
+        "assets": assets,
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "grok-only.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 2, "generated": 0, "totalScenes": 2},
+        local_media=[
+            {"sceneId": "scene-01", "status": "uploaded", "outputKind": "video"},
+            {"sceneId": "scene-02", "status": "uploaded", "outputKind": "video"},
+        ],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    assert report["checks"]["providerConsistency"]["status"] == "pass"
+    assert report["checks"]["antiAiNaturalness"]["status"] == "pass"
+    assert report["checks"]["captionSystem"]["status"] == "pass"
+    assert report["checks"]["viewerTakeaway"]["status"] == "pass"
+    assert report["checks"]["qualityRatchet"]["status"] == "pass"
+    assert report["publishReadiness"]["status"] == "ready"
+
+
+def test_source_editorial_layout_gate_blocks_unreviewed_image_stage(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("unavailable"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    manifest = {
+        "projectId": "source-editorial-layout-missing",
+        "renderPurpose": "source-first-web-image-mix-demo",
+        "sourceEditorialLayoutRequired": True,
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "Community image",
+                "subtitleText": "이 이미지는 아직 위험합니다.",
+                "narrationText": "이 이미지는 아직 위험합니다.",
+                "visualKind": "image",
+                "captionPreset": "lower-info",
+                "captionPurpose": "hook",
+                "sourceRationale": "Community image supports the topic.",
+                "continuityNote": "One source image leads into an official reference.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualQualityVerdict": "pass",
+            },
+        ],
+        "assets": [
+            {"provider": "upload", "role": "visual", "sceneId": "scene-01", "kind": "image"},
+            {"provider": "edge-tts", "role": "audio", "sceneId": "scene-01", "kind": "voiceover"},
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "source-editorial.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"sceneId": "scene-01", "status": "uploaded", "outputKind": "image"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    assert report["sourceEditorialLayout"]["required"] is True
+    assert report["checks"]["sourceEditorialLayout"]["status"] == "fail"
+    assert "imageFitPolicy" in report["checks"]["sourceEditorialLayout"]["detail"]
+    assert report["publishReadiness"]["status"] == "blocked"
+    assert any("image fit" in item for item in report["publishReadiness"]["requiredFixes"])
+
+
+def test_source_editorial_layout_gate_accepts_caption_safe_image_stage(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("unavailable"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    manifest = {
+        "projectId": "source-editorial-layout-safe",
+        "renderPurpose": "source-first-web-image-mix-demo",
+        "sourceEditorialLayoutRequired": True,
+        "captionSystem": {"fixedPreset": "lower-info", "purposeByScene": {"scene-01": "hook"}},
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "Community image",
+                "subtitleText": "이 이미지는 안전하게 들어갑니다.",
+                "narrationText": "이 이미지는 안전하게 들어갑니다.",
+                "visualKind": "image",
+                "captionPreset": "lower-info",
+                "captionPurpose": "hook",
+                "sourceRationale": "Community image supports the topic.",
+                "continuityNote": "One source image leads into an official reference.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualQualityVerdict": "pass",
+                "sourceEditorialLayout": {
+                    "imageFitPolicy": "contain-stage",
+                    "situationKey": "source context hook",
+                    "sceneVisualDistinctId": "scene-01-community-image",
+                    "situationImageFitReview": "This community image is the hook context for the scene and is not reused for another situation.",
+                    "situationImageFitVerdict": "pass",
+                    "subjectSafeZone": "Main subject is staged in the upper visual field, above the lower caption band.",
+                    "captionSafeZone": "Caption stays in the lower-mid band and avoids the bottom Shorts UI area.",
+                    "layoutSafetyReview": "The long source image is contained inside a fixed stage so it does not run underneath the caption.",
+                    "captionCollisionReview": "Phone-sized review confirms the subtitle does not cover the subject or important source text.",
+                    "captionCollisionVerdict": "pass",
+                    "imageOverlapReview": "Single image stage has no overlapping source plates or stacked visual elements.",
+                    "imageOverlapVerdict": "pass",
+                    "dividerLineReview": "No visible black divider or accidental gutter line appears inside the staged image.",
+                    "dividerLineVerdict": "pass",
+                },
+                "endingPurpose": "payoff",
+                "endingPacingReview": "The final beat closes the source-context point instead of cutting off as a stray image.",
+                "finalTakeawayReview": "The viewer leaves knowing that source images need safe placement before render.",
+                "endingVerdict": "pass",
+            },
+        ],
+        "assets": [
+            {"provider": "upload", "role": "visual", "sceneId": "scene-01", "kind": "image"},
+            {"provider": "edge-tts", "role": "audio", "sceneId": "scene-01", "kind": "voiceover"},
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "source-editorial.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"sceneId": "scene-01", "status": "uploaded", "outputKind": "image"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    assert report["checks"]["sourceEditorialLayout"]["status"] == "pass"
+    assert report["checks"]["sourceEditorialImageContext"]["status"] == "pass"
+    assert report["checks"]["endingPayoff"]["status"] == "pass"
+    assert report["sourceEditorialLayout"]["reviewedScenes"] == ["scene-01"]
+
+
+def test_still_image_source_policy_blocks_generic_primary_web_image(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("unavailable"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    manifest = {
+        "projectId": "generic-primary-web-image-blocked",
+        "renderPurpose": "source-first-web-image-mix-demo",
+        "sourceEditorialLayoutRequired": True,
+        "internetSourceContextRequired": True,
+        "topic": "A practical explainer about why a phone battery drains faster in winter.",
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "Generic source image",
+                "subtitleText": "사진 한 장으로는 부족합니다.",
+                "narrationText": "사진 한 장으로는 부족합니다.",
+                "visualKind": "image",
+                "captionPreset": "lower-info",
+                "captionPurpose": "context",
+                "visualSourceIntent": "wikimedia-image",
+                "sourceOrigin": "wikimedia-image",
+                "sourceType": "internet-image",
+                "sourceUrl": "https://commons.wikimedia.org/wiki/File:generic-phone.jpg",
+                "sourceLocalPath": "storage/sources/generic-phone.jpg",
+                "sourceSha256": "abc123abc123abc123abc123",
+                "sourceBytes": 123456,
+                "sourceMediaKind": "image",
+                "sourceFetchStatus": "fetched",
+                "sourceAcquisitionVerdict": "pass",
+                "sourceAcquisitionReview": "The file was fetched into local storage with source metadata and a stable checksum.",
+                "scenePurpose": "Establish the explainer setup before showing the real battery behavior.",
+                "viewerJob": "Understand that the visual should prove a process, not just decorate the claim.",
+                "sourceRationale": "The image shows a phone, but it does not demonstrate the actual cold-battery behavior.",
+                "mediaChoiceRationale": "A still frame is only a weak topic illustration and does not show the process.",
+                "stillFit": "The still only names the topic and does not carry a meme, reaction, capture, or data-card job.",
+                "sourceContextVerdict": "pass",
+                "continuityNote": "The edit should move from setup into an actual moving demonstration.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualQualityVerdict": "pass",
+                "sourceEditorialLayout": {
+                    "imageFitPolicy": "contain-stage",
+                    "situationKey": "generic explainer setup",
+                    "sceneVisualDistinctId": "scene-01-generic-phone",
+                    "situationImageFitReview": "The still is staged safely, but its job is only generic topic context.",
+                    "situationImageFitVerdict": "pass",
+                    "subjectSafeZone": "The phone stays above the lower caption band.",
+                    "captionSafeZone": "Caption stays below the source plate and away from platform UI.",
+                    "layoutSafetyReview": "The image is contained inside a safe source plate and does not crop the subject.",
+                    "captionCollisionReview": "Phone-sized review confirms the subtitle does not cover the source subject.",
+                    "captionCollisionVerdict": "pass",
+                    "imageOverlapReview": "Single source plate has no overlapping image stack.",
+                    "imageOverlapVerdict": "pass",
+                    "dividerLineReview": "No black divider line appears inside the source plate.",
+                    "dividerLineVerdict": "pass",
+                },
+            },
+        ],
+        "assets": [
+            {"provider": "upload", "role": "visual", "sceneId": "scene-01", "kind": "image"},
+            {"provider": "edge-tts", "role": "audio", "sceneId": "scene-01", "kind": "voiceover"},
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "source-editorial.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"sceneId": "scene-01", "status": "uploaded", "outputKind": "image"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    assert report["checks"]["sourceEditorialLayout"]["status"] == "pass"
+    assert report["checks"]["internetSourceContext"]["status"] == "pass"
+    assert report["checks"]["stillImageSourcePolicy"]["status"] == "fail"
+    assert report["stillImageSourcePolicy"]["blockedScenes"] == [
+        "scene-01:primary-still-image-source-not-meme-reaction-capture-card"
+    ]
+    assert any("generic web still images" in item for item in report["publishReadiness"]["requiredFixes"])
+
+
+def test_still_image_source_policy_allows_meme_reaction_primary_image(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("unavailable"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    manifest = {
+        "projectId": "meme-reaction-primary-image-allowed",
+        "renderPurpose": "source-first internet-meme-image proof",
+        "sourceEditorialLayoutRequired": True,
+        "internetSourceContextRequired": True,
+        "topic": "A short reaction explainer about a recognizable meme frame.",
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "Reaction meme",
+                "subtitleText": "이 표정이 포인트입니다.",
+                "narrationText": "이 표정이 포인트입니다.",
+                "visualKind": "image",
+                "captionPreset": "lower-info",
+                "captionPurpose": "hook",
+                "visualSourceIntent": "meme-image",
+                "sourceOrigin": "internet-meme",
+                "sourceType": "reaction-image",
+                "sourceUrl": "https://example.com/reaction-meme.jpg",
+                "sourceLocalPath": "storage/sources/reaction-meme.jpg",
+                "sourceSha256": "def456def456def456def456",
+                "sourceBytes": 234567,
+                "sourceMediaKind": "image",
+                "sourceFetchStatus": "fetched",
+                "sourceAcquisitionVerdict": "pass",
+                "sourceAcquisitionReview": "The meme frame was fetched locally with source metadata and checksum evidence.",
+                "scenePurpose": "Use the reaction still as the hook because the expression is the content.",
+                "viewerJob": "Recognize the reaction frame before the narration explains the context.",
+                "sourceRationale": "The meme image itself is the cultural object being explained, not generic decoration.",
+                "mediaChoiceRationale": "A still image is correct because the exact reaction frame carries the joke and context.",
+                "stillFit": "The meme frame itself is the subject, so motion would not add the viewer job.",
+                "sourceContextVerdict": "pass",
+                "continuityNote": "The edit opens on the meme frame and then explains the reaction context.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualQualityVerdict": "pass",
+                "sourceEditorialLayout": {
+                    "imageFitPolicy": "contain-stage",
+                    "situationKey": "reaction meme hook",
+                    "sceneVisualDistinctId": "scene-01-reaction-meme",
+                    "situationImageFitReview": "The exact reaction still is the scene subject and is not reused for another situation.",
+                    "situationImageFitVerdict": "pass",
+                    "subjectSafeZone": "The face stays above the lower caption band.",
+                    "captionSafeZone": "Caption stays below the meme expression and clear of platform UI.",
+                    "layoutSafetyReview": "The meme image is contained in a fixed stage without cropping the expression.",
+                    "captionCollisionReview": "Phone-sized review confirms the subtitle does not cover the expression.",
+                    "captionCollisionVerdict": "pass",
+                    "imageOverlapReview": "Single image plate has no overlapping source plates.",
+                    "imageOverlapVerdict": "pass",
+                    "dividerLineReview": "No black divider line appears inside the meme plate.",
+                    "dividerLineVerdict": "pass",
+                },
+            },
+        ],
+        "assets": [
+            {"provider": "upload", "role": "visual", "sceneId": "scene-01", "kind": "image"},
+            {"provider": "edge-tts", "role": "audio", "sceneId": "scene-01", "kind": "voiceover"},
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "source-editorial.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"sceneId": "scene-01", "status": "uploaded", "outputKind": "image"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    assert report["checks"]["internetSourceContext"]["status"] == "pass"
+    assert report["checks"]["stillImageSourcePolicy"]["status"] == "pass"
+    assert report["stillImageSourcePolicy"]["allowedPrimaryStillScenes"] == ["scene-01"]
+    assert report["stillImageSourcePolicy"]["blockedScenes"] == []
+
+
+def test_source_editorial_context_gate_blocks_duplicate_or_mismatched_images(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("unavailable"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    scenes = []
+    for idx in (1, 2):
+        scenes.append(
+            {
+                "sceneId": f"scene-0{idx}",
+                "title": f"Source scene {idx}",
+                "subtitleText": "상황 이미지가 맞아야 합니다.",
+                "narrationText": "상황 이미지가 맞아야 합니다.",
+                "visualKind": "image",
+                "captionPreset": "lower-info",
+                "captionPurpose": "context" if idx == 1 else "payoff",
+                "sourceRationale": "Source editorial image is used for context.",
+                "continuityNote": "The edit moves from one situation to another.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualQualityVerdict": "pass",
+                "sourceUrl": "https://example.com/reused-community-image.jpg",
+                "sourceEditorialLayout": {
+                    "imageFitPolicy": "cover-safe",
+                    "situationKey": f"situation {idx}",
+                    "sceneVisualDistinctId": "same-image-id",
+                    "situationImageFitReview": "Too short.",
+                    "situationImageFitVerdict": "fail" if idx == 2 else "pass",
+                    "subjectSafeZone": "Subject stays above the lower caption band.",
+                    "captionSafeZone": "Caption stays below the visual source plate.",
+                    "layoutSafetyReview": "The image plate stays away from the subtitle area and does not crop the key subject.",
+                    "captionCollisionReview": "Subtitle does not cover the visible source subject or phone UI.",
+                    "captionCollisionVerdict": "pass",
+                    "imageOverlapReview": "The image plate has no overlap with other source plates.",
+                    "imageOverlapVerdict": "pass",
+                    "dividerLineReview": "No black divider line appears inside the visual plate.",
+                    "dividerLineVerdict": "pass",
+                },
+            }
+        )
+    scenes[-1].update({
+        "endingPurpose": "payoff",
+        "endingPacingReview": "The final scene closes the comparison instead of stopping abruptly.",
+        "finalTakeawayReview": "The viewer understands that repeated images must be rejected.",
+        "endingVerdict": "pass",
+    })
+    manifest = {
+        "projectId": "source-editorial-context-duplicate",
+        "renderPurpose": "source-first-web-image-mix-demo",
+        "sourceEditorialLayoutRequired": True,
+        "captionSystem": {
+            "fixedPreset": "lower-info",
+            "purposeByScene": {"scene-01": "context", "scene-02": "payoff"},
+        },
+        "scenes": scenes,
+        "assets": [
+            {"provider": "upload", "role": "visual", "sceneId": "scene-01", "kind": "image"},
+            {"provider": "upload", "role": "visual", "sceneId": "scene-02", "kind": "image"},
+            {"provider": "edge-tts", "role": "audio", "sceneId": "scene-01", "kind": "voiceover"},
+            {"provider": "edge-tts", "role": "audio", "sceneId": "scene-02", "kind": "voiceover"},
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "source-editorial.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 2, "generated": 0, "totalScenes": 2},
+        local_media=[
+            {"sceneId": "scene-01", "status": "uploaded", "outputKind": "image"},
+            {"sceneId": "scene-02", "status": "uploaded", "outputKind": "image"},
+        ],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    assert report["checks"]["sourceEditorialImageContext"]["status"] == "fail"
+    assert "sceneVisualDistinctId unique" in report["checks"]["sourceEditorialImageContext"]["detail"]
+    assert "visualAssetFingerprint/source unique" in report["checks"]["sourceEditorialImageContext"]["detail"]
+    assert report["publishReadiness"]["status"] == "blocked"
+
+
+def test_ending_payoff_gate_blocks_abrupt_final_scene(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("unavailable"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    manifest = {
+        "projectId": "source-editorial-abrupt-ending",
+        "renderPurpose": "source-first-web-image-mix-demo",
+        "sourceEditorialLayoutRequired": True,
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "Abrupt final",
+                "subtitleText": "끝입니다.",
+                "narrationText": "끝입니다.",
+                "visualKind": "image",
+                "captionPreset": "lower-info",
+                "captionPurpose": "context",
+                "sourceRationale": "Final image is present but not shaped as an ending.",
+                "continuityNote": "The scene appears after the proof beat.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualQualityVerdict": "pass",
+                "sourceEditorialLayout": {
+                    "imageFitPolicy": "cover-safe",
+                    "situationKey": "final image",
+                    "sceneVisualDistinctId": "final-image-01",
+                    "situationImageFitReview": "The final image matches the topic but does not yet define a payoff.",
+                    "situationImageFitVerdict": "pass",
+                    "subjectSafeZone": "Subject remains above the lower caption band.",
+                    "captionSafeZone": "Caption remains below the source plate.",
+                    "layoutSafetyReview": "The image plate does not cover the caption band.",
+                    "captionCollisionReview": "Caption does not cover the subject.",
+                    "captionCollisionVerdict": "pass",
+                    "imageOverlapReview": "Single image has no overlap.",
+                    "imageOverlapVerdict": "pass",
+                    "dividerLineReview": "No black divider line.",
+                    "dividerLineVerdict": "pass",
+                },
+            },
+        ],
+        "assets": [
+            {"provider": "upload", "role": "visual", "sceneId": "scene-01", "kind": "image"},
+            {"provider": "edge-tts", "role": "audio", "sceneId": "scene-01", "kind": "voiceover"},
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "source-editorial.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"sceneId": "scene-01", "status": "uploaded", "outputKind": "image"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    assert report["checks"]["endingPayoff"]["status"] == "fail"
+    assert report["checks"]["endingTailPacing"]["status"] == "fail"
+    assert "endingTailHoldSec" in report["checks"]["endingTailPacing"]["detail"]
+    assert "endingPurpose" in report["checks"]["endingPayoff"]["detail"]
+    assert report["publishReadiness"]["status"] == "blocked"
+
+
+def test_ending_tail_pacing_blocks_blank_padding_and_short_rendered_caption(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("unavailable"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    final_scene = {
+        "sceneId": "scene-01",
+        "title": "Padded ending",
+        "subtitleText": "공기 저항 때문이에요",
+        "narrationText": "중력이 달라서가 아니에요. 공기가 없으니까 깃털이 안 밀려서, 망치처럼 같이 내려오는 거예요.",
+        "durationSec": 8.8,
+        "visualKind": "image",
+        "captionPreset": "lower-info",
+        "captionPurpose": "payoff",
+        "captionDisplayDurationSec": 6.0,
+        "sourceRationale": "Final image is the correct source context for the payoff.",
+        "continuityNote": "The source context continues from the proof beat.",
+        "qualityReviewNote": CAPTION_REVIEW,
+        "visualQualityVerdict": "pass",
+        "endingPurpose": "payoff",
+        "endingPacingReview": "The final source still explains the result instead of adding a new unsupported visual.",
+        "finalTakeawayReview": "The viewer remembers that air resistance is the reason.",
+        "endingVerdict": "pass",
+        "endingTailHoldSec": 2.4,
+        "endingFadeOutSec": 0.9,
+        "endingTailReview": "The final source remains on screen for a long visual and BGM hold after the spoken explanation.",
+        "endingTailVerdict": "pass",
+        "sourceEditorialLayout": {
+            "imageFitPolicy": "cover-safe",
+            "situationKey": "final image",
+            "sceneVisualDistinctId": "final-image-01",
+            "situationImageFitReview": "The final image matches the topic and keeps source context visible.",
+            "situationImageFitVerdict": "pass",
+            "subjectSafeZone": "Subject remains above the lower caption band.",
+            "captionSafeZone": "Caption remains below the source plate.",
+            "layoutSafetyReview": "The image plate does not cover the caption band.",
+            "captionCollisionReview": "Caption does not cover the subject.",
+            "captionCollisionVerdict": "pass",
+            "imageOverlapReview": "Single image has no overlap.",
+            "imageOverlapVerdict": "pass",
+            "dividerLineReview": "No black divider line.",
+            "dividerLineVerdict": "pass",
+        },
+    }
+    manifest = {
+        "projectId": "source-editorial-padded-ending",
+        "renderPurpose": "source-first-web-image-mix-demo",
+        "sourceEditorialLayoutRequired": True,
+        "scenes": [final_scene],
+        "assets": [
+            {"provider": "upload", "role": "visual", "sceneId": "scene-01", "kind": "image"},
+            {
+                "provider": "edge-tts",
+                "role": "audio",
+                "sceneId": "scene-01",
+                "kind": "voiceover",
+                "audioDurationFit": {
+                    "targetDurationSec": 8.8,
+                    "voiceTargetDurationSec": 6.4,
+                    "tailHoldSec": 2.4,
+                    "speed": 1.136,
+                    "mode": "tempo-fit",
+                },
+            },
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "source-editorial.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"sceneId": "scene-01", "status": "uploaded", "outputKind": "image"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    detail = report["checks"]["endingTailPacing"]["detail"]
+    assert report["checks"]["endingPayoff"]["status"] == "pass"
+    assert report["checks"]["endingTailPacing"]["status"] == "fail"
+    assert "endingTailHoldSec<=1.8" in detail
+    assert "audioTailHoldSec<=1.8" in detail
+    assert "endingVoiceTargetSec<=4.8" in detail
+    assert "endingCaptionVoiceCoverage>=0.40" in detail
+    assert "renderedCaptionDurationSec=1.8" in detail
+    assert report["publishReadiness"]["status"] == "blocked"
+
+
+def test_final_payoff_short_narration_can_pass_tts_evidence(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("unavailable"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    manifest = {
+        "projectId": "source-editorial-short-payoff-ending",
+        "renderPurpose": "source-first-web-image-mix-demo",
+        "sourceEditorialLayoutRequired": True,
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "Context",
+                "subtitleText": "달에서 봐야 해요",
+                "narrationText": "먼저 화면에서 달 표면과 실험 조건을 같이 잡아야 해요. 그래야 다음 결과가 이해돼요.",
+                "durationSec": 4.2,
+                "visualKind": "image",
+                "captionPreset": "lower-info",
+                "captionPurpose": "context",
+                "sourceRationale": "The first image gives the source context.",
+                "continuityNote": "The edit starts from the moon setting.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualQualityVerdict": "pass",
+            },
+            {
+                "sceneId": "scene-02",
+                "title": "Payoff",
+                "subtitleText": "공기 없어서 같이 내려와요",
+                "narrationText": "공기가 없으니까 깃털이 안 밀려요. 그래서 망치랑 같이 내려와요.",
+                "durationSec": 5.6,
+                "visualKind": "image",
+                "captionPreset": "lower-info",
+                "captionPurpose": "payoff",
+                "captionDisplayDurationSec": 1.8,
+                "sourceRationale": "The final image keeps the source context visible.",
+                "continuityNote": "The final still resolves the GIF proof beat.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualQualityVerdict": "pass",
+                "endingPurpose": "payoff",
+                "endingPacingReview": "The final still resolves the source proof in one spoken beat, then leaves only a compact BGM tail.",
+                "finalTakeawayReview": "The viewer remembers that air resistance is why the feather does not lag behind.",
+                "endingVerdict": "pass",
+                "endingTailHoldSec": 1.2,
+                "endingFadeOutSec": 0.8,
+                "endingTailReview": "The final payoff narration ends before a compact visual and BGM tail, without blank padding.",
+                "endingTailVerdict": "pass",
+            },
+        ],
+        "assets": [
+            {"provider": "upload", "role": "visual", "sceneId": "scene-01", "kind": "image"},
+            {"provider": "upload", "role": "visual", "sceneId": "scene-02", "kind": "image"},
+            {"provider": "edge-tts", "role": "audio", "sceneId": "scene-01", "kind": "voiceover"},
+            {
+                "provider": "edge-tts",
+                "role": "audio",
+                "sceneId": "scene-02",
+                "kind": "voiceover",
+                "audioDurationFit": {
+                    "targetDurationSec": 5.6,
+                    "voiceTargetDurationSec": 4.4,
+                    "tailHoldSec": 1.2,
+                    "speed": 1.249,
+                    "mode": "tempo-fit",
+                },
+            },
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "source-editorial.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 2, "generated": 0, "totalScenes": 2},
+        local_media=[
+            {"sceneId": "scene-01", "status": "uploaded", "outputKind": "image"},
+            {"sceneId": "scene-02", "status": "uploaded", "outputKind": "image"},
+        ],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    summary = report["productionReview"]["summary"]
+    assert summary["thinNarrationScenes"] == []
+    assert summary["finalPayoffShortNarrationScenes"] == ["scene-02"]
+    assert report["checks"]["ttsNarrationEvidence"]["status"] == "pass"
+    assert "finalPayoffShortNarrationScenes=['scene-02']" in report["checks"]["ttsNarrationEvidence"]["detail"]
+
+
+def test_conversational_copy_style_blocks_repetitive_caption_keyword(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    scenes = []
+    assets = []
+    for index, subtitle in enumerate(("같이 볼까요?", "같이 맞나요?", "같이 끝나요?"), start=1):
+        scene_id = f"scene-{index:02d}"
+        scenes.append(
+            {
+                "sceneId": scene_id,
+                "title": f"Repeated copy {index}",
+                "subtitleText": subtitle,
+                "narrationText": "화면에서 실제 소스를 보면서 다음 차이를 바로 확인해 봐요.",
+                "durationSec": 3.2,
+                "visualKind": "image",
+                "captionPreset": "lower-info",
+                "captionPurpose": "proof",
+                "sourceRationale": "The fetched source supports this viewer-facing proof beat.",
+                "continuityNote": "The source sequence moves through related proof beats.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualQualityVerdict": "pass",
+                "visualSourceIntent": "internet-image",
+                "sourceUrl": f"https://upload.wikimedia.org/example/source-{index}.jpg",
+                "sourceLocalPath": f"storage/source-acquisition/repeated-copy/source-{index}.jpg",
+                "sourceSha256": f"{index}" * 64,
+                "sourceBytes": 12000 + index,
+                "sourceMediaKind": "image",
+                "sourceFetchStatus": "fetched",
+                "sourceAcquisitionVerdict": "pass",
+                "sourceContext": {
+                    "topic": "repetition proof",
+                    "scenePurpose": f"source proof beat {index}",
+                    "viewerJob": "spot the concrete source change",
+                    "selectionRationale": "The source image fits the proof beat.",
+                    "mediaChoiceRationale": "A still image is enough for this proof beat.",
+                    "stillFit": "The still source gives the viewer concrete context.",
+                    "verdict": "pass",
+                },
+            }
+        )
+        assets.extend([
+            {
+                "provider": "upload",
+                "role": "visual",
+                "sceneId": scene_id,
+                "kind": "image",
+                "sourceOrigin": "internet-image",
+                "sourcePath": f"storage/source-acquisition/repeated-copy/source-{index}.jpg",
+                "sourceUrl": f"https://upload.wikimedia.org/example/source-{index}.jpg",
+                "sourceMediaKind": "image",
+                "sourceFetchStatus": "fetched",
+                "sourceAcquisitionVerdict": "pass",
+            },
+            {"provider": "edge-tts", "role": "audio", "sceneId": scene_id, "kind": "voiceover"},
+        ])
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest={
+            "projectId": "repetitive-caption-keyword",
+            "internetSourceProofMode": True,
+            "internetSourceAcquisitionRequired": True,
+            "internetSourceContextRequired": True,
+            "sourceEditorialLayoutRequired": True,
+            "copyStylePrompt": {
+                "tone": "conversational spoken short-form copy",
+                "captionRule": "Captions must read like distinct viewer reactions, not the same phrase repeated.",
+                "narrationRule": "TTS narration should sound spoken and avoid formal report language.",
+                "ttsPacingRule": "Keep the spoken line short enough for the scene and align caption density.",
+                "forbiddenPatterns": ["source beat", "proof scene", "caption label"],
+                "referenceTakeaways": ["Each caption advances the beat.", "Repeated words need a clear callback purpose."],
+            },
+            "scenes": scenes,
+            "assets": assets,
+        },
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "repetitive-caption-keyword.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 3, "generated": 0, "totalScenes": 3},
+        local_media=[
+            {"sceneId": "scene-01", "status": "uploaded", "outputKind": "image"},
+            {"sceneId": "scene-02", "status": "uploaded", "outputKind": "image"},
+            {"sceneId": "scene-03", "status": "uploaded", "outputKind": "image"},
+        ],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    detail = report["checks"]["conversationalCopyStyle"]["detail"]
+    assert report["checks"]["conversationalCopyStyle"]["status"] == "fail"
+    assert "'같이': ['scene-01', 'scene-02', 'scene-03']" in detail
 
 
 def test_render_quality_report_blocks_fallback_sine_instead_of_tts(monkeypatch, tmp_path):
@@ -2763,6 +4162,1217 @@ def test_render_quality_report_blocks_grok_main_without_curation_and_source_prov
     assert any("Grok-main" in item for item in report["publishReadiness"]["requiredFixes"])
     assert report["topTierReadiness"]["status"] == "needs-publish-rework"
     assert report["checks"]["topTierReadinessGate"]["status"] == "warn"
+
+
+def test_render_quality_report_blocks_reference_profile_without_generated_video_sources(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    scenes = [
+        {
+            "sceneId": "scene-01",
+            "title": "Mistake one",
+            "subtitleText": "폼이 무너지는 첫 장면",
+            "narrationText": FULL_NARRATION,
+            "visualKind": "video",
+            "captionPreset": "top-hook",
+            "sourceRationale": "Local prototype footage was manually selected as a temporary reference stand-in.",
+            "continuityNote": "Gym, subject, and prop continuity are plausible but not generated source proof.",
+            "hookNote": "The first two seconds show the wrong setup clearly.",
+            "originalityEvidence": "Temporary local prototype upload; not Grok, Gemini, or local generated footage.",
+            "qualityReviewNote": CAPTION_REVIEW,
+            "visualQualityVerdict": "pass",
+            "stockAiClipFitVerdict": "pass",
+            "thumbnailReviewNote": "Opening frame contains the clear mistake.",
+            "audioMixReviewNote": "Voiceover remains audible above BGM with no clipping.",
+            "platformComparisonNote": "Compared against reference ranking Shorts for hook, caption, and cut speed.",
+            "visualSourceIntent": "local-reference-prototype",
+        },
+        {
+            "sceneId": "scene-02",
+            "title": "Mistake two",
+            "subtitleText": "초보자가 흔히 놓치는 동작",
+            "narrationText": FULL_NARRATION,
+            "visualKind": "video",
+            "captionPreset": "lower-info",
+            "sourceRationale": "Another local prototype clip was selected because it roughly matches the script beat.",
+            "continuityNote": "Same gym palette, but no external generation/import proof exists.",
+            "hookNote": "Movement starts early enough for a Shorts beat.",
+            "originalityEvidence": "Temporary local prototype upload; not Grok, Gemini, or local generated footage.",
+            "qualityReviewNote": CAPTION_REVIEW,
+            "visualQualityVerdict": "pass",
+            "stockAiClipFitVerdict": "pass",
+            "thumbnailReviewNote": "Support scene only; no thumbnail candidate.",
+            "audioMixReviewNote": "Voiceover remains audible above BGM with no clipping.",
+            "platformComparisonNote": "Compared against reference ranking Shorts for source fit and cut density.",
+            "visualSourceIntent": "local-reference-prototype",
+        },
+    ]
+    assets = [
+        {
+            "provider": "upload",
+            "role": "visual",
+            "sceneId": "scene-01",
+            "kind": "video",
+            "sourceOrigin": "uploaded",
+            "sourcePath": "storage/uploads/reference-prototype/scene-01.mp4",
+        },
+        {
+            "provider": "upload",
+            "role": "visual",
+            "sceneId": "scene-02",
+            "kind": "video",
+            "sourceOrigin": "uploaded",
+            "sourcePath": "storage/uploads/reference-prototype/scene-02.mp4",
+        },
+        {"provider": "edge-tts", "role": "audio"},
+    ]
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest={
+            "projectId": "reference-info-ranking-short-test",
+            "templateType": "ranking_list",
+            "referenceProfilePath": "storage/episodes/reference-profile.json",
+            "qualityGateRequired": True,
+            "scenes": scenes,
+            "assets": assets,
+        },
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "reference-prototype.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 2, "generated": 0, "totalScenes": 2},
+        local_media=[
+            {"sceneId": "scene-01", "status": "uploaded", "outputKind": "video"},
+            {"sceneId": "scene-02", "status": "uploaded", "outputKind": "video"},
+        ],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    summary = report["productionReview"]["summary"]
+    assert summary["sourceFirstRequired"] is True
+    assert summary["sourceFirstReady"] is False
+    assert summary["sourceFirstGeneratedSceneIds"] == []
+    assert summary["sourceFirstBlockedSceneIds"] == ["scene-01", "scene-02"]
+    assert summary["sourceFirstBlockReasonsByScene"] == {
+        "scene-01": "requires-grok-gemini-local-generated-or-context-approved-internet-source",
+        "scene-02": "requires-grok-gemini-local-generated-or-context-approved-internet-source",
+    }
+    assert report["checks"]["sourceFirstSourceGate"]["status"] == "fail"
+    assert report["checks"]["stockAiClipFit"]["status"] == "fail"
+    assert "sourceFirstBlockedSceneIds=['scene-01', 'scene-02']" in report["checks"]["stockAiClipFit"]["detail"]
+    assert report["publishReadiness"]["status"] == "blocked"
+    assert any("Grok/Gemini/local model MP4 sources" in item for item in report["publishReadiness"]["requiredFixes"])
+    assert report["uploadReview"]["status"] == "blocked"
+    assert report["checks"]["uploadReviewGate"]["status"] == "fail"
+
+
+def test_render_quality_report_accepts_internet_gif_source_proof(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+
+    scenes = []
+    assets = [
+        {
+            "provider": "local-bgm",
+            "role": "audio",
+            "sceneId": "global",
+            "kind": "bgm",
+            "sourceOrigin": "local-library",
+            "sourcePath": "assets/bgm/editorial/source-proof-bed.mp3",
+            "sourceLabel": "source-proof-bed.mp3",
+            "sourceUrl": "https://example.invalid/free/source-proof-bed",
+            "sourceLicense": "CC0 test fixture",
+            "candidateCount": 2,
+            "selectionMethod": "stable-hash",
+            "selectionKey": "internet-gif-proof",
+        }
+    ]
+    for index in range(1, 3):
+        scene_id = f"scene-{index:02d}"
+        scenes.append(
+            {
+                "sceneId": scene_id,
+                "title": f"Internet source beat {index}",
+                "subtitleText": "GIF first?" if index == 1 else "watch the loop change it?",
+                "narrationText": (
+                    "Real GIF first, right? Not fake."
+                    if index == 1
+                    else "The loop changes the joke, right?"
+                ),
+                "durationSec": 3.2 if index == 1 else 4.4,
+                "visualKind": "video",
+                "captionPreset": "top-hook" if index == 1 else "lower-info",
+                "captionPurpose": "hook" if index == 1 else "proof",
+                "captionDisplayDurationSec": 1.35 if index == 1 else 1.8,
+                "sourceRationale": "Operator selected this fetched internet GIF because the motion directly supports the commentary beat.",
+                "continuityNote": "Both GIF beats use source-first editorial framing, visible motion, and restrained caption placement.",
+                "hookNote": "The fetched GIF moves inside the first second, so the source proof is visible immediately.",
+                "originalityEvidence": "Internet source proof mode: direct media URL was fetched locally with sha256, bytes, and source-fit review before render.",
+                "qualityReviewNote": (
+                    CAPTION_REVIEW + " The fetched reaction source stays visible while the top caption names the real source beat."
+                    if index == 1
+                    else CAPTION_REVIEW + " The looped motion remains visible above the lower caption so the proof reads as movement."
+                ),
+                "visualQualityVerdict": "pass",
+                "stockAiClipFitVerdict": "pass",
+                "thumbnailReviewNote": "The first GIF frame has motion context and no baked-in title or watermark risk in this proof.",
+                "audioMixReviewNote": "Edge TTS stays intelligible over a real local BGM bed with no clipping in the proof mix.",
+                "platformComparisonNote": "Compared against source-led Korean explainer Shorts for hook, proof visibility, caption restraint, and cut pacing.",
+                "editBeatNote": (
+                    "First beat uses a quick source hook."
+                    if index == 1
+                    else "Final beat resolves on a short source loop, a readable payoff caption, and a compact fade-out instead of blank tail padding."
+                ),
+                "layoutVariantKey": "source-proof-hook" if index == 1 else "source-proof-body",
+                "layoutVariantNote": (
+                    "Hook layout keeps the fetched reaction GIF large; the top caption names the real source without covering the moving subject."
+                    if index == 1
+                    else "Body layout uses a lower caption so the looped GIF motion remains visible and the proof beat reads as motion."
+                ),
+                "visualSourceIntent": "internet-meme-gif",
+                "sceneIntentRole": "hook" if index == 1 else "proof",
+                "sourceProofClaim": (
+                    "The fetched GIF motion proves the fake-card reaction before any explanation."
+                    if index == 1
+                    else "The looped GIF motion proves that the payoff depends on movement, not a decorative still."
+                ),
+                "sourceViewerTask": (
+                    "Notice that the viewer reaction comes from a real moving source."
+                    if index == 1
+                    else "Watch the repeated motion resolve the source-first proof."
+                ),
+                "sceneSourceBindingReview": (
+                    "The hook uses the real GIF motion as the viewer question, so caption, narration, and layout point at the same moving reaction."
+                    if index == 1
+                    else "The proof beat uses looped GIF motion as the answer, so the payoff caption and lower layout keep the motion readable."
+                ),
+                "sceneSourceBindingVerdict": "pass",
+                "sourceUrl": f"https://upload.wikimedia.org/example/source-{index}.gif",
+                "sourceLocalPath": f"storage/source-acquisition/internet-gif-proof/raw/source-{index}.gif",
+                "sourceSha256": f"{index}" * 64,
+                "sourceBytes": 12000 + index,
+                "sourceMediaKind": "gif",
+                "sourceFetchStatus": "fetched",
+                "sourceAcquisitionVerdict": "pass",
+                "sourceAcquisitionReview": "Operator verified this direct GIF source was fetched locally with hash, byte size, source URL, and scene fit before render.",
+                "sourceContext": {
+                    "topic": "AI-only Shorts feel fake when they have no real source",
+                    "scenePurpose": "replace an internal fake meme card with a real fetched reaction source",
+                    "viewerJob": "show why source-first editing feels more concrete than generated filler",
+                    "intentRole": "hook" if index == 1 else "proof",
+                    "proofClaim": (
+                        "The fetched GIF motion proves the fake-card reaction before any explanation."
+                        if index == 1
+                        else "The looped GIF motion proves that the payoff depends on movement, not a decorative still."
+                    ),
+                    "selectionRationale": "This fetched GIF is used for the reaction beat because its looped motion directly supports the criticism of fake meme cards.",
+                    "mediaChoiceRationale": "GIF is selected here because the motion is the point of the joke and the viewer response.",
+                    "motionFit": "The looped motion makes the reaction readable without needing a separate explanation.",
+                    "verdict": "pass",
+                },
+                "captionCollisionReview": "Caption is placed in a safe zone and does not cover the moving source subject or platform UI.",
+                "captionCollisionVerdict": "pass",
+                "antiAiNaturalnessVerdict": "pass",
+                "naturalnessReviewNote": "This proof uses a real fetched internet GIF rather than an invented AI card, so the visual source reads as concrete evidence.",
+                "actionMotivation": "The GIF motion is used as commentary evidence.",
+                "worldContinuityNote": "Both source GIF scenes share the same editorial proof frame and restrained caption rhythm.",
+                "endingPurpose": "payoff" if index == 2 else "",
+                "endingPacingReview": "Final GIF beat closes the proof with a short moving source, readable payoff caption, and no abrupt silence or late title card." if index == 2 else "",
+                "finalTakeawayReview": "Viewer leaves understanding that source-first GIF acquisition fixes the fake-card problem." if index == 2 else "",
+                "endingVerdict": "pass" if index == 2 else "",
+                "endingTailHoldSec": 1.2 if index == 2 else 0,
+                "endingFadeOutSec": 0.8 if index == 2 else 0,
+                "endingTailReview": "Final GIF beat keeps the payoff source and caption in the same breath, then leaves a compact 1.2s BGM tail and fade so it closes without padding." if index == 2 else "",
+                "endingTailVerdict": "pass" if index == 2 else "",
+                "endingResolutionReview": "The final source loop, payoff caption, and spoken close land together before the short tail, so the ending resolves instead of padding." if index == 2 else "",
+                "endingScreenAction": "Hold on the resolved moving GIF payoff while caption and voice close together." if index == 2 else "",
+                "endingResolutionVerdict": "pass" if index == 2 else "",
+            }
+        )
+        assets.extend([
+            {
+                "provider": "upload",
+                "role": "visual",
+                "sceneId": scene_id,
+                "kind": "video",
+                "sourceOrigin": "internet-meme-gif",
+                "sourceType": "meme-gif",
+                "sourcePath": f"storage/source-acquisition/internet-gif-proof/raw/source-{index}.gif",
+                "sourceUrl": f"https://upload.wikimedia.org/example/source-{index}.gif",
+                "sourceLocalPath": f"storage/source-acquisition/internet-gif-proof/raw/source-{index}.gif",
+                "sourceSha256": f"{index}" * 64,
+                "sourceBytes": 12000 + index,
+                "sourceMediaKind": "gif",
+                "sourceFetchStatus": "fetched",
+                "sourceAcquisitionVerdict": "pass",
+                "sourceAcquisitionReview": "Operator verified this direct GIF source was fetched locally with hash, byte size, source URL, and scene fit before render.",
+            },
+            {"provider": "edge-tts", "role": "audio", "sceneId": scene_id, "kind": "voiceover"},
+        ])
+
+    manifest = {
+        "projectId": "internet-meme-gif-quality-proof-test",
+        "topic": "AI-only Shorts feel fake when they have no real source",
+        "templateType": "authentic_vlog",
+        "renderPurpose": "source-first internet-meme-gif quality proof",
+        "sourceFirstRequired": True,
+        "internetSourceProofMode": True,
+        "internetSourceAcquisitionRequired": True,
+        "internetSourceContextRequired": True,
+        "sourceEditorialLayoutRequired": True,
+        "captionSystem": {"fixedPreset": "mixed-by-scene"},
+        "topicHookPayoff": {
+            "topic": "AI-only Shorts feel fake when they have no real source",
+            "hook": "What if the meme beat is a real fetched GIF instead of a fake card?",
+            "payoff": "The source-first edit feels concrete because the motion proves the joke.",
+            "viewerTakeaway": "Pick sources after the hook/payoff spine, then bind every scene to what that source proves.",
+        },
+        "visualFrameReview": {
+            "contactSheetPath": "storage/renders/internet-gif-proof/contact-sheet-review.jpg",
+            "reviewerType": "contact-sheet-human",
+            "reviewNotes": "Phone-sized contact sheet review confirms the GIF source is the main visual object, captions stay clear, TTS pacing feels synced, and the final beat resolves without blank padding.",
+            "sourceDominanceVerdict": "pass",
+            "captionOcclusionVerdict": "pass",
+            "layoutNaturalnessVerdict": "pass",
+            "ttsCaptionSyncVerdict": "pass",
+            "captionTtsHumanVerdict": "pass",
+            "captionTtsReview": "Phone playback confirms the visible caption and spoken line carry the same idea in the same beat without rushing or drifting apart.",
+            "motionStabilityVerdict": "pass",
+            "motionStabilityReview": "The fetched GIF motion remains stable at phone size with no synthetic shake, floating crop, or wobbling zoom added by the render.",
+            "sourceRepetitionVerdict": "pass",
+            "sourceRepetitionReview": "Each repeated source appearance has a distinct hook or payoff purpose, so the edit does not recycle the same image as filler.",
+            "endingResolutionVerdict": "pass",
+            "sceneReviews": {
+                "scene-01": {
+                    "sourceVisibleVerdict": "pass",
+                    "sourceDominanceVerdict": "pass",
+                    "captionClearVerdict": "pass",
+                    "motionStabilityVerdict": "pass",
+                    "sourceRepetitionVerdict": "pass",
+                    "review": "The hook frame keeps the real GIF large enough to read and the top caption does not cover the moving reaction.",
+                },
+                "scene-02": {
+                    "sourceVisibleVerdict": "pass",
+                    "sourceDominanceVerdict": "pass",
+                    "captionClearVerdict": "pass",
+                    "motionStabilityVerdict": "pass",
+                    "sourceRepetitionVerdict": "pass",
+                    "review": "The proof frame keeps loop motion visible above the lower caption and the final caption lands with the spoken close.",
+                },
+            },
+        },
+        "copyStylePrompt": {
+            "tone": "conversational spoken short-form copy",
+            "captionRule": "Captions must read like a viewer reaction, question, or short payoff rather than an internal scene label.",
+            "narrationRule": "TTS narration must sound spoken, use direct viewer language, and avoid production labels or report-style phrasing.",
+            "ttsPacingRule": "Keep TTS under the scene timing without tempo compression; captions must carry enough of the spoken idea to feel synced.",
+            "forbiddenPatterns": ["source beat", "proof scene", "layout note", "caption label"],
+            "referenceTakeaways": [
+                "Lead with curiosity or a direct reaction in the first beat.",
+                "Keep on-screen text short enough to read while the source stays visible.",
+            ],
+        },
+        "viewerTakeaway": {
+            "understood": "Fetched GIFs can replace fake internal meme cards.",
+            "action": "Use local fetched source assets before layout and TTS.",
+            "feeling": "concrete",
+        },
+        "qualityRatchet": {
+            "previousBaseline": "Still-image webmix proof did not solve motion or source-first quality.",
+            "rejectionCause": "Viewer could not tell the proof used real fetched internet motion sources.",
+            "changedLever": "source acquisition, GIF motion, layout, caption, TTS, and audio proof",
+            "expectedVisibleImprovement": "Every scene shows a moving fetched source with clean captions and voiceover.",
+            "actualProof": "Render report accepts internetSourceAcquisition and sourceFirstSourceGate.",
+            "nextRatchet": "Operator can replace proof GIFs with upload-reviewed rights-safe assets.",
+        },
+        "scenes": scenes,
+        "assets": assets,
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "internet-gif-proof.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 2, "generated": 0, "totalScenes": 2},
+        local_media=[
+            {"sceneId": "scene-01", "status": "uploaded", "outputKind": "video"},
+            {"sceneId": "scene-02", "status": "uploaded", "outputKind": "video"},
+        ],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    summary = report["productionReview"]["summary"]
+    assert summary["internetSourceProofMode"] is True
+    assert summary["internetMotionSourceSceneIds"] == ["scene-01", "scene-02"]
+    assert summary["sourceFirstReady"] is True
+    assert summary["sourceFirstInternetSourceSceneIds"] == ["scene-01", "scene-02"]
+    assert summary["weakUploadedOriginalityScenes"] == []
+    assert report["internetSourceAcquisition"]["status"] == "pass"
+    assert report["internetSourceAcquisition"]["motionReadyScenes"] == ["scene-01", "scene-02"]
+    assert report["checks"]["internetSourceAcquisition"]["status"] == "pass"
+    assert report["checks"]["internetSourceContext"]["status"] == "pass"
+    assert report["checks"]["internetSourceEditorialIntegration"]["status"] == "pass"
+    assert report["checks"]["topicHookPayoffStructure"]["status"] == "pass"
+    assert report["checks"]["sceneSourceIntentBinding"]["status"] == "pass"
+    assert report["checks"]["visualFrameReviewEvidence"]["status"] == "pass"
+    assert report["checks"]["conversationalCopyStyle"]["status"] == "pass"
+    assert report["checks"]["sourceLoopRhythm"]["status"] == "pass"
+    assert report["checks"]["endingTailPacing"]["status"] == "pass"
+    assert report["checks"]["sourceFirstSourceGate"]["status"] == "pass"
+    assert report["checks"]["stockAiClipFit"]["status"] == "pass"
+    assert report["checks"]["publishReadinessGate"]["status"] == "pass"
+    assert report["checks"]["channelReadinessGate"]["status"] == "pass"
+    assert report["checks"]["uploadReviewGate"]["status"] == "pass"
+    assert report["checks"]["topTierReadinessGate"]["status"] == "pass"
+    assert report["gateSystem"]["status"] == "pass"
+
+
+def test_topic_hook_payoff_structure_blocks_source_dump_without_spine():
+    review = compose_ffmpeg._build_topic_hook_payoff_structure_review(
+        {
+            "projectId": "source-dump-without-spine",
+            "internetSourceProofMode": True,
+            "internetSourceContextRequired": True,
+            "scenes": [
+                {
+                    "sceneId": "scene-01",
+                    "captionPurpose": "proof",
+                    "subtitleText": "see the source?",
+                    "sourceMediaKind": "gif",
+                    "sourceContext": {"intentRole": "proof"},
+                }
+            ],
+            "assets": [
+                {
+                    "provider": "upload",
+                    "role": "visual",
+                    "sceneId": "scene-01",
+                    "kind": "video",
+                    "sourceOrigin": "internet-meme-gif",
+                    "sourceUrl": "https://upload.wikimedia.org/example/random.gif",
+                    "sourceMediaKind": "gif",
+                }
+            ],
+        }
+    )
+
+    assert review["status"] == "fail"
+    assert "topicHookPayoff/narrativeSpine" in review["missingFields"]
+    assert "firstSceneHookRole" in review["missingFields"]
+
+
+def test_topic_hook_payoff_structure_blocks_spine_not_in_viewer_copy():
+    review = compose_ffmpeg._build_topic_hook_payoff_structure_review(
+        {
+            "projectId": "spine-stuck-in-planning-not-copy",
+            "internetSourceProofMode": True,
+            "internetSourceContextRequired": True,
+            "topicHookPayoff": {
+                "topic": "2026 optical illusion comment debate",
+                "hook": "Start with a fixation illusion that makes people notice their own perception changing.",
+                "payoff": "Close on the comment split: different viewers lock onto different interpretations of the same source.",
+                "viewerTakeaway": "The viewer should feel the ambiguity before the explanation arrives.",
+            },
+            "scenes": [
+                {
+                    "sceneId": "scene-01",
+                    "captionPurpose": "hook",
+                    "subtitleText": "움직임 먼저 보여요?",
+                    "narrationText": "움직임 착시 먼저 보여요?",
+                    "sceneIntentRole": "hook",
+                    "sourceContext": {"intentRole": "hook"},
+                },
+                {
+                    "sceneId": "scene-02",
+                    "captionPurpose": "proof",
+                    "subtitleText": "둘 중 뭐가 먼저 보여요?",
+                    "narrationText": "오리에서 토끼로 바뀌는 순간 보이죠?",
+                    "sceneIntentRole": "proof",
+                    "sourceContext": {"intentRole": "proof"},
+                },
+                {
+                    "sceneId": "scene-03",
+                    "captionPurpose": "payoff",
+                    "subtitleText": "평행선 댓글 갈리죠?",
+                    "narrationText": "같은 평행선도 댓글 갈리죠?",
+                    "sceneIntentRole": "payoff",
+                    "sourceContext": {"intentRole": "payoff"},
+                    "endingPurpose": "payoff",
+                },
+            ],
+            "assets": [
+                {
+                    "role": "visual",
+                    "sceneId": scene_id,
+                    "kind": "image",
+                    "sourceOrigin": "internet-image",
+                    "sourceMediaKind": "image",
+                    "sourceFetchStatus": "fetched",
+                }
+                for scene_id in ("scene-01", "scene-02", "scene-03")
+            ],
+        }
+    )
+
+    assert review["status"] == "fail"
+    assert "hookAppearsInViewerCopy" in review["missingFields"]
+    assert "payoffAppearsInViewerCopy" in review["missingFields"]
+
+
+def test_audience_interest_source_fit_blocks_generic_trending_claim():
+    review = compose_ffmpeg._build_audience_interest_source_fit_review(
+        {
+            "projectId": "generic-interest-claim",
+            "qualitySampleSetRequired": True,
+            "topicHookPayoff": {
+                "topic": "some viral topic",
+                "hook": "This is trending",
+                "payoff": "People are interested because it is popular.",
+                "viewerTakeaway": "The topic is popular.",
+            },
+            "audienceInterest": {
+                "targetAudience": "Korean Shorts viewers",
+                "interestDriver": "People are interested in this viral popular trending topic.",
+                "whyNowOrEvergreen": "It is popular right now.",
+                "scrollStopHook": "요즘 이거 봤죠?",
+                "sourceStrategy": "Use a source that fits the context.",
+                "commentPrompt": "What do you think?",
+                "interestScore": 4,
+                "audienceInterestVerdict": "pass",
+            },
+        }
+    )
+
+    assert review["status"] == "fail"
+    assert "interestEvidence>=28 or evidenceItems>=1" in review["missingFields"]
+    assert "nonGenericInterestEvidence" in review["missingFields"]
+
+
+def test_audience_interest_source_fit_accepts_specific_viewer_demand():
+    review = compose_ffmpeg._build_audience_interest_source_fit_review(
+        {
+            "projectId": "specific-interest-proof",
+            "qualitySampleSetRequired": True,
+            "topicHookPayoff": {
+                "topic": "AI-looking Shorts versus real source proof",
+                "hook": "잠깐, 이건 진짜 소스야?",
+                "payoff": "The proof works because viewers can see the source, not just hear a claim.",
+                "viewerTakeaway": "Source choice starts from viewer curiosity.",
+            },
+            "audienceInterest": {
+                "targetAudience": "Korean Shorts viewers tired of generic AI explainer clips",
+            "interestDriver": "The viewer gets a quick test: can a real internet source beat an AI-looking render?",
+            "whyNowOrEvergreen": "Short-form feeds are crowded with generic AI visuals, so source-visible proof is a live quality differentiator.",
+            "interestEvidence": "Manual reference review found source-first proof clips keep attention when the first frame poses a visible challenge.",
+            "evidenceItems": [
+                {
+                    "source": "Manual reference review",
+                    "signal": "Source-visible proof clips held attention when the first frame posed a visible challenge.",
+                    "relevance": "The proof is judged by a concrete viewer task rather than a vague claim that a topic is popular.",
+                },
+                {
+                    "source": "Source-first render comparison",
+                    "signal": "Generic AI-looking topics were rejected when source choice did not prove the hook.",
+                    "relevance": "The gate should require a specific curiosity reason before source/layout/TTS quality can count.",
+                },
+            ],
+            "scrollStopHook": "이거 AI가 아니라 진짜 소스야?",
+                "sourceStrategy": "Fetch motion sources only when motion proves the hook, and use stills only for setup or payoff context.",
+                "commentPrompt": "Viewers can comment whether the source actually proves the claim.",
+                "interestScore": 4,
+                "audienceInterestVerdict": "pass",
+            },
+        }
+    )
+
+    assert review["status"] == "pass"
+    assert review["missingFields"] == []
+
+
+def test_scene_source_intent_binding_blocks_generic_context_fit_text():
+    review = compose_ffmpeg._build_scene_source_intent_binding_review(
+        {
+            "projectId": "generic-source-intent",
+            "internetSourceProofMode": True,
+            "internetSourceContextRequired": True,
+            "scenes": [
+                {
+                    "sceneId": "scene-01",
+                    "captionPurpose": "proof",
+                    "subtitleText": "this fits the context?",
+                    "narrationText": "This source is contextually relevant, so it should fit the scene.",
+                    "sourceContext": {
+                        "intentRole": "proof",
+                        "proofClaim": "The source is contextually relevant and appropriate for this scene.",
+                        "viewerTask": "Accept that the source is contextually appropriate.",
+                        "sceneSourceBindingReview": "The source is contextually relevant and appropriate for this scene because it fits the topic.",
+                        "sceneSourceBindingVerdict": "pass",
+                        "mediaChoiceRationale": "GIF is selected because motion is visible in the source.",
+                        "motionFit": "The GIF has moving source evidence.",
+                    },
+                }
+            ],
+            "assets": [
+                {
+                    "provider": "upload",
+                    "role": "visual",
+                    "sceneId": "scene-01",
+                    "kind": "video",
+                    "sourceOrigin": "internet-meme-gif",
+                    "sourceUrl": "https://upload.wikimedia.org/example/random.gif",
+                    "sourceMediaKind": "gif",
+                }
+            ],
+        }
+    )
+
+    assert review["status"] == "fail"
+    assert "scene-01:sourceIntentNotGeneric" in review["missingScenes"][0]
+
+
+def test_visual_frame_review_evidence_blocks_unreviewed_source_frames():
+    review = compose_ffmpeg._build_visual_frame_review_evidence(
+        {
+            "projectId": "unreviewed-source-frames",
+            "internetSourceProofMode": True,
+            "internetSourceContextRequired": True,
+            "scenes": [
+                {
+                    "sceneId": "scene-01",
+                    "captionPurpose": "proof",
+                    "sourceContext": {"intentRole": "proof"},
+                }
+            ],
+            "assets": [
+                {
+                    "provider": "upload",
+                    "role": "visual",
+                    "sceneId": "scene-01",
+                    "kind": "video",
+                    "sourceOrigin": "internet-meme-gif",
+                    "sourceUrl": "https://upload.wikimedia.org/example/random.gif",
+                    "sourceMediaKind": "gif",
+                }
+            ],
+        }
+    )
+
+    assert review["status"] == "fail"
+    assert "visualFrameReview" in review["missingFields"]
+    assert "allSourceScenesFrameReviewed" in review["missingFields"]
+
+
+def test_visual_frame_review_evidence_blocks_shake_reuse_and_caption_tts_gaps():
+    review = compose_ffmpeg._build_visual_frame_review_evidence(
+        {
+            "projectId": "old-style-human-review",
+            "internetSourceProofMode": True,
+            "internetSourceContextRequired": True,
+            "visualFrameReview": {
+                "contactSheetPath": "storage/renders/old-style-human-review/contact.jpg",
+                "reviewerType": "contact-sheet-human",
+                "reviewNotes": "This old review only says the source is visible and captions are not covering it, but it does not inspect playback shake, source reuse, or whether captions and TTS actually match.",
+                "sourceDominanceVerdict": "pass",
+                "captionOcclusionVerdict": "pass",
+                "layoutNaturalnessVerdict": "pass",
+                "ttsCaptionSyncVerdict": "pass",
+                "endingResolutionVerdict": "pass",
+                "sceneReviews": {
+                    "scene-01": {
+                        "sourceVisibleVerdict": "pass",
+                        "sourceDominanceVerdict": "pass",
+                        "captionClearVerdict": "pass",
+                        "review": "Source is large enough and caption is clear, but this does not cover motion stability or source repetition.",
+                    }
+                },
+            },
+            "scenes": [
+                {
+                    "sceneId": "scene-01",
+                    "captionPurpose": "proof",
+                    "sourceContext": {"intentRole": "proof"},
+                }
+            ],
+            "assets": [
+                {
+                    "provider": "upload",
+                    "role": "visual",
+                    "sceneId": "scene-01",
+                    "kind": "video",
+                    "sourceOrigin": "internet-meme-gif",
+                    "sourceUrl": "https://upload.wikimedia.org/example/random.gif",
+                    "sourceMediaKind": "gif",
+                }
+            ],
+        }
+    )
+
+    assert review["status"] == "fail"
+    assert "captionTtsHumanVerdict=pass" in review["missingFields"]
+    assert "motionStabilityVerdict=pass" in review["missingFields"]
+    assert "sourceRepetitionVerdict=pass" in review["missingFields"]
+    assert "captionTtsReview>=80" in review["missingFields"]
+    assert "motionStabilityReview>=80" in review["missingFields"]
+    assert "sourceRepetitionReview>=80" in review["missingFields"]
+    assert "scene-01:motionStabilityVerdict=pass,sourceRepetitionVerdict=pass" in review["missingScenes"]
+
+
+def test_render_quality_report_blocks_contextless_internet_gif_source(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    manifest = {
+        "projectId": "contextless-internet-gif-proof-test",
+        "topic": "AI-only Shorts feel fake when they have no real source",
+        "templateType": "authentic_vlog",
+        "renderPurpose": "source-first internet-meme-gif quality proof",
+        "sourceFirstRequired": True,
+        "internetSourceProofMode": True,
+        "internetSourceAcquisitionRequired": True,
+        "internetSourceContextRequired": True,
+        "viewerTakeaway": {
+            "understood": "Fetched GIFs need source context, not just a local file.",
+            "action": "Bind each internet source to a scene purpose before render.",
+            "feeling": "specific",
+        },
+        "qualityRatchet": {
+            "previousBaseline": "Random GIF proof passed without a topic.",
+            "rejectionCause": "The source did not explain why it belonged in the scene.",
+            "changedLever": "internet source context gate",
+            "expectedVisibleImprovement": "A contextless GIF should be blocked before publish review.",
+            "actualProof": "Render report fails internetSourceContext.",
+            "nextRatchet": "Add a topic, scene purpose, viewer job, and media choice rationale.",
+        },
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "Random source beat",
+                "subtitleText": "맥락 없는 GIF",
+                "narrationText": FULL_NARRATION,
+                "visualKind": "video",
+                "captionPreset": "top-hook",
+                "captionDisplayDurationSec": 1.2,
+                "sourceRationale": "Operator selected this fetched internet GIF because it was available.",
+                "continuityNote": "Single source proof scene.",
+                "hookNote": "The clip moves in the first second.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualQualityVerdict": "pass",
+                "thumbnailReviewNote": "First frame is readable.",
+                "audioMixReviewNote": "TTS is audible over the local BGM bed.",
+                "platformComparisonNote": "Source-led Korean Shorts need source fit proof.",
+                "layoutVariantKey": "source-proof-hook",
+                "layoutVariantNote": "Main proof object with captions outside the subject zone.",
+                "visualSourceIntent": "internet-meme-gif",
+                "sourceUrl": "https://upload.wikimedia.org/example/random.gif",
+                "sourceLocalPath": "storage/source-acquisition/contextless/raw/random.gif",
+                "sourceSha256": "a" * 64,
+                "sourceBytes": 12000,
+                "sourceMediaKind": "gif",
+                "sourceFetchStatus": "fetched",
+                "sourceAcquisitionVerdict": "pass",
+                "sourceAcquisitionReview": "Operator verified this direct GIF source was fetched locally with hash, byte size, source URL, and scene fit before render.",
+                "captionCollisionReview": "Caption is placed in a safe zone and does not cover the moving source subject or platform UI.",
+                "captionCollisionVerdict": "pass",
+                "antiAiNaturalnessVerdict": "pass",
+                "naturalnessReviewNote": "This test intentionally omits scene source context so the new gate can block it.",
+                "actionMotivation": "The GIF motion is visible.",
+                "worldContinuityNote": "Single scene proof.",
+                "endingPurpose": "payoff",
+                "endingPacingReview": "The final beat closes the context-gate test instead of cutting off abruptly.",
+                "finalTakeawayReview": "Viewer leaves understanding that fetched media without scene context is not enough.",
+                "endingVerdict": "pass",
+            }
+        ],
+        "assets": [
+            {
+                "provider": "upload",
+                "role": "visual",
+                "sceneId": "scene-01",
+                "kind": "video",
+                "sourceOrigin": "internet-meme-gif",
+                "sourceType": "meme-gif",
+                "sourcePath": "storage/source-acquisition/contextless/raw/random.gif",
+                "sourceUrl": "https://upload.wikimedia.org/example/random.gif",
+                "sourceLocalPath": "storage/source-acquisition/contextless/raw/random.gif",
+                "sourceSha256": "a" * 64,
+                "sourceBytes": 12000,
+                "sourceMediaKind": "gif",
+                "sourceFetchStatus": "fetched",
+                "sourceAcquisitionVerdict": "pass",
+                "sourceAcquisitionReview": "Operator verified this direct GIF source was fetched locally with hash, byte size, source URL, and scene fit before render.",
+            },
+            {"provider": "edge-tts", "role": "audio", "sceneId": "scene-01", "kind": "voiceover"},
+            {
+                "provider": "local-bgm",
+                "role": "audio",
+                "sceneId": "global",
+                "kind": "bgm",
+                "sourceOrigin": "local-library",
+                "sourcePath": "assets/bgm/editorial/source-proof-bed.mp3",
+                "sourceLabel": "source-proof-bed.mp3",
+                "sourceUrl": "https://example.invalid/free/source-proof-bed",
+                "sourceLicense": "CC0 test fixture",
+                "candidateCount": 2,
+                "selectionMethod": "stable-hash",
+                "selectionKey": "contextless-internet-gif-proof",
+            },
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "contextless-internet-gif-proof.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"sceneId": "scene-01", "status": "uploaded", "outputKind": "video"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    assert report["checks"]["internetSourceAcquisition"]["status"] == "pass"
+    assert report["checks"]["internetSourceContext"]["status"] == "fail"
+    assert "scenePurpose>=12" in report["checks"]["internetSourceContext"]["detail"]
+    assert report["checks"]["sourceFirstSourceGate"]["status"] == "fail"
+    assert report["gateSystem"]["status"] == "blocked"
+
+
+def test_render_quality_report_blocks_internet_source_without_text_layout_integration(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    manifest = {
+        "projectId": "internet-source-decoupled-text-layout-test",
+        "topic": "AI-only Shorts feel fake when they have no real source",
+        "templateType": "authentic_vlog",
+        "renderPurpose": "source-first internet-meme-gif quality proof",
+        "sourceFirstRequired": True,
+        "internetSourceProofMode": True,
+        "internetSourceAcquisitionRequired": True,
+        "internetSourceContextRequired": True,
+        "viewerTakeaway": {
+            "understood": "Fetched sources still need matching viewer text and layout.",
+            "action": "Reject source-led scenes when captions and TTS ignore the selected source.",
+            "feeling": "specific",
+        },
+        "qualityRatchet": {
+            "previousBaseline": "Source acquisition could pass while text and layout stayed generic.",
+            "rejectionCause": "The selected GIF did not shape the viewer-facing edit.",
+            "changedLever": "internet source editorial integration gate",
+            "expectedVisibleImprovement": "The gate blocks scenes where source context is separate from caption, TTS, and layout.",
+            "actualProof": "Render report fails internetSourceEditorialIntegration while internetSourceContext passes.",
+            "nextRatchet": "Rewrite subtitle, narration, and layout notes around the source context.",
+        },
+        "scenes": [
+            {
+                "sceneId": "scene-01",
+                "title": "Generic source beat",
+                "subtitleText": "오늘의 핵심 장면",
+                "narrationText": FULL_NARRATION,
+                "visualKind": "video",
+                "captionPreset": "top-hook",
+                "captionPurpose": "proof",
+                "captionDisplayDurationSec": 1.2,
+                "sourceRationale": "Operator selected this fetched internet GIF because the reaction beat supports the fake-card critique.",
+                "continuityNote": "Single source proof scene.",
+                "hookNote": "The clip moves in the first second.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualQualityVerdict": "pass",
+                "thumbnailReviewNote": "First frame is readable.",
+                "audioMixReviewNote": "TTS is audible over the local BGM bed.",
+                "platformComparisonNote": "Source-led Korean Shorts need source fit proof.",
+                "layoutVariantKey": "source-proof-hook",
+                "layoutVariantNote": "Generic proof layout keeps the subject visible and the caption in the safe zone.",
+                "visualSourceIntent": "internet-meme-gif",
+                "sourceUrl": "https://upload.wikimedia.org/example/reaction.gif",
+                "sourceLocalPath": "storage/source-acquisition/decoupled/raw/reaction.gif",
+                "sourceSha256": "b" * 64,
+                "sourceBytes": 12000,
+                "sourceMediaKind": "gif",
+                "sourceFetchStatus": "fetched",
+                "sourceAcquisitionVerdict": "pass",
+                "sourceAcquisitionReview": "Operator verified this direct GIF source was fetched locally with hash, byte size, source URL, and scene fit before render.",
+                "sourceContext": {
+                    "topic": "AI-only Shorts feel fake when they have no real source",
+                    "scenePurpose": "replace an internal fake meme card with a real fetched reaction source",
+                    "viewerJob": "show why source-first editing feels more concrete than generated filler",
+                    "selectionRationale": "This fetched GIF is used for the reaction beat because its looped motion directly supports the criticism of fake meme cards.",
+                    "mediaChoiceRationale": "GIF is selected here because the motion is the point of the joke and the viewer response.",
+                    "motionFit": "The looped motion makes the reaction readable without needing a separate explanation.",
+                    "verdict": "pass",
+                },
+                "captionCollisionReview": "Caption is placed in a safe zone and does not cover the moving source subject or platform UI.",
+                "captionCollisionVerdict": "pass",
+                "antiAiNaturalnessVerdict": "pass",
+                "naturalnessReviewNote": "This proof uses a real fetched internet GIF rather than an invented AI card.",
+                "actionMotivation": "The GIF motion is used as commentary evidence.",
+                "worldContinuityNote": "Single source proof.",
+                "endingPurpose": "payoff",
+                "endingPacingReview": "The final beat closes the source integration test instead of cutting off abruptly.",
+                "finalTakeawayReview": "Viewer leaves understanding that text and layout must follow the source context.",
+                "endingVerdict": "pass",
+            }
+        ],
+        "assets": [
+            {
+                "provider": "upload",
+                "role": "visual",
+                "sceneId": "scene-01",
+                "kind": "video",
+                "sourceOrigin": "internet-meme-gif",
+                "sourceType": "meme-gif",
+                "sourcePath": "storage/source-acquisition/decoupled/raw/reaction.gif",
+                "sourceUrl": "https://upload.wikimedia.org/example/reaction.gif",
+                "sourceLocalPath": "storage/source-acquisition/decoupled/raw/reaction.gif",
+                "sourceSha256": "b" * 64,
+                "sourceBytes": 12000,
+                "sourceMediaKind": "gif",
+                "sourceFetchStatus": "fetched",
+                "sourceAcquisitionVerdict": "pass",
+                "sourceAcquisitionReview": "Operator verified this direct GIF source was fetched locally with hash, byte size, source URL, and scene fit before render.",
+            },
+            {"provider": "edge-tts", "role": "audio", "sceneId": "scene-01", "kind": "voiceover"},
+            {
+                "provider": "local-bgm",
+                "role": "audio",
+                "sceneId": "global",
+                "kind": "bgm",
+                "sourceOrigin": "local-library",
+                "sourcePath": "assets/bgm/editorial/source-proof-bed.mp3",
+                "sourceLabel": "source-proof-bed.mp3",
+                "sourceUrl": "https://example.invalid/free/source-proof-bed",
+                "sourceLicense": "CC0 test fixture",
+                "candidateCount": 2,
+                "selectionMethod": "stable-hash",
+                "selectionKey": "internet-source-decoupled-text-layout",
+            },
+        ],
+    }
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest=manifest,
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "internet-source-decoupled.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 1, "generated": 0, "totalScenes": 1},
+        local_media=[{"sceneId": "scene-01", "status": "uploaded", "outputKind": "video"}],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    assert report["checks"]["internetSourceAcquisition"]["status"] == "pass"
+    assert report["checks"]["internetSourceContext"]["status"] == "pass"
+    assert report["checks"]["internetSourceEditorialIntegration"]["status"] == "fail"
+    assert "viewerFacingSubtitle" in report["checks"]["internetSourceEditorialIntegration"]["detail"]
+    assert report["checks"]["sourceFirstSourceGate"]["status"] == "pass"
+    assert report["gateSystem"]["status"] == "blocked"
+
+
+def test_conversational_copy_style_blocks_report_style_korean_source_copy():
+    review = compose_ffmpeg._build_conversational_copy_style_review(
+        {
+            "projectId": "stiff-korean-source-copy-test",
+            "internetSourceProofMode": True,
+            "internetSourceContextRequired": True,
+            "copyStylePrompt": {
+                "tone": "구어체 쇼츠: 친구한테 바로 말하듯 설명한다.",
+                "captionRule": "자막은 질문, 반응, 짧은 payoff처럼 읽혀야 하며 장면 라벨을 쓰지 않는다.",
+                "narrationRule": "TTS 대본은 말하듯 쓰고 제작 메타 표현이나 보고서식 종결어미를 피한다.",
+                "forbiddenPatterns": ["장면", "에서 시작", "확인합니다", "source beat"],
+                "referenceTakeaways": [
+                    "첫 비트는 호기심이나 반응으로 시작한다.",
+                    "온스크린 텍스트는 한 호흡에 읽히게 짧게 유지한다.",
+                ],
+            },
+            "scenes": [
+                {
+                    "sceneId": "scene-01",
+                    "subtitleText": "깃털은 왜 늦지 않을까?",
+                    "narrationText": "공기 없는 달에서 시작합니다. 같이 떨어지는 장면을 확인합니다.",
+                    "captionPurpose": "hook",
+                }
+            ],
+            "assets": [
+                {
+                    "role": "visual",
+                    "sceneId": "scene-01",
+                    "sourceOrigin": "internet-image",
+                    "sourceType": "internet-image",
+                    "sourceMediaKind": "image",
+                    "sourceFetchStatus": "fetched",
+                }
+            ],
+        }
+    )
+
+    assert review["status"] == "fail"
+    assert "narrationFormalEnding" in review["missingScenes"][0]
+    assert "viewerCopyForbiddenTerms" in review["missingScenes"][0]
+
+
+def test_conversational_copy_style_blocks_bare_label_source_questions():
+    review = compose_ffmpeg._build_conversational_copy_style_review(
+        {
+            "projectId": "bare-label-source-copy-test",
+            "internetSourceProofMode": True,
+            "internetSourceContextRequired": True,
+            "templateType": "authentic_vlog",
+            "copyStylePrompt": {
+                "tone": "구어체 쇼츠: 친구한테 바로 말하듯 설명한다.",
+                "captionRule": "자막은 라벨형 질문이나 명사만 나열한 source label이 아니라 hook, turn, payoff가 있는 반응이어야 한다.",
+                "narrationRule": "TTS 대본은 짧아도 viewer task와 perceptual turn을 말해야 하며, 라벨만 반복하지 않는다.",
+                "scriptQualityRule": "Bare label and noun-only captions fail; each beat needs a hook, viewer turn, or payoff action.",
+                "forbiddenPatterns": ["장면", "source beat", "proof scene", "caption label"],
+                "referenceTakeaways": [
+                    "첫 비트는 호기심이나 반응으로 시작한다.",
+                    "각 소스는 무엇이 바뀌는지 한 문장으로 말한다.",
+                ],
+            },
+            "scenes": [
+                {
+                    "sceneId": "scene-01",
+                    "subtitleText": "오리? 토끼?",
+                    "narrationText": "오리 토끼 보여요?",
+                    "captionPurpose": "proof",
+                    "voiceoverStyle": "short-action-callout",
+                    "durationSec": 2.8,
+                }
+            ],
+            "assets": [
+                {
+                    "role": "visual",
+                    "sceneId": "scene-01",
+                    "kind": "image",
+                    "sourceOrigin": "internet-image",
+                    "sourceType": "internet-image",
+                    "sourceMediaKind": "image",
+                    "sourceFetchStatus": "fetched",
+                }
+            ],
+        }
+    )
+
+    assert review["status"] == "fail"
+    assert "subtitleBareLabelQuestion" in review["missingScenes"][0]
+
+
+def test_conversational_copy_style_blocks_thin_reaction_tts_arc():
+    review = compose_ffmpeg._build_conversational_copy_style_review(
+        {
+            "projectId": "thin-reaction-copy-test",
+            "internetSourceProofMode": True,
+            "internetSourceContextRequired": True,
+            "templateType": "authentic_vlog",
+            "copyStylePrompt": {
+                "tone": "구어체 쇼츠: 친구한테 바로 말하듯 설명한다.",
+                "captionRule": "자막은 라벨형 질문이나 명사만 나열한 source label이 아니라 hook, turn, payoff가 있는 반응이어야 한다.",
+                "narrationRule": "TTS 대본은 짧아도 viewer task와 perceptual turn을 말해야 하며, 라벨만 반복하지 않는다.",
+                "scriptQualityRule": "Bare label and noun-only captions fail; each beat needs a hook, viewer turn, or payoff action.",
+                "forbiddenPatterns": ["장면", "source beat", "proof scene", "caption label"],
+                "referenceTakeaways": [
+                    "첫 비트는 호기심이나 반응으로 시작한다.",
+                    "각 소스는 무엇이 바뀌는지 한 문장으로 말한다.",
+                ],
+            },
+            "scenes": [
+                {
+                    "sceneId": "scene-01",
+                    "subtitleText": "움직임 먼저 보여요?",
+                    "narrationText": "움직임 착시 먼저 보여요?",
+                    "captionPurpose": "hook",
+                    "voiceoverStyle": "short-action-callout",
+                    "durationSec": 2.8,
+                },
+                {
+                    "sceneId": "scene-02",
+                    "subtitleText": "얼굴 경계선 바뀌죠?",
+                    "narrationText": "얼굴 경계선이 바뀌죠?",
+                    "captionPurpose": "context",
+                    "voiceoverStyle": "short-action-callout",
+                    "durationSec": 2.8,
+                },
+                {
+                    "sceneId": "scene-03",
+                    "subtitleText": "평행선 댓글 갈리죠?",
+                    "narrationText": "같은 평행선도 댓글 갈리죠?",
+                    "captionPurpose": "payoff",
+                    "voiceoverStyle": "short-action-callout",
+                    "durationSec": 3.2,
+                },
+            ],
+            "assets": [
+                {
+                    "role": "visual",
+                    "sceneId": scene_id,
+                    "kind": "image",
+                    "sourceOrigin": "internet-image",
+                    "sourceType": "internet-image",
+                    "sourceMediaKind": "image",
+                    "sourceFetchStatus": "fetched",
+                }
+                for scene_id in ("scene-01", "scene-02", "scene-03")
+            ],
+        }
+    )
+
+    assert review["status"] == "fail"
+    assert "scene-01:hookNarrationTooThin,narrationThinReactionLine" in review["missingScenes"]
+    assert "scene-02:contextNarrationTooThin,narrationThinReactionLine" in review["missingScenes"]
+    assert "scene-03:payoffNarrationTooThin" in review["missingScenes"]
+
+
+def test_conversational_copy_style_accepts_sentence_copy_with_viewer_turn():
+    review = compose_ffmpeg._build_conversational_copy_style_review(
+        {
+            "projectId": "viewer-turn-source-copy-test",
+            "internetSourceProofMode": True,
+            "internetSourceContextRequired": True,
+            "templateType": "authentic_vlog",
+            "copyStylePrompt": {
+                "tone": "구어체 쇼츠: 친구한테 바로 말하듯 설명한다.",
+                "captionRule": "자막은 라벨형 질문이나 명사만 나열한 source label이 아니라 hook, turn, payoff가 있는 반응이어야 한다.",
+                "narrationRule": "TTS 대본은 짧아도 viewer task와 perceptual turn을 말해야 하며, 라벨만 반복하지 않는다.",
+                "scriptQualityRule": "Bare label and noun-only captions fail; each beat needs a hook, viewer turn, or payoff action.",
+                "forbiddenPatterns": ["장면", "source beat", "proof scene", "caption label"],
+                "referenceTakeaways": [
+                    "첫 비트는 호기심이나 반응으로 시작한다.",
+                    "각 소스는 무엇이 바뀌는지 한 문장으로 말한다.",
+                ],
+            },
+            "scenes": [
+                {
+                    "sceneId": "scene-01",
+                    "subtitleText": "둘 중 뭐가 먼저 보여요?",
+                    "narrationText": "오리였던 선이 다시 보면 토끼 귀로 뒤집히는 순간 보이죠?",
+                    "captionPurpose": "proof",
+                    "voiceoverStyle": "short-action-callout",
+                    "durationSec": 2.8,
+                }
+            ],
+            "assets": [
+                {
+                    "role": "visual",
+                    "sceneId": "scene-01",
+                    "kind": "image",
+                    "sourceOrigin": "internet-image",
+                    "sourceType": "internet-image",
+                    "sourceMediaKind": "image",
+                    "sourceFetchStatus": "fetched",
+                }
+            ],
+        }
+    )
+
+    assert review["status"] == "pass"
+    assert review["reviewedScenes"] == ["scene-01"]
+
+
+def test_tts_pacing_alignment_blocks_rap_speed_source_narration():
+    review = compose_ffmpeg._build_tts_pacing_alignment_review(
+        {
+            "projectId": "rap-speed-tts-source-test",
+            "internetSourceProofMode": True,
+            "internetSourceContextRequired": True,
+            "copyStylePrompt": {
+                "tone": "구어체 쇼츠",
+                "captionRule": "자막은 짧은 반응과 요약으로 쓰되 대본 핵심과 괴리되지 않게 둔다.",
+                "narrationRule": "TTS 대본은 말하듯 짧게 쓰고 제작 메타 표현을 피한다.",
+                "ttsPacingRule": "TTS 속도와 호흡을 장면 길이에 맞추며, 자막은 spoken idea와 같은 밀도로 맞춘다.",
+                "forbiddenPatterns": ["장면", "에서 시작", "확인합니다"],
+                "referenceTakeaways": [
+                    "첫 비트는 호기심이나 반응으로 시작한다.",
+                    "온스크린 텍스트는 한 호흡에 읽히게 짧게 유지한다.",
+                ],
+            },
+            "scenes": [
+                {
+                    "sceneId": "scene-01",
+                    "subtitleText": "왜 안 늦지?",
+                    "narrationText": "지구에서는 깃털이 늦게 떨어지잖아요. 그런데 달에는 깃털을 붙잡을 공기가 거의 없어요. 그래서 여기서는 결과가 달라져요.",
+                    "durationSec": 3.35,
+                    "captionPurpose": "hook",
+                }
+            ],
+            "assets": [
+                {
+                    "role": "visual",
+                    "sceneId": "scene-01",
+                    "sourceOrigin": "internet-image",
+                    "sourceType": "internet-image",
+                    "sourceMediaKind": "image",
+                    "sourceFetchStatus": "fetched",
+                },
+                {
+                    "role": "audio",
+                    "sceneId": "scene-01",
+                    "kind": "voiceover",
+                    "provider": "edge-tts",
+                    "audioDurationFit": {
+                        "inputDurationSec": 10.06,
+                        "targetDurationSec": 3.35,
+                        "speed": 3.002,
+                        "mode": "tempo-fit",
+                    },
+                },
+            ],
+        }
+    )
+
+    assert review["status"] == "fail"
+    assert "audioTempoFitSpeed" in review["missingScenes"][0]
+    assert "narrationKoreanCharsPerSec" in review["missingScenes"][0]
 
 
 def test_render_quality_report_accepts_source_recovery_replacement_as_grok_curation(monkeypatch, tmp_path):
@@ -3779,6 +6389,7 @@ def test_publish_readiness_ready_for_valid_local_model_clip(monkeypatch, tmp_pat
     manifest = {
         "projectId": "publish-ready-local",
         "templateType": "persona_story",
+        "sourceFirstRequired": True,
         "scenes": [
             {
                 "sceneId": "scene-01",
@@ -3828,6 +6439,12 @@ def test_publish_readiness_ready_for_valid_local_model_clip(monkeypatch, tmp_pat
     )
 
     report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    summary = report["productionReview"]["summary"]
+    assert summary["sourceFirstRequired"] is True
+    assert summary["sourceFirstReady"] is True
+    assert summary["sourceFirstGeneratedSceneIds"] == ["scene-01"]
+    assert summary["sourceFirstBlockedSceneIds"] == []
+    assert report["checks"]["sourceFirstSourceGate"]["status"] == "pass"
     readiness = report["publishReadiness"]
     assert readiness["status"] == "ready"
     assert readiness["requiredFixes"] == []
@@ -5466,6 +8083,182 @@ def test_render_quality_report_flags_reused_visual_assets(monkeypatch, tmp_path)
     assert report["publishReadiness"]["status"] == "needs-rework"
     assert any("repeated visual assets" in item for item in report["publishReadiness"]["recommendedFixes"])
     assert report["channelReadiness"]["status"] == "needs-publish-rework"
+
+
+def test_render_quality_report_allows_intentional_source_loop_repeat(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    scenes = []
+    assets = []
+    for index, subtitle in enumerate(("First loop: watch the setup", "Second loop: catch the payoff"), start=1):
+        scene_id = f"scene-{index:02d}"
+        scenes.append(
+            {
+                "sceneId": scene_id,
+                "title": f"Loop pass {index}",
+                "subtitleText": subtitle,
+                "narrationText": "Watch the same source loop again, but this pass changes what the viewer is looking for.",
+                "durationSec": 3.2,
+                "visualKind": "video",
+                "captionPreset": "lower-info",
+                "captionPurpose": "proof",
+                "sourceRationale": "The repeated GIF is intentionally replayed so the second caption can redirect the viewer to the payoff.",
+                "continuityNote": "Both loop passes use the same source to create a deliberate replay rhythm, not a filler repeat.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualQualityVerdict": "pass",
+                "sourceLoopGroupId": "reaction-loop",
+                "sourceLoopRepeatApproved": True,
+                "sourceLoopRhythmReview": "The same GIF loop is replayed with a different caption beat, so the repeat works as timing evidence instead of recycled filler.",
+                "sourceLoopReframeEvidence": (
+                    "Second pass uses a derived close-up path and starts later in the GIF, so the replay changes the viewer task."
+                    if index == 2
+                    else ""
+                ),
+                "sourceMediaKind": "gif",
+            }
+        )
+        assets.extend(
+            [
+                {
+                    "provider": "upload",
+                    "role": "visual",
+                    "sceneId": scene_id,
+                    "kind": "video",
+                    "sourceOrigin": "internet-meme-gif",
+                    "sourceType": "meme-gif",
+                    "sourceUrl": "https://upload.wikimedia.org/example/reaction-loop.gif",
+                    "sourcePath": (
+                        "storage/source-acquisition/reaction-loop/derived/reaction-loop-closeup.mp4"
+                        if index == 2
+                        else "storage/source-acquisition/reaction-loop/raw/reaction-loop.gif"
+                    ),
+                    "sourceMediaKind": "gif",
+                    "sourceLoopGroupId": "reaction-loop",
+                    "sourceLoopRepeatApproved": True,
+                    "sourceLoopRhythmReview": "The same GIF loop is replayed with a different caption beat, so the repeat works as timing evidence instead of recycled filler.",
+                    "sourceLoopReframeEvidence": (
+                        "Second pass uses a derived close-up path and starts later in the GIF, so the replay changes the viewer task."
+                        if index == 2
+                        else ""
+                    ),
+                },
+                {"provider": "edge-tts", "role": "audio", "sceneId": scene_id, "kind": "voiceover"},
+            ]
+        )
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest={"projectId": "intentional-source-loop", "scenes": scenes, "assets": assets},
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "intentional-source-loop.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 2, "generated": 0, "totalScenes": 2},
+        local_media=[
+            {"sceneId": "scene-01", "status": "uploaded", "outputKind": "video"},
+            {"sceneId": "scene-02", "status": "uploaded", "outputKind": "video"},
+        ],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    summary = report["productionReview"]["summary"]
+    assert summary["repeatedVisualAssetScenes"] == []
+    assert summary["approvedSourceLoopRepeatScenes"] == ["scene-02"]
+    assert summary["approvedSourceLoopRepeatGroups"] == {"reaction-loop": ["scene-01", "scene-02"]}
+    assert report["checks"]["assetReuseDiversity"]["status"] == "pass"
+    assert report["checks"]["sourceLoopRhythm"]["status"] == "pass"
+
+
+def test_source_loop_rhythm_blocks_same_file_replay_without_reframe(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_run_ffprobe_json",
+        lambda _project_root, _output_path: (_valid_ffprobe_payload(), "fake ffprobe"),
+    )
+    monkeypatch.setattr(
+        compose_ffmpeg,
+        "_build_source_motion_evidence",
+        lambda _project_root, _manifest: _source_motion_evidence("pass"),
+    )
+    render_dir = tmp_path / "renders"
+    subtitle_path = render_dir / "captions.srt"
+    subtitle_path.parent.mkdir(parents=True)
+    subtitle_path.with_suffix(".ass").write_text("[Script Info]\n", encoding="utf-8")
+    scenes = []
+    assets = []
+    for index, subtitle in enumerate(("watch the setup?", "catch the payoff?"), start=1):
+        scene_id = f"scene-{index:02d}"
+        scenes.append(
+            {
+                "sceneId": scene_id,
+                "title": f"Loop pass {index}",
+                "subtitleText": subtitle,
+                "narrationText": "Watch the same source loop again, but this pass changes what the viewer is looking for.",
+                "durationSec": 3.2,
+                "visualKind": "video",
+                "captionPreset": "lower-info",
+                "captionPurpose": "proof",
+                "sourceRationale": "The repeated GIF is intentionally replayed.",
+                "continuityNote": "Both loop passes use the same source.",
+                "qualityReviewNote": CAPTION_REVIEW,
+                "visualQualityVerdict": "pass",
+                "sourceLoopGroupId": "reaction-loop",
+                "sourceLoopRepeatApproved": True,
+                "sourceLoopRhythmReview": "The same GIF loop is replayed with a different caption beat, so the repeat works as timing evidence instead of recycled filler.",
+                "sourceMediaKind": "gif",
+            }
+        )
+        assets.extend(
+            [
+                {
+                    "provider": "upload",
+                    "role": "visual",
+                    "sceneId": scene_id,
+                    "kind": "video",
+                    "sourceOrigin": "internet-meme-gif",
+                    "sourceType": "meme-gif",
+                    "sourceUrl": "https://upload.wikimedia.org/example/reaction-loop.gif",
+                    "sourcePath": "storage/source-acquisition/reaction-loop/raw/reaction-loop.gif",
+                    "sourceMediaKind": "gif",
+                    "sourceLoopGroupId": "reaction-loop",
+                    "sourceLoopRepeatApproved": True,
+                    "sourceLoopRhythmReview": "The same GIF loop is replayed with a different caption beat, so the repeat works as timing evidence instead of recycled filler.",
+                },
+                {"provider": "edge-tts", "role": "audio", "sceneId": scene_id, "kind": "voiceover"},
+            ]
+        )
+
+    report_path = write_render_quality_report(
+        render_dir=render_dir,
+        manifest={"projectId": "same-file-source-loop", "scenes": scenes, "assets": assets},
+        manifest_path=tmp_path / "render-manifest.json",
+        output_path=tmp_path / "same-file-source-loop.mp4",
+        project_root=tmp_path,
+        local_media_summary={"placeholder": 0, "uploaded": 2, "generated": 0, "totalScenes": 2},
+        local_media=[
+            {"sceneId": "scene-01", "status": "uploaded", "outputKind": "video"},
+            {"sceneId": "scene-02", "status": "uploaded", "outputKind": "video"},
+        ],
+        subtitle_file_path=subtitle_path,
+    )
+
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    detail = report["checks"]["sourceLoopRhythm"]["detail"]
+    assert report["checks"]["sourceLoopRhythm"]["status"] == "fail"
+    assert "scene-02:sourceLoopReframeEvidence>=24" in detail
+    assert "scene-02:sourceLoopDerivedPathDistinct" in detail
 
 
 def test_render_quality_report_allows_distinct_uploads_with_shared_cache_label(monkeypatch, tmp_path):

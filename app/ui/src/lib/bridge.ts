@@ -3953,6 +3953,106 @@ export function auditFinalVideoLibrary(limit = 20): Promise<FinalVideoLibraryAud
   );
 }
 
+export interface EpisodeSourceLibraryAsset {
+  assetId: string;
+  provider: string;
+  assetKind: string;
+  sceneId: string;
+  cutId?: string;
+  batchId?: string;
+  fileName: string;
+  path: string;
+  sourceUrl?: string;
+  currentUrl?: string;
+  prompt?: string;
+  model?: string;
+  createdAt?: string;
+  proofMode?: string;
+  provenancePath?: string;
+  thumbnailPath?: string;
+  thumbnailUrl?: string;
+  thumbnailVisible?: boolean;
+  review?: {
+    status?: string;
+    accepted?: boolean;
+    sourceGateStatus?: string;
+    sourceGateReady?: boolean;
+    acceptedSourceMapPath?: string;
+  };
+  provenance?: {
+    provider?: string;
+    timestamp?: string;
+    proofMode?: string;
+    browserSurface?: string;
+    eventType?: string;
+    eventStatus?: string;
+    usesApi?: boolean;
+    usesPaidApi?: boolean;
+    downloadAuthority?: string;
+  };
+}
+
+export interface EpisodeSourceLibrary {
+  schema: string;
+  episodeId: string;
+  updatedAt?: string;
+  assetCount: number;
+  assets: EpisodeSourceLibraryAsset[];
+}
+
+export interface EpisodeSourceLibraryResult {
+  ok: boolean;
+  episodeId: string;
+  sourceLibrary: EpisodeSourceLibrary;
+  sourceLibraryPath?: string;
+  error?: string;
+}
+
+export interface EpisodeSourceLibraryReviewResult {
+  ok: boolean;
+  episodeId?: string;
+  status?: string;
+  sourceGateReady?: boolean;
+  validation?: {
+    acceptedMotionCount?: number;
+    acceptedReferenceCount?: number;
+    totalBeatCount?: number;
+    errors?: Array<{ field?: string; message?: string }>;
+  };
+  asset?: EpisodeSourceLibraryAsset;
+  acceptedSourceMapPath?: string;
+  error?: string;
+}
+
+export function fetchEpisodeSourceLibrary(episodeId: string): Promise<EpisodeSourceLibraryResult> {
+  return _apiFetch<EpisodeSourceLibraryResult>(
+    `/api/episodes/${encodeURIComponent(episodeId)}/source-library`,
+    { timeout: 20_000 },
+  );
+}
+
+export function reviewEpisodeSourceAsset(episodeId: string, opts: {
+  operatorApproved: boolean;
+  assetId: string;
+  accepted: boolean;
+  storyboardMatch?: boolean;
+  firstSecondAction?: boolean;
+  artifactFree?: boolean;
+  captionSafe?: boolean;
+  phoneSizeWatch?: boolean;
+  sourceProvenanceOk?: boolean;
+  noGenericBroll?: boolean;
+  sourceRationale?: string;
+  qualityReviewNote?: string;
+  rejectionReason?: string;
+}): Promise<EpisodeSourceLibraryReviewResult> {
+  return _post<EpisodeSourceLibraryReviewResult>(
+    `/api/episodes/${encodeURIComponent(episodeId)}/source-library/review`,
+    opts,
+    20_000,
+  );
+}
+
 export function materializeFinalLibraryEvidenceTemplates(opts: {
   projectId?: string;
   limit?: number;
