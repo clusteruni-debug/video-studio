@@ -147,3 +147,11 @@ Paid opt-in only: Imagen may be used before title card when `VIDEO_STUDIO_ALLOW_
 - `docs/MODEL-ROUTING.md`
 - `docs/OPERATOR-CHECKLIST.md`
 - `docs/RENDERING-SPEC.md`
+
+## Reference Ledger
+Web-research facts for this project accumulate in `docs/reference/`. Before re-fetching an
+external source, run `python -X utf8 scripts/check-web-reference-ledger.py --query "<topic>"`
+from the workspace root and prefer an existing doc whose `last_verified` is current; after
+research that changes code or decisions, persist a doc with `last_verified` / `sources` /
+`reliability` (primary | vendor-doc | analyst | secondary) frontmatter. Full rule + helpfulness
+scoring: root CLAUDE.md "Web Research — Reference Ledger".
