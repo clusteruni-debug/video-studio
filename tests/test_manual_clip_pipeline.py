@@ -11168,6 +11168,22 @@ def _longform_minimum_release_packet() -> dict:
                 "commercialUseAllowed": True,
             }],
         },
+        "publishDisclosureReview": {
+            "aiUseDecision": "yes",
+            "realisticGenAiOrAltered": True,
+            "youtubeAiUseSelected": True,
+            "disclosureStatement": "Contains realistic AI-assisted visuals created from operator-reviewed source prompts.",
+            "contentCredentialsStatus": "not-applicable",
+            "viewerMisleadRiskReviewed": True,
+            "inaccurateAuthenticityClaim": False,
+            "inauthenticRiskReview": {
+                "massProducedTemplate": False,
+                "originalInsightAdded": True,
+                "substantiveVariation": True,
+                "metadataTruthful": True,
+                "reusedContentTransformative": True,
+            },
+        },
         "scriptTtsCaptionReview": {
             "status": "pass",
             "voicePlan": {"provider": "edge-tts", "voiceId": "ko-KR-SunHiNeural", "targetWpm": 140},

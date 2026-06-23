@@ -148,7 +148,7 @@ PROCESS_GATE_AUDIT_REGISTRY: list[dict[str, Any]] = [
         "dashboardSurfaces": ["review"],
         "gateAnchors": ["worker/render/longform_minimum_release_gate.py:evaluate_longform_minimum_release_gate"],
         "testAnchors": ["tests/test_longform_minimum_release_gate.py"],
-        "evidenceRequired": ["publishReadiness", "releasePacket", "uploadPacket"],
+        "evidenceRequired": ["publishReadiness", "releasePacket", "publishDisclosureReview", "uploadPacket"],
     },
     {
         "stage": "post-publish-learning",
@@ -189,7 +189,7 @@ STAGE_PROOF_FIELD_HINTS = {
     "edit-assembly": ("cuts", "roughCut", "renderCandidate", "renderManifest", "timeline", "ffprobe"),
     "render-preflight": ("manifest", "renderManifest", "safeZone", "audioCaptionResolution", "activeProductionPacketLock"),
     "quality-review": ("qa", "qaReport", "phoneReview", "qualityReport", "qualityAudit", "reviewVerdict"),
-    "publish-readiness": ("release", "releasePacket", "publishReadiness", "uploadPacket", "publishPacket"),
+    "publish-readiness": ("release", "releasePacket", "publishReadiness", "publishDisclosureReview", "uploadPacket", "publishPacket"),
     "post-publish-learning": ("analytics", "analyticsPacket", "platformMetrics", "postPublishLearning", "learningNotes"),
 }
 FAIL_STATUSES = {"fail", "failed", "blocked", "reject", "rejected", "missing", "needs-proof"}

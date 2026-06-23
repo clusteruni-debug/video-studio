@@ -12,6 +12,7 @@ from flask import Blueprint, jsonify, request
 
 from worker.bridge.material_library import (
     append_gate_event,
+    append_material_outcome,
     build_material_production_handoff,
     evaluate_material_quality,
     intake_material,
@@ -21,6 +22,7 @@ from worker.bridge.material_library import (
 )
 from worker.bridge.material_dryrun import latest_material_dryrun_summary, run_material_dryrun_preflight
 from worker.render.longform_dryrun_readiness import evaluate_longform_dryrun_readiness
+from worker.render.longform_minimum_release_gate import build_longform_publish_packet_template
 from worker.render.production_gate_orchestrator import build_process_gate_audit, evaluate_production_gates
 from worker.render.topic_discovery_gate import evaluate_topic_discovery_gate
 
@@ -490,6 +492,24 @@ def topic_library_gate_event_route(material_id: str):
     return jsonify({"ok": True, "material": material, "productionGates": evaluate_production_gates(material)})
 
 
+@gates_bp.route("/api/topic-library/materials/<material_id>/outcome", methods=["POST"])
+def topic_library_material_outcome_route(material_id: str):
+    payload = request.get_json(silent=True) or {}
+    try:
+        material = append_material_outcome(material_id, payload if isinstance(payload, dict) else {})
+    except KeyError:
+        return jsonify({"ok": False, "error": "material-not-found", "materialId": material_id}), 404
+    library_payload = _library_response_payload()
+    return jsonify(
+        {
+            "ok": True,
+            "material": material,
+            "summary": material_summary(material),
+            "stats": library_payload["stats"],
+        }
+    )
+
+
 @gates_bp.route("/api/production-gates/orchestrate", methods=["POST"])
 def production_gates_orchestrate_route():
     payload = request.get_json(silent=True) or {}
@@ -509,6 +529,33 @@ def production_gates_orchestrate_route():
         if material is None:
             return jsonify({"ok": False, "error": "material-not-found", "materialId": material_id}), 404
     return jsonify({"ok": True, "gateReport": evaluate_production_gates(material, packets=payload.get("packets"))})
+
+
+@gates_bp.route("/api/production-gates/publish-packet-template", methods=["POST"])
+def production_gates_publish_packet_template_route():
+    payload = request.get_json(silent=True) or {}
+    payload = payload if isinstance(payload, dict) else {}
+    material = payload.get("material")
+    if not isinstance(material, dict):
+        material_id = str(payload.get("materialId", "") or "")
+        library = load_material_library()
+        material = next(
+            (
+                item
+                for item in library.get("materials", [])
+                if isinstance(item, dict) and item.get("materialId") == material_id
+            ),
+            None,
+        )
+        if material_id and material is None:
+            return jsonify({"ok": False, "error": "material-not-found", "materialId": material_id}), 404
+    release_packet = payload.get("releasePacket") if isinstance(payload.get("releasePacket"), dict) else {}
+    return jsonify(
+        {
+            "ok": True,
+            "publishPacketTemplate": build_longform_publish_packet_template(material, release_packet),
+        }
+    )
 
 
 @gates_bp.route("/api/production-gates/process-audit", methods=["GET"])

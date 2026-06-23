@@ -394,6 +394,7 @@ The minimum release gate applies after longform rough-cut review and before a
 
 - `longformReleaseFormatGate`
 - `longformReleaseRightsGate`
+- `longformReleaseDisclosureGate`
 - `longformReleaseSourceContinuityGate`
 - `longformReleaseScriptTtsCaptionGate`
 - `longformReleaseEditorialGate`
@@ -404,10 +405,10 @@ The minimum release gate applies after longform rough-cut review and before a
 These gates are deliberately separate from shortform gates. They require the
 candidate to prove a longform-specific minimum release packet: 480-900 seconds,
 6+ chapters, 18+ segments, release-approved rights, chapter-wide source
-continuity, Korean script/TTS/caption sync, directed editorial review,
-audible/ducked chapter audio, full-watch defect control, and a computed score
-of at least 72. A self-declared score that does not match the computed score is
-rejected.
+continuity, platform AI disclosure, inauthentic-risk review, Korean
+script/TTS/caption sync, directed editorial review, audible/ducked chapter
+audio, full-watch defect control, and a computed score of at least 72. A
+self-declared score that does not match the computed score is rejected.
 
 ### Golden Reference Operational Checks
 

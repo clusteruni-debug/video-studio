@@ -925,6 +925,17 @@
       "testAnchors": [{"path": "tests/test_longform_minimum_release_gate.py", "symbols": ["test_longform_minimum_release_gate_rejects_research_only_seedance_source"]}]
     },
     {
+      "gateKey": "longformReleaseDisclosureGate",
+      "layer": "longform-minimum-release",
+      "requiredWhen": "A longform final or publish-ready candidate uses realistic generated, altered, or AI-assisted media.",
+      "blockingMode": "block-final-readiness",
+      "genericity": "global-generic",
+      "evidenceSchema": "publishDisclosureReview with AI-use decision, YouTube AI-use selection, disclosure statement, content credentials status, viewer-mislead review, and inauthentic-risk proof",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-minimum-release-gate.md", "docs/reference/youtube-ai-disclosure-publish-gate.md"],
+      "codeAnchors": [{"path": "worker/render/longform_minimum_release_gate.py", "symbols": ["longformReleaseDisclosureGate", "_check_disclosure"]}],
+      "testAnchors": [{"path": "tests/test_longform_minimum_release_gate.py", "symbols": ["test_longform_minimum_release_gate_rejects_missing_ai_disclosure_decision", "test_longform_minimum_release_gate_rejects_realistic_ai_without_youtube_selection"]}]
+    },
+    {
       "gateKey": "longformReleaseSourceContinuityGate",
       "layer": "longform-minimum-release",
       "requiredWhen": "A longform final candidate depends on chaptered visual sources.",

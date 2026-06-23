@@ -13,6 +13,7 @@ from typing import Any
 LONGFORM_MINIMUM_RELEASE_GATE_KEYS = (
     "longformReleaseFormatGate",
     "longformReleaseRightsGate",
+    "longformReleaseDisclosureGate",
     "longformReleaseSourceContinuityGate",
     "longformReleaseScriptTtsCaptionGate",
     "longformReleaseEditorialGate",
@@ -22,11 +23,12 @@ LONGFORM_MINIMUM_RELEASE_GATE_KEYS = (
 )
 
 LONGFORM_MINIMUM_RELEASE_SCORE_WEIGHTS = {
-    "storyPackage": 15,
-    "evidenceRightsProviderSafety": 15,
-    "sourceVisualContinuity": 20,
-    "scriptTtsCaptionSync": 15,
-    "editorialDirectionLayout": 15,
+    "storyPackage": 12,
+    "evidenceRightsProviderSafety": 13,
+    "publishDisclosureSafety": 10,
+    "sourceVisualContinuity": 18,
+    "scriptTtsCaptionSync": 14,
+    "editorialDirectionLayout": 13,
     "audioBgmSfxMix": 10,
     "fullWatchDefectControl": 10,
 }
@@ -34,6 +36,7 @@ LONGFORM_MINIMUM_RELEASE_SCORE_WEIGHTS = {
 MINIMUM_RELEASE_SCORE = 72
 LONGFORM_MIN_DURATION_SEC = 480
 LONGFORM_MAX_DURATION_SEC = 900
+LONGFORM_PUBLISH_PACKET_TEMPLATE_SCHEMA = "video-studio.longform-publish-packet-template.v1"
 
 PASS_STATUSES = {"pass", "passed", "approved", "complete", "completed", "ready", "reviewed-pass"}
 RIGHTS_OK_STATUSES = {
@@ -66,6 +69,25 @@ RIGHTS_BLOCK_STATUSES = {
     "cc-by-nc-sa",
     "cc-by-nc-nd",
 }
+AI_USE_DECISIONS = {"yes", "no"}
+CONTENT_CREDENTIALS_STATUSES = {
+    "not-present",
+    "none",
+    "present",
+    "preserved",
+    "verified",
+    "not-applicable",
+    "unknown",
+}
+DISCLOSURE_REQUIRED_SIGNALS = {
+    "realisticGenAiOrAltered",
+    "photorealisticAi",
+    "meaningfullyAltered",
+    "aiGeneratedRealisticScene",
+    "realPersonDepiction",
+    "realEventOrPlaceAltered",
+    "syntheticVoiceOrMusic",
+}
 
 
 def evaluate_longform_minimum_release_gate(packet: dict[str, Any]) -> dict[str, Any]:
@@ -86,6 +108,7 @@ def evaluate_longform_minimum_release_gate(packet: dict[str, Any]) -> dict[str, 
 
     _check_format(report, packet)
     _check_rights(report, packet)
+    _check_disclosure(report, packet)
     _check_source_continuity(report, packet)
     _check_script_tts_caption(report, packet)
     _check_editorial(report, packet)
@@ -99,6 +122,78 @@ def evaluate_longform_minimum_release_gate(packet: dict[str, Any]) -> dict[str, 
     else:
         report["releaseAllowed"] = True
     return report
+
+
+def build_longform_publish_packet_template(
+    material: dict[str, Any] | None = None,
+    release_packet: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build an operator-fillable longform publish packet scaffold."""
+
+    material = material if isinstance(material, dict) else {}
+    release_packet = release_packet if isinstance(release_packet, dict) else {}
+    title = _text(material.get("title") or release_packet.get("title"))
+    central_question = _text(material.get("centralQuestion") or release_packet.get("centralQuestion"))
+    search_seed = _text(material.get("searchSeed") or release_packet.get("searchSeed"))
+    return {
+        "schema": LONGFORM_PUBLISH_PACKET_TEMPLATE_SCHEMA,
+        "materialId": material.get("materialId") or release_packet.get("materialId"),
+        "title": title,
+        "centralQuestion": central_question,
+        "searchSeed": search_seed,
+        "targetPlatform": "youtube",
+        "targetFormat": "longform_10m",
+        "releasePacketInput": {
+            "required": True,
+            "minimumReleaseGate": "worker/render/longform_minimum_release_gate.py:evaluate_longform_minimum_release_gate",
+            "requiredObjects": [
+                "chapters",
+                "sourceReviewImport",
+                "scriptTtsCaptionReview",
+                "editorialReleaseReview",
+                "audioReleaseReview",
+                "fullWatchReview",
+                "publishDisclosureReview",
+            ],
+        },
+        "publishDisclosureReview": {
+            "schema": "video-studio.publish-disclosure-review.v1",
+            "platform": "youtube",
+            "aiUseDecision": "",
+            "realisticGenAiOrAltered": True,
+            "aiUseDisclosureRequired": True,
+            "youtubeAiUseSelected": False,
+            "disclosureStatement": "",
+            "contentCredentialsStatus": "not-present",
+            "contentCredentialsSource": "",
+            "viewerMisleadRiskReviewed": False,
+            "inaccurateAuthenticityClaim": False,
+            "capturedWithCameraClaim": False,
+            "inauthenticRiskReview": {
+                "massProducedTemplate": False,
+                "originalInsightAdded": False,
+                "substantiveVariation": False,
+                "metadataTruthful": False,
+                "reusedContentTransformative": False,
+            },
+        },
+        "uploadChecklist": {
+            "titleThumbnailTruthful": False,
+            "descriptionCreditsReady": False,
+            "rightsAndLicenseNotesReady": False,
+            "thumbnailFirstFrameReviewed": False,
+            "humanUploadDecision": "",
+        },
+        "requiredBeforePublish": [
+            "passing longform minimum release gate",
+            "publishDisclosureReview.aiUseDecision",
+            "publishDisclosureReview.youtubeAiUseSelected when realisticGenAiOrAltered=true",
+            "publishDisclosureReview.contentCredentialsStatus",
+            "publishDisclosureReview.inauthenticRiskReview",
+            "uploadChecklist human decision",
+        ],
+        "reference": "docs/reference/youtube-ai-disclosure-publish-gate.md",
+    }
 
 
 def _check_format(report: dict[str, Any], packet: dict[str, Any]) -> None:
@@ -145,6 +240,58 @@ def _check_rights(report: dict[str, Any], packet: dict[str, Any]) -> None:
         _fail(report, "longformReleaseRightsGate", "; ".join(problems[:6]))
         return
     _set_check(report, "longformReleaseRightsGate", "pass", f"{len(source_items)} source/evidence rights items are release-approved.")
+
+
+def _check_disclosure(report: dict[str, Any], packet: dict[str, Any]) -> None:
+    disclosure = _disclosure_review(packet)
+    risk = _inauthentic_risk_review(disclosure, packet)
+    decision = _text(
+        disclosure.get("aiUseDecision")
+        or disclosure.get("youtubeAiUseDecision")
+        or disclosure.get("aiUse")
+    ).lower()
+    c2pa_status = _text(
+        disclosure.get("contentCredentialsStatus")
+        or disclosure.get("c2paStatus")
+        or disclosure.get("contentCredentials")
+    ).lower()
+    realistic_required = _disclosure_required(disclosure)
+    problems: list[str] = []
+    if decision not in AI_USE_DECISIONS:
+        problems.append("aiUseDecision must be yes or no")
+    if realistic_required and decision != "yes":
+        problems.append("realistic or meaningfully altered AI content must select aiUseDecision=yes")
+    if realistic_required and disclosure.get("youtubeAiUseSelected") is not True:
+        problems.append("YouTube Studio AI use must be selected for realistic altered/synthetic content")
+    if not _text(disclosure.get("disclosureStatement") or disclosure.get("operatorDisclosureNote")):
+        problems.append("disclosureStatement is required")
+    if not c2pa_status or c2pa_status not in CONTENT_CREDENTIALS_STATUSES:
+        problems.append("contentCredentialsStatus must be explicit")
+    if c2pa_status in {"present", "preserved", "verified"} and not _text(
+        disclosure.get("contentCredentialsSource") or disclosure.get("c2paSigningAuthority")
+    ):
+        problems.append("C2PA/content credentials source is required when metadata is present")
+    if disclosure.get("viewerMisleadRiskReviewed") is not True:
+        problems.append("viewerMisleadRiskReviewed=true is required")
+    if disclosure.get("inaccurateAuthenticityClaim") is True or disclosure.get("capturedWithCameraClaim") is True:
+        problems.append("publish packet cannot make an inaccurate captured-with-camera/authenticity claim")
+    if risk.get("massProducedTemplate") is True:
+        problems.append("mass-produced template risk must be false")
+    if risk.get("metadataTruthful") is not True:
+        problems.append("upload metadata must be truthful about AI/source/editorial work")
+    if risk.get("originalInsightAdded") is not True and risk.get("substantiveOriginalCommentary") is not True:
+        problems.append("original insight or substantive commentary is required")
+    if risk.get("substantiveVariation") is not True and risk.get("reusedContentTransformative") is not True:
+        problems.append("substantive variation or transformative reuse evidence is required")
+    if problems:
+        _fail(report, "longformReleaseDisclosureGate", "; ".join(problems[:8]))
+        return
+    _set_check(
+        report,
+        "longformReleaseDisclosureGate",
+        "pass",
+        f"AI disclosure decision={decision}, contentCredentialsStatus={c2pa_status}, inauthentic risk reviewed.",
+    )
 
 
 def _check_source_continuity(report: dict[str, Any], packet: dict[str, Any]) -> None:
@@ -293,9 +440,12 @@ def _score_inputs(packet: dict[str, Any]) -> dict[str, int]:
     edit = _editorial_review(packet)
     audio = _audio_review(packet)
     full_watch = _full_watch_review(packet)
+    disclosure = _disclosure_review(packet)
+    risk = _inauthentic_risk_review(disclosure, packet)
     return {
         "storyPackage": _score_story_package(packet, story, chapters),
         "evidenceRightsProviderSafety": _score_rights(rights_items),
+        "publishDisclosureSafety": _score_disclosure(disclosure, risk),
         "sourceVisualContinuity": _score_source_continuity(source, len(chapters)),
         "scriptTtsCaptionSync": _score_script_tts_caption(script, voice),
         "editorialDirectionLayout": _score_editorial(edit),
@@ -340,6 +490,37 @@ def _score_rights(items: list[dict[str, Any]]) -> int:
     if blocked or dreamina_unapproved:
         return 5
     return LONGFORM_MINIMUM_RELEASE_SCORE_WEIGHTS["evidenceRightsProviderSafety"]
+
+
+def _score_disclosure(disclosure: dict[str, Any], risk: dict[str, Any]) -> int:
+    score = 0
+    decision = _text(
+        disclosure.get("aiUseDecision")
+        or disclosure.get("youtubeAiUseDecision")
+        or disclosure.get("aiUse")
+    ).lower()
+    c2pa_status = _text(
+        disclosure.get("contentCredentialsStatus")
+        or disclosure.get("c2paStatus")
+        or disclosure.get("contentCredentials")
+    ).lower()
+    if decision in AI_USE_DECISIONS:
+        score += 2
+    if not _disclosure_required(disclosure) or disclosure.get("youtubeAiUseSelected") is True:
+        score += 2
+    if _text(disclosure.get("disclosureStatement") or disclosure.get("operatorDisclosureNote")):
+        score += 1
+    if c2pa_status in CONTENT_CREDENTIALS_STATUSES:
+        score += 1
+    if disclosure.get("viewerMisleadRiskReviewed") is True and disclosure.get("inaccurateAuthenticityClaim") is not True:
+        score += 1
+    if risk.get("massProducedTemplate") is not True and risk.get("metadataTruthful") is True:
+        score += 1
+    if risk.get("originalInsightAdded") is True or risk.get("substantiveOriginalCommentary") is True:
+        score += 1
+    if risk.get("substantiveVariation") is True or risk.get("reusedContentTransformative") is True:
+        score += 1
+    return min(score, LONGFORM_MINIMUM_RELEASE_SCORE_WEIGHTS["publishDisclosureSafety"])
 
 
 def _score_source_continuity(source: dict[str, Any], chapter_count: int) -> int:
@@ -523,6 +704,43 @@ def _full_watch_review(packet: dict[str, Any]) -> dict[str, Any]:
         if isinstance(value, dict):
             return value
     return {}
+
+
+def _disclosure_review(packet: dict[str, Any]) -> dict[str, Any]:
+    for key in (
+        "publishDisclosureReview",
+        "aiDisclosureReview",
+        "platformDisclosureReview",
+        "youtubeDisclosureReview",
+        "uploadDisclosureReview",
+    ):
+        value = packet.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def _inauthentic_risk_review(disclosure: dict[str, Any], packet: dict[str, Any]) -> dict[str, Any]:
+    candidates = (
+        disclosure.get("inauthenticRiskReview"),
+        packet.get("inauthenticRiskReview"),
+        packet.get("monetizationOriginalityReview"),
+    )
+    for candidate in candidates:
+        if isinstance(candidate, dict):
+            return candidate
+    return {}
+
+
+def _disclosure_required(disclosure: dict[str, Any]) -> bool:
+    for key in DISCLOSURE_REQUIRED_SIGNALS:
+        if disclosure.get(key) is True:
+            return True
+    if disclosure.get("aiUseDisclosureRequired") is True:
+        return True
+    if disclosure.get("disclosureRequired") is True:
+        return True
+    return False
 
 
 def _source_right_items(packet: dict[str, Any]) -> list[dict[str, Any]]:

@@ -81,6 +81,25 @@ def _release_packet() -> dict:
                 }
             ],
         },
+        "publishDisclosureReview": {
+            "platform": "youtube",
+            "aiUseDecision": "yes",
+            "realisticGenAiOrAltered": True,
+            "aiUseDisclosureRequired": True,
+            "youtubeAiUseSelected": True,
+            "disclosureStatement": "Realistic AI video generation is disclosed before upload.",
+            "contentCredentialsStatus": "not-present",
+            "viewerMisleadRiskReviewed": True,
+            "inaccurateAuthenticityClaim": False,
+            "capturedWithCameraClaim": False,
+            "inauthenticRiskReview": {
+                "massProducedTemplate": False,
+                "originalInsightAdded": True,
+                "substantiveVariation": True,
+                "metadataTruthful": True,
+                "reusedContentTransformative": True,
+            },
+        },
         "scriptTtsCaptionReview": {
             "status": "pass",
             "voicePlan": {"provider": "edge-tts", "voiceId": "ko-KR-SunHiNeural", "targetWpm": 140},

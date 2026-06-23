@@ -40,6 +40,24 @@ type MaterialSummary = {
     score: number;
     verdict: string;
     blockedChecks?: string[];
+    pendingChecks?: string[];
+    sourceCounts?: {
+      observed?: number;
+      usable?: number;
+      worklist?: number;
+    };
+  };
+  outcomeCount?: number;
+  latestOutcome?: {
+    stage?: string;
+    status?: string;
+    qualityScore?: number;
+    reuseRecommended?: boolean;
+  };
+  learningSignals?: {
+    reuseRecommended?: boolean;
+    failureReasons?: string[];
+    successSignals?: string[];
   };
 };
 
@@ -48,8 +66,19 @@ type MaterialLibraryResponse = {
   stats?: {
     total: number;
     unused: number;
+    reusable?: number;
     withSourceLedger: number;
+    withObservedSourceReady?: number;
     withTopicPass: number;
+    withOutcomes?: number;
+    learning?: {
+      outcomeCount: number;
+      successfulOutcomeCount: number;
+      failedOutcomeCount: number;
+      reuseRecommendedCount: number;
+      averageQualityScore?: number | null;
+      needsMoreSamples?: boolean;
+    };
   };
   summaries?: MaterialSummary[];
   dryrunPreflight?: DryrunPreflightStatus;
@@ -298,9 +327,21 @@ export default function MaterialLibraryPanel({ candidate, topicPacket, topicGate
       <div className="gate-selected-candidate-plan">
         <span>누적 소재 {library?.stats?.total ?? 0}</span>
         <span>sourceLedger 보유 {library?.stats?.withSourceLedger ?? 0}</span>
+        <span>실관찰 5개+ {library?.stats?.withObservedSourceReady ?? 0}</span>
         <span>소재 게이트 통과 {library?.stats?.withTopicPass ?? 0}</span>
+        <span>결과 기록 {library?.stats?.learning?.outcomeCount ?? 0}</span>
         <span>현재 후보 출처 {sourceCount}</span>
       </div>
+
+      {library?.stats?.learning ? (
+        <div className={`gate-help-note ${library.stats.learning.needsMoreSamples ? "warn" : ""}`}>
+          <BookOpen size={14} />
+          <span>
+            소재 학습: 성공 {library.stats.learning.successfulOutcomeCount} · 실패 {library.stats.learning.failedOutcomeCount} · 재사용 후보 {library.stats.learning.reuseRecommendedCount}
+            {library.stats.learning.averageQualityScore != null ? ` · 평균 ${library.stats.learning.averageQualityScore}` : ""}
+          </span>
+        </div>
+      ) : null}
 
       <button className="generate-button gate-primary-action" onClick={saveMaterial} disabled={saving}>
         {saving ? <Loader size={14} className="spin" /> : <Database size={14} />}
@@ -418,7 +459,8 @@ export default function MaterialLibraryPanel({ candidate, topicPacket, topicGate
               disabled={handoffLoadingId === item.materialId}
             >
               {handoffLoadingId === item.materialId ? <Loader size={13} className="spin" /> : <ArrowRight size={13} />}
-              {item.title} · 출처 {item.sourceCount} · 평가 {item.evaluation?.score ?? 0}
+              {item.title} · 관찰 {item.evaluation?.sourceCounts?.observed ?? 0} · 결과 {item.outcomeCount ?? 0}
+              {item.learningSignals?.reuseRecommended ? " · 재사용" : ` · 평가 ${item.evaluation?.score ?? 0}`}
             </button>
           ))}
         </div>

@@ -1,6 +1,6 @@
 ---
 title: Longform Minimum Release Gate
-last_verified: 2026-06-21
+last_verified: 2026-06-23
 reliability: primary
 sources:
   - projects/video-studio/worker/render/longform_minimum_release_gate.py
@@ -8,7 +8,8 @@ sources:
   - projects/video-studio/tests/test_longform_minimum_release_gate.py
   - projects/video-studio/tests/test_production_packet_lock.py
   - projects/video-studio/config/gate-ontology.json
-refresh_trigger: when changing longform final-readiness, minimum release score, source rights policy, TTS/caption sync, full-watch review, or final render preflight
+  - projects/video-studio/docs/reference/youtube-ai-disclosure-publish-gate.md
+refresh_trigger: when changing longform final-readiness, minimum release score, source rights policy, publish disclosure policy, TTS/caption sync, full-watch review, or final render preflight
 ---
 
 # Longform Minimum Release Gate
@@ -42,6 +43,7 @@ rough cut from being mislabeled as publishable.
 
 - `longformReleaseFormatGate`
 - `longformReleaseRightsGate`
+- `longformReleaseDisclosureGate`
 - `longformReleaseSourceContinuityGate`
 - `longformReleaseScriptTtsCaptionGate`
 - `longformReleaseEditorialGate`
@@ -61,11 +63,12 @@ Weights:
 
 | Dimension | Points |
 |---|---:|
-| `storyPackage` | 15 |
-| `evidenceRightsProviderSafety` | 15 |
-| `sourceVisualContinuity` | 20 |
-| `scriptTtsCaptionSync` | 15 |
-| `editorialDirectionLayout` | 15 |
+| `storyPackage` | 12 |
+| `evidenceRightsProviderSafety` | 13 |
+| `publishDisclosureSafety` | 10 |
+| `sourceVisualContinuity` | 18 |
+| `scriptTtsCaptionSync` | 14 |
+| `editorialDirectionLayout` | 13 |
 | `audioBgmSfxMix` | 10 |
 | `fullWatchDefectControl` | 10 |
 
@@ -92,6 +95,12 @@ Reject the longform final candidate when any of these are true:
   `commercialUseAllowed=true` flag appears.
 - Dreamina/Seedance output is used without explicit
   `commercialUseAllowed=true`.
+- `publishDisclosureReview.aiUseDecision` is not `yes` or `no`.
+- Realistic altered/synthetic or GenAI-assisted media is present but the
+  YouTube AI-use selection is not confirmed.
+- Disclosure statement, content credentials status, viewer-mislead review, or
+  inauthentic-risk proof is missing.
+- The packet makes an inaccurate captured-with-camera/authenticity claim.
 - Source continuity pass ratio is below `0.85`.
 - Primary subject identity/scale/camera-world drift is unresolved.
 - Accepted source coverage does not cover every chapter.
@@ -148,6 +157,22 @@ Reject the longform final candidate when any of these are true:
         "commercialUseAllowed": true
       }
     ]
+  },
+  "publishDisclosureReview": {
+    "aiUseDecision": "yes",
+    "realisticGenAiOrAltered": true,
+    "youtubeAiUseSelected": true,
+    "disclosureStatement": "Contains realistic AI-assisted visuals created from operator-reviewed source prompts.",
+    "contentCredentialsStatus": "not-applicable",
+    "viewerMisleadRiskReviewed": true,
+    "inaccurateAuthenticityClaim": false,
+    "inauthenticRiskReview": {
+      "massProducedTemplate": false,
+      "originalInsightAdded": true,
+      "substantiveVariation": true,
+      "metadataTruthful": true,
+      "reusedContentTransformative": true
+    }
   },
   "scriptTtsCaptionReview": {
     "status": "pass",

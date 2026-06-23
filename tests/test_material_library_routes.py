@@ -171,6 +171,63 @@ def test_topic_library_gate_event_and_orchestrate_routes(tmp_path, monkeypatch):
     assert missing.get_json()["error"] == "material-not-found"
 
 
+def test_topic_library_material_outcome_updates_learning_summary(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    created = client.post(
+        "/api/topic-library/materials/intake",
+        json={"candidate": _candidate(), "topicPacket": _topic_packet()},
+    ).get_json()
+    material_id = created["material"]["materialId"]
+
+    outcome = client.post(
+        f"/api/topic-library/materials/{material_id}/outcome",
+        json={
+            "stage": "publish",
+            "status": "published",
+            "platform": "youtube",
+            "qualityScore": 86,
+            "reuseRecommended": True,
+            "artifactRef": "storage/final-videos/demo.mp4",
+            "successSignals": ["strong-retention-hook"],
+            "learningNotes": "Hook/source pairing is reusable.",
+        },
+    )
+    missing = client.post("/api/topic-library/materials/missing/outcome", json={"status": "published"})
+
+    assert outcome.status_code == 200
+    payload = outcome.get_json()
+    assert payload["summary"]["status"] == "reusable"
+    assert payload["summary"]["outcomeCount"] == 1
+    assert payload["summary"]["learningSignals"]["reuseRecommended"] is True
+    assert payload["stats"]["withOutcomes"] == 1
+    assert payload["stats"]["learning"]["successfulOutcomeCount"] == 1
+    assert payload["stats"]["learning"]["reuseRecommendedCount"] == 1
+    assert payload["stats"]["learning"]["averageQualityScore"] == 86
+    assert missing.status_code == 404
+
+
+def test_production_publish_packet_template_route_requires_disclosure_fields(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    created = client.post(
+        "/api/topic-library/materials/intake",
+        json={"candidate": _candidate(), "topicPacket": _topic_packet()},
+    ).get_json()
+    material_id = created["material"]["materialId"]
+
+    response = client.post("/api/production-gates/publish-packet-template", json={"materialId": material_id})
+    missing = client.post("/api/production-gates/publish-packet-template", json={"materialId": "missing"})
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    template = payload["publishPacketTemplate"]
+    assert template["materialId"] == material_id
+    assert template["targetPlatform"] == "youtube"
+    assert template["publishDisclosureReview"]["schema"] == "video-studio.publish-disclosure-review.v1"
+    assert template["publishDisclosureReview"]["youtubeAiUseSelected"] is False
+    assert "publishDisclosureReview.contentCredentialsStatus" in template["requiredBeforePublish"]
+    assert missing.status_code == 404
+
+
 def test_production_process_audit_route_covers_all_stages(tmp_path, monkeypatch):
     response = _client(tmp_path, monkeypatch).get("/api/production-gates/process-audit")
 

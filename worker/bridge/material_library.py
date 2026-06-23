@@ -13,6 +13,7 @@ MATERIAL_LIBRARY_PATH = PROJECT_ROOT / "storage" / "topic-library" / "materials.
 SCHEMA = "video-studio.topic-material-library.v1"
 HANDOFF_SCHEMA = "video-studio.material-production-handoff.v1"
 MATERIAL_EVALUATION_SCHEMA = "video-studio.material-evaluation-gate.v1"
+MATERIAL_OUTCOME_SCHEMA = "video-studio.material-outcome.v1"
 
 
 def _now_iso() -> str:
@@ -33,6 +34,15 @@ def _as_list(value: Any) -> list[Any]:
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _numeric(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _tokens(value: str) -> list[str]:
@@ -279,12 +289,54 @@ def append_gate_event(material_id: str, event: dict[str, Any], path: Path | None
     return target
 
 
+def append_material_outcome(material_id: str, outcome: dict[str, Any], path: Path | None = None) -> dict[str, Any]:
+    library = load_material_library(path)
+    materials = _as_list(library.get("materials"))
+    target = next((item for item in materials if isinstance(item, dict) and item.get("materialId") == material_id), None)
+    if not target:
+        raise KeyError(material_id)
+    captured_at = _text(outcome.get("capturedAt")) or _now_iso()
+    status = _text(outcome.get("status") or outcome.get("outcomeStatus") or "review")
+    normalized = {
+        "schema": MATERIAL_OUTCOME_SCHEMA,
+        "stage": _text(outcome.get("stage") or "post-production"),
+        "status": status,
+        "capturedAt": captured_at,
+        "artifactRef": _text(outcome.get("artifactRef") or outcome.get("artifactPath")),
+        "platform": _text(outcome.get("platform")),
+        "qualityScore": _numeric(outcome.get("qualityScore")),
+        "watchRetentionPct": _numeric(outcome.get("watchRetentionPct")),
+        "reuseRecommended": outcome.get("reuseRecommended") is True,
+        "learningNotes": _text(outcome.get("learningNotes") or outcome.get("note")),
+        "failureReasons": [_text(item) for item in _as_list(outcome.get("failureReasons")) if _text(item)],
+        "successSignals": [_text(item) for item in _as_list(outcome.get("successSignals")) if _text(item)],
+    }
+    target["outcomeHistory"] = [*_as_list(target.get("outcomeHistory")), normalized]
+    target["updatedAt"] = captured_at
+    if normalized["stage"] in {"publish", "uploaded", "post-publish", "final"}:
+        target["lastUsedAt"] = captured_at
+    if normalized["reuseRecommended"]:
+        target["status"] = "reusable"
+    elif status.lower() in {"fail", "failed", "blocked", "rejected"}:
+        target["status"] = "needs-rework"
+    save_material_library(library, path)
+    return target
+
+
 def library_stats(materials: list[Any]) -> dict[str, Any]:
     valid = [item for item in materials if isinstance(item, dict)]
+    evaluations = [evaluate_material_quality(item) for item in valid]
+    learning = material_learning_summary(valid)
     return {
         "total": len(valid),
         "unused": sum(1 for item in valid if item.get("status", "unused") == "unused"),
+        "reusable": sum(1 for item in valid if item.get("status") == "reusable"),
         "withSourceLedger": sum(1 for item in valid if _as_list(item.get("sourceLedger"))),
+        "withObservedSourceReady": sum(
+            1
+            for evaluation in evaluations
+            if _as_dict(evaluation.get("sourceCounts")).get("observed", 0) >= 5
+        ),
         "withTopicPass": sum(
             1
             for item in valid
@@ -295,18 +347,63 @@ def library_stats(materials: list[Any]) -> dict[str, Any]:
                 for event in _as_list(item.get("gateHistory"))
             )
         ),
+        "withOutcomes": sum(1 for item in valid if _as_list(item.get("outcomeHistory"))),
+        "learning": learning,
+    }
+
+
+def material_learning_summary(materials: list[Any]) -> dict[str, Any]:
+    valid = [item for item in materials if isinstance(item, dict)]
+    outcomes = [
+        outcome
+        for material in valid
+        for outcome in _as_list(material.get("outcomeHistory"))
+        if isinstance(outcome, dict)
+    ]
+    successful = [
+        item
+        for item in outcomes
+        if _text(item.get("status")).lower() in {"pass", "success", "published", "uploaded", "reusable"}
+    ]
+    failed = [
+        item
+        for item in outcomes
+        if _text(item.get("status")).lower() in {"fail", "failed", "blocked", "rejected"}
+    ]
+    reusable = [
+        item
+        for item in valid
+        if any(isinstance(outcome, dict) and outcome.get("reuseRecommended") is True for outcome in _as_list(item.get("outcomeHistory")))
+    ]
+    scores = [
+        score
+        for outcome in outcomes
+        if (score := _numeric(outcome.get("qualityScore"))) is not None
+    ]
+    return {
+        "materialCount": len(valid),
+        "outcomeCount": len(outcomes),
+        "successfulOutcomeCount": len(successful),
+        "failedOutcomeCount": len(failed),
+        "reuseRecommendedCount": len(reusable),
+        "averageQualityScore": round(sum(scores) / len(scores), 2) if scores else None,
+        "topReusableMaterialIds": [item.get("materialId") for item in reusable[:5]],
+        "needsMoreSamples": len(outcomes) < 3,
     }
 
 
 def material_summary(material: dict[str, Any]) -> dict[str, Any]:
     source_ledger = _as_list(material.get("sourceLedger"))
     gate_history = _as_list(material.get("gateHistory"))
+    outcome_history = [item for item in _as_list(material.get("outcomeHistory")) if isinstance(item, dict)]
     evaluation = evaluate_material_quality(material)
     return {
         "materialId": material.get("materialId"),
         "title": material.get("title"),
         "status": material.get("status", "unused"),
         "sourceCount": len(source_ledger),
+        "outcomeCount": len(outcome_history),
+        "latestOutcome": outcome_history[-1] if outcome_history else None,
         "latestScore": _as_dict(material.get("quality")).get("latestScore", 0),
         "lastGate": gate_history[-1] if gate_history else None,
         "updatedAt": material.get("updatedAt"),
@@ -317,6 +414,29 @@ def material_summary(material: dict[str, Any]) -> dict[str, Any]:
             "pendingChecks": evaluation["pendingChecks"],
             "sourceCounts": evaluation["sourceCounts"],
         },
+        "learningSignals": _material_learning_signals(material),
+    }
+
+
+def _material_learning_signals(material: dict[str, Any]) -> dict[str, Any]:
+    outcomes = [item for item in _as_list(material.get("outcomeHistory")) if isinstance(item, dict)]
+    failures = [
+        _text(reason)
+        for outcome in outcomes
+        for reason in _as_list(outcome.get("failureReasons"))
+        if _text(reason)
+    ]
+    successes = [
+        _text(signal)
+        for outcome in outcomes
+        for signal in _as_list(outcome.get("successSignals"))
+        if _text(signal)
+    ]
+    return {
+        "outcomeCount": len(outcomes),
+        "reuseRecommended": any(outcome.get("reuseRecommended") is True for outcome in outcomes),
+        "failureReasons": failures[-5:],
+        "successSignals": successes[-5:],
     }
 
 

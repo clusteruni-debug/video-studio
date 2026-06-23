@@ -148,6 +148,10 @@ Required minimum release gates:
 - `longformReleaseRightsGate`: every generated/source/evidence item has a
   release-approved rights status; research-only or non-commercial sources are
   blocked. Dreamina/Seedance requires explicit `commercialUseAllowed=true`.
+- `longformReleaseDisclosureGate`: publish packets must record the AI-use
+  decision, YouTube AI-use selection when realistic altered/synthetic media is
+  present, disclosure statement, content credentials status, viewer-mislead
+  review, and inauthentic-risk proof.
 - `longformReleaseSourceContinuityGate`: chapter continuity ratio, accepted
   chapter coverage, source defect counts, and subject/camera/scale drift are
   checked separately from story structure.

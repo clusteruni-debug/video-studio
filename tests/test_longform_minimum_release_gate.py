@@ -4,6 +4,7 @@ from copy import deepcopy
 
 from worker.render.longform_minimum_release_gate import (
     LONGFORM_MINIMUM_RELEASE_GATE_KEYS,
+    build_longform_publish_packet_template,
     evaluate_longform_minimum_release_gate,
 )
 
@@ -56,6 +57,25 @@ def _passing_packet() -> dict:
                     "commercialUseAllowed": True,
                 }
             ],
+        },
+        "publishDisclosureReview": {
+            "platform": "youtube",
+            "aiUseDecision": "yes",
+            "realisticGenAiOrAltered": True,
+            "aiUseDisclosureRequired": True,
+            "youtubeAiUseSelected": True,
+            "disclosureStatement": "This longform candidate uses realistic AI-generated video and will be disclosed in YouTube Studio.",
+            "contentCredentialsStatus": "not-present",
+            "viewerMisleadRiskReviewed": True,
+            "inaccurateAuthenticityClaim": False,
+            "capturedWithCameraClaim": False,
+            "inauthenticRiskReview": {
+                "massProducedTemplate": False,
+                "originalInsightAdded": True,
+                "substantiveVariation": True,
+                "metadataTruthful": True,
+                "reusedContentTransformative": True,
+            },
         },
         "scriptTtsCaptionReview": {
             "status": "pass",
@@ -166,6 +186,41 @@ def test_longform_minimum_release_gate_allows_specific_release_compatible_cc_sta
     assert report["checks"]["longformReleaseRightsGate"]["status"] == "pass"
 
 
+def test_longform_minimum_release_gate_rejects_missing_ai_disclosure_decision():
+    packet = _passing_packet()
+    packet.pop("publishDisclosureReview")
+
+    report = evaluate_longform_minimum_release_gate(packet)
+
+    assert report["status"] == "fail"
+    assert "longformReleaseDisclosureGate" in report["failedChecks"]
+    assert "aiUseDecision" in report["checks"]["longformReleaseDisclosureGate"]["detail"]
+
+
+def test_longform_minimum_release_gate_rejects_realistic_ai_without_youtube_selection():
+    packet = _passing_packet()
+    packet["publishDisclosureReview"]["youtubeAiUseSelected"] = False
+
+    report = evaluate_longform_minimum_release_gate(packet)
+
+    assert report["status"] == "fail"
+    assert "longformReleaseDisclosureGate" in report["failedChecks"]
+    assert "YouTube Studio AI use" in report["checks"]["longformReleaseDisclosureGate"]["detail"]
+
+
+def test_longform_publish_packet_template_defaults_to_blocking_disclosure_fields():
+    template = build_longform_publish_packet_template(
+        {"materialId": "mat-001", "title": "소재", "centralQuestion": "왜?", "searchSeed": "seed"},
+        {},
+    )
+
+    assert template["schema"] == "video-studio.longform-publish-packet-template.v1"
+    assert template["materialId"] == "mat-001"
+    assert template["publishDisclosureReview"]["realisticGenAiOrAltered"] is True
+    assert template["publishDisclosureReview"]["youtubeAiUseSelected"] is False
+    assert "publishDisclosureReview.aiUseDecision" in template["requiredBeforePublish"]
+
+
 def test_longform_minimum_release_gate_rejects_noncommercial_cc_even_with_commercial_flag():
     packet = _passing_packet()
     packet["sourceReviewImport"]["acceptedSources"][0].update(
@@ -257,6 +312,7 @@ def test_longform_minimum_release_gate_constants_define_managed_inventory():
     assert LONGFORM_MINIMUM_RELEASE_GATE_KEYS == (
         "longformReleaseFormatGate",
         "longformReleaseRightsGate",
+        "longformReleaseDisclosureGate",
         "longformReleaseSourceContinuityGate",
         "longformReleaseScriptTtsCaptionGate",
         "longformReleaseEditorialGate",

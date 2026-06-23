@@ -4066,6 +4066,33 @@ export function evaluateLongformDryrunGate(packet: Record<string, unknown>): Pro
   return _post<GateEvaluationResult>("/api/gates/longform-dryrun/evaluate", { packet }, 60_000);
 }
 
+export interface LongformPublishPacketTemplateResult {
+  ok: boolean;
+  publishPacketTemplate?: {
+    schema: string;
+    materialId?: string;
+    targetPlatform?: string;
+    targetFormat?: string;
+    publishDisclosureReview?: Record<string, unknown>;
+    uploadChecklist?: Record<string, unknown>;
+    requiredBeforePublish?: string[];
+    reference?: string;
+  };
+  error?: string;
+}
+
+export function buildLongformPublishPacketTemplate(opts: {
+  materialId?: string;
+  material?: Record<string, unknown>;
+  releasePacket?: Record<string, unknown>;
+} = {}): Promise<LongformPublishPacketTemplateResult> {
+  return _post<LongformPublishPacketTemplateResult>(
+    "/api/production-gates/publish-packet-template",
+    opts,
+    20_000,
+  );
+}
+
 export interface EpisodeSourceLibraryAsset {
   assetId: string;
   provider: string;
