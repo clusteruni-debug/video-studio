@@ -9387,6 +9387,85 @@ def test_final_video_library_audit_ranks_existing_packets(tmp_path, monkeypatch)
     assert any("Artifact-level top-tier proof exists" in item for item in payload["goalReadiness"]["remainingGaps"])
 
 
+def test_final_video_library_audit_blocks_longform_publish_ready_without_minimum_release_packet(tmp_path, monkeypatch):
+    monkeypatch.setattr(routes_media, "_existing_chrome_companion_readiness", _ready_companion_readiness)
+    client = _media_test_client(tmp_path)
+    packet_dir = tmp_path / "storage" / "final-videos" / "longform-missing-release"
+    _write_ready_final_video_packet(packet_dir, "longform-missing-release")
+    for artifact_name in ("quality-audit.json", "render-quality-report.json"):
+        path = packet_dir / artifact_name
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload.update({
+            "formatProfile": "longform_10m",
+            "durationSec": 610,
+            "publishReadyClaim": True,
+        })
+        path.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(routes_media, "_run_final_video_ffprobe", lambda _path: {
+        "ok": True,
+        "width": 1080,
+        "height": 1920,
+        "frameRate": 30.0,
+        "durationSeconds": 610.0,
+        "hasAudio": True,
+        "specReady": True,
+    })
+
+    response = client.get("/api/final-video-library/audit?limit=10")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    packet = payload["bestPacket"]
+    assert payload["counts"]["uploadReady"] == 0
+    assert payload["counts"]["channelReady"] == 0
+    assert payload["counts"]["topTierReady"] == 0
+    assert packet["longformMinimumRelease"]["status"] == "fail"
+    assert packet["summary"]["longformMinimumReleaseRequired"] is True
+    assert packet["summary"]["longformMinimumReleaseReady"] is False
+    assert "complete-longform-minimum-release" in packet["summary"]["nextActionKeys"]
+
+
+def test_final_video_library_audit_allows_longform_publish_ready_with_passing_minimum_release_packet(tmp_path, monkeypatch):
+    monkeypatch.setattr(routes_media, "_existing_chrome_companion_readiness", _ready_companion_readiness)
+    client = _media_test_client(tmp_path)
+    packet_dir = tmp_path / "storage" / "final-videos" / "longform-release-ready"
+    _write_ready_final_video_packet(packet_dir, "longform-release-ready")
+    (packet_dir / "longform-minimum-release-packet.json").write_text(
+        json.dumps(_longform_minimum_release_packet()),
+        encoding="utf-8",
+    )
+    for artifact_name in ("quality-audit.json", "render-quality-report.json"):
+        path = packet_dir / artifact_name
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload.update({
+            "formatProfile": "longform_10m",
+            "durationSec": 610,
+            "publishReadyClaim": True,
+        })
+        path.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(routes_media, "_run_final_video_ffprobe", lambda _path: {
+        "ok": True,
+        "width": 1080,
+        "height": 1920,
+        "frameRate": 30.0,
+        "durationSeconds": 610.0,
+        "hasAudio": True,
+        "specReady": True,
+    })
+
+    response = client.get("/api/final-video-library/audit?limit=10")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    packet = payload["bestPacket"]
+    assert payload["counts"]["uploadReady"] == 1
+    assert payload["counts"]["channelReady"] == 1
+    assert payload["counts"]["topTierReady"] == 1
+    assert packet["longformMinimumRelease"]["status"] == "pass"
+    assert packet["summary"]["longformMinimumReleaseRequired"] is True
+    assert packet["summary"]["longformMinimumReleaseReady"] is True
+
+
 def test_final_video_library_audit_prefers_publish_packet_final_mp4_over_newer_auxiliary_mp4(tmp_path, monkeypatch):
     monkeypatch.setattr(routes_media, "_existing_chrome_companion_readiness", _ready_companion_readiness)
     client = _media_test_client(tmp_path)
@@ -11045,6 +11124,85 @@ def _write_ready_final_video_packet(packet_dir: Path, project_id: str, productio
             topTierReadinessGate={"status": "pass", "detail": "status=top-tier-ready"},
         ),
     }), encoding="utf-8")
+
+
+def _longform_minimum_release_packet() -> dict:
+    chapters = []
+    for index in range(1, 7):
+        chapter_id = f"chapter-{index:02d}"
+        chapters.append({
+            "chapterId": chapter_id,
+            "title": f"Chapter {index}",
+            "claim": f"Claim {index}",
+            "segments": [
+                {"segmentId": f"{chapter_id}-seg-01"},
+                {"segmentId": f"{chapter_id}-seg-02"},
+                {"segmentId": f"{chapter_id}-seg-03"},
+            ],
+            "evidence": [{
+                "evidenceId": f"evidence-{index:02d}",
+                "sourceUrl": f"https://example.com/evidence-{index}",
+                "rightsStatus": "operator-approved",
+            }],
+        })
+    return {
+        "formatProfile": "longform_10m",
+        "durationSec": 610,
+        "chapters": chapters,
+        "storyPackageReview": {
+            "firstTenSecondExpectationMet": True,
+            "titleThumbnailExpectationMet": True,
+            "payoffPromiseResolved": True,
+        },
+        "sourceReviewImport": {
+            "chapterContinuityPassRatio": 0.92,
+            "primarySubjectIdentityDrift": False,
+            "primarySubjectScaleJump": False,
+            "unexplainedCameraWorldJump": False,
+            "unresolvedSourceDefects": [],
+            "acceptedChapterCount": 6,
+            "acceptedSources": [{
+                "sourceId": "source-001",
+                "provider": "grok-web-video",
+                "rightsStatus": "licensed",
+                "commercialUseAllowed": True,
+            }],
+        },
+        "scriptTtsCaptionReview": {
+            "status": "pass",
+            "voicePlan": {"provider": "edge-tts", "voiceId": "ko-KR-SunHiNeural", "targetWpm": 140},
+            "maxCaptionTtsDriftSec": 0.18,
+            "noDuplicateCaptionTts": True,
+            "captionExplainsMissingVisual": False,
+            "safeZoneReviewed": True,
+        },
+        "editorialReleaseReview": {
+            "directedEdit": True,
+            "motivatedCutPassRatio": 0.9,
+            "layoutSafeZoneReviewed": True,
+            "noUnboundEffectCues": True,
+            "noHudComparisonReviewed": True,
+            "unresolvedEditorialIssues": [],
+        },
+        "audioReleaseReview": {
+            "audioStreamExists": True,
+            "narrationDuckingEnabled": True,
+            "chapterAudioBedsCovered": True,
+            "everyCueBoundToVisibleEvent": True,
+            "maxPeakDb": -4.0,
+            "meanDb": -20.0,
+        },
+        "fullWatchReview": {
+            "completed": True,
+            "durationSec": 610,
+            "reviewerRole": "operator",
+            "unresolvedCriticalIssues": 0,
+            "unresolvedMajorIssues": 0,
+            "defectDensityPerMinute": 0.2,
+            "retentionDipMitigationsReviewed": True,
+            "chapterIssueLog": [{"chapterId": f"chapter-{index:02d}", "issues": []} for index in range(1, 7)],
+        },
+    }
 
 
 def _write_publish_packet_artifact(packet_dir: Path, project_id: str, final_mp4_name: str | None = None):

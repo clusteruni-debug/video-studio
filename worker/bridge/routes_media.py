@@ -36,6 +36,7 @@ from worker.media.adapters import (
     run_local_media_adapter,
 )
 from worker.render.bgm import free_audio_candidates, free_audio_sidecar_template
+from worker.render.longform_minimum_release_gate import evaluate_longform_minimum_release_gate
 from worker.render.render_manifest import slugify
 
 media_bp = Blueprint("media", __name__)
@@ -53,6 +54,24 @@ _safe_resolve = None
 # route_image returns "klipy" but expects "tenor" as input.
 _SOURCE_NORMALIZE: dict[str, str] = {"imagen3": "imagen", "klipy": "tenor"}
 _LOCAL_VIDEO_PROVIDERS = {"wan", "ltx-video", "hunyuan-video"}
+_LONGFORM_MIN_DURATION_SEC = 480
+_LONGFORM_RELEASE_PACKET_PATH_KEYS = (
+    "longformMinimumReleasePacketPath",
+    "longformReleasePacketPath",
+    "minimumReleasePacketPath",
+    "releaseGatePacketPath",
+)
+_LONGFORM_RELEASE_PACKET_OBJECT_KEYS = (
+    "longformMinimumReleasePacket",
+    "longformReleasePacket",
+    "minimumReleasePacket",
+    "releaseGatePacket",
+)
+_LONGFORM_RELEASE_PACKET_FILENAMES = (
+    "longform-minimum-release-packet.json",
+    "minimum-release-packet.json",
+    "release-gate-packet.json",
+)
 
 _FREE_ASSET_PROVIDERS: dict[str, dict] = {
     "pexels-video": {
@@ -3917,6 +3936,146 @@ def _final_video_from_publish_packet(packet_dir: Path, publish_packet: dict | No
     return None
 
 
+def _longform_release_sources(quality_audit: dict | None, report: dict | None) -> list[dict]:
+    return [item for item in (quality_audit, report) if isinstance(item, dict)]
+
+
+def _longform_release_containers(sources: list[dict]) -> list[dict]:
+    containers: list[dict] = []
+    for source in sources:
+        containers.append(source)
+        for key in ("summary", "manifest", "renderManifest", "productionModePacket"):
+            value = source.get(key)
+            if isinstance(value, dict):
+                containers.append(value)
+    return containers
+
+
+def _final_packet_is_longform(quality_audit: dict | None, report: dict | None) -> bool:
+    for container in _longform_release_containers(_longform_release_sources(quality_audit, report)):
+        profile = str(
+            container.get("formatProfile")
+            or container.get("format_profile")
+            or container.get("productionMode")
+            or ""
+        ).strip()
+        if profile == "longform_10m":
+            return True
+        for key in ("durationSec", "duration_sec", "totalDurationSec", "targetDurationSec", "durationSeconds"):
+            try:
+                duration = float(container.get(key))
+            except (TypeError, ValueError):
+                continue
+            if duration >= _LONGFORM_MIN_DURATION_SEC:
+                return True
+    return False
+
+
+def _final_packet_claims_publish_ready(flags: dict, quality_audit: dict | None, report: dict | None) -> bool:
+    if flags.get("readyForUpload") is True or flags.get("channelReady") is True or flags.get("topTierEvidenceReady") is True:
+        return True
+    for source in _longform_release_sources(quality_audit, report):
+        if source.get("finalReadinessClaim") is True or source.get("releaseReadinessClaim") is True:
+            return True
+        if source.get("claimsFinalReady") is True or source.get("publishReadyClaim") is True:
+            return True
+        for key, ready_statuses in (
+            ("publishReadiness", {"ready"}),
+            ("channelReadiness", {"ready", "channel-ready"}),
+            ("topTierReadiness", {"ready", "top-tier-ready"}),
+        ):
+            value = source.get(key)
+            if isinstance(value, dict):
+                status = str(value.get("status") or "").strip().lower()
+                if status in ready_statuses:
+                    return True
+    return False
+
+
+def _load_longform_release_packet_from_final_packet(
+    packet_dir: Path,
+    quality_audit: dict | None,
+    report: dict | None,
+) -> tuple[dict | None, str]:
+    for source in _longform_release_sources(quality_audit, report):
+        for key in _LONGFORM_RELEASE_PACKET_OBJECT_KEYS:
+            value = source.get(key)
+            if isinstance(value, dict):
+                return value, f"object:{key}"
+        for key in _LONGFORM_RELEASE_PACKET_PATH_KEYS:
+            packet_path = _packet_artifact_path(packet_dir, source.get(key))
+            if packet_path:
+                packet = _read_json_artifact(packet_path)
+                if packet is None:
+                    return None, f"invalid-json:{key}"
+                return packet, str(packet_path)
+    for file_name in _LONGFORM_RELEASE_PACKET_FILENAMES:
+        packet_path = packet_dir / file_name
+        if packet_path.exists():
+            packet = _read_json_artifact(packet_path)
+            if packet is None:
+                return None, f"invalid-json:{file_name}"
+            return packet, str(packet_path)
+    return None, ""
+
+
+def _final_packet_longform_minimum_release_audit(
+    packet_dir: Path,
+    quality_audit: dict | None,
+    report: dict | None,
+    flags: dict,
+) -> dict:
+    if not _final_packet_is_longform(quality_audit, report):
+        return {
+            "required": False,
+            "ready": True,
+            "status": "skip",
+            "detail": "final packet is not longform-range",
+        }
+    if not _final_packet_claims_publish_ready(flags, quality_audit, report):
+        return {
+            "required": False,
+            "ready": True,
+            "status": "skip",
+            "detail": "longform packet has no final/publish readiness claim",
+        }
+    packet, source = _load_longform_release_packet_from_final_packet(packet_dir, quality_audit, report)
+    if packet is None:
+        detail = (
+            f"longform minimum release packet is invalid: {source}"
+            if source
+            else "longform publish-ready final packet requires a longform minimum release packet path/object"
+        )
+        return {
+            "required": True,
+            "ready": False,
+            "status": "fail",
+            "detail": detail,
+            "failedChecks": ["longformMinimumReleaseGate"],
+        }
+    gate_report = evaluate_longform_minimum_release_gate(packet)
+    if gate_report.get("releaseAllowed") is not True:
+        failed = gate_report.get("failedChecks") or ["longformMinimumReleaseGate"]
+        return {
+            "required": True,
+            "ready": False,
+            "status": "fail",
+            "detail": f"minimum release gate failed: {', '.join(failed)}",
+            "failedChecks": failed,
+            "gateReport": gate_report,
+            "packetSource": source,
+        }
+    return {
+        "required": True,
+        "ready": True,
+        "status": "pass",
+        "detail": f"minimum release gate passed with computedScore={gate_report.get('computedScore')}",
+        "failedChecks": [],
+        "gateReport": gate_report,
+        "packetSource": source,
+    }
+
+
 def _final_video_packet_audit(packet_dir: Path) -> dict:
     videos = sorted(packet_dir.glob("*.mp4"), key=lambda path: path.stat().st_mtime, reverse=True)
     quality_audit_path = packet_dir / "quality-audit.json"
@@ -3929,6 +4088,8 @@ def _final_video_packet_audit(packet_dir: Path) -> dict:
     report = _read_json_artifact(report_path)
     ffprobe = _run_final_video_ffprobe(final_video) if final_video else {"ok": False, "error": "final MP4 missing", "specReady": False}
     flags = _final_packet_flags(quality_audit, report)
+    longform_release = _final_packet_longform_minimum_release_audit(packet_dir, quality_audit, report, flags)
+    longform_release_ready = longform_release.get("ready") is True
     publish_packet_audit = _publish_packet_content_audit(packet_dir, publish_packet_path, final_video)
     publish_packet_ready = publish_packet_audit.get("ready") is True
     has_quality_audit = quality_audit is not None
@@ -3940,8 +4101,15 @@ def _final_video_packet_audit(packet_dir: Path) -> dict:
         and flags.get("readyForUpload")
         and flags.get("channelReady")
         and flags.get("topTierEvidenceReady")
+        and longform_release_ready
     )
-    upload_ready = bool(has_video and ffprobe.get("specReady") is True and publish_packet_ready and flags.get("readyForUpload"))
+    upload_ready = bool(
+        has_video
+        and ffprobe.get("specReady") is True
+        and publish_packet_ready
+        and flags.get("readyForUpload")
+        and longform_release_ready
+    )
     channel_ready = bool(upload_ready and flags.get("channelReady"))
     next_actions = _final_packet_next_actions(
         has_video=has_video,
@@ -3950,6 +4118,14 @@ def _final_video_packet_audit(packet_dir: Path) -> dict:
         flags=flags,
         publish_packet_audit=publish_packet_audit,
     )
+    if not longform_release_ready:
+        next_actions.insert(0, {
+            "key": "complete-longform-minimum-release",
+            "priority": "required",
+            "label": "Complete longform minimum release gate",
+            "detail": longform_release.get("detail") or "longform minimum release gate failed",
+            "operatorAction": "Attach a passing longform minimum release packet and rerun the final-library audit before claiming upload readiness.",
+        })
     return {
         "projectId": packet_dir.name,
         "packetDir": str(packet_dir),
@@ -3963,9 +4139,13 @@ def _final_video_packet_audit(packet_dir: Path) -> dict:
         "hasQualityAudit": has_quality_audit,
         "hasPublishPacket": publish_packet_path.exists(),
         "publishPacketAudit": publish_packet_audit,
+        "longformMinimumRelease": longform_release,
         "ffprobe": {key: value for key, value in ffprobe.items() if key != "raw"},
         "summary": {
             **flags,
+            "longformMinimumReleaseRequired": longform_release.get("required") is True,
+            "longformMinimumReleaseReady": longform_release_ready,
+            "longformMinimumReleaseStatus": longform_release.get("status"),
             "uploadReady": upload_ready,
             "channelReady": channel_ready,
             "topTierReady": top_tier_ready,

@@ -1,0 +1,1217 @@
+{
+  "schema": "video-studio.gate-ontology.v1",
+  "version": "2026-06-21-gate-ontology-v1",
+  "sourceOfTruth": "config/gate-ontology.json",
+  "purpose": "Connect every reusable Video Studio quality gate to its code anchor, evidence surface, documentation, and tests without duplicating full gate rules.",
+  "updatePolicy": {
+    "rule": "Any added, renamed, or removed gate key must update this registry, docs/reference/gate-ontology.md, and tests/test_gate_ontology.py in the same change.",
+    "nonGoals": [
+      "Do not copy complete gate rule prose from source modules.",
+      "Do not encode episode-specific or topic-specific rules.",
+      "Do not add a separate prose document for every low-level render-quality check."
+    ]
+  },
+  "phaseGates": [
+    {
+      "gateKey": "preproduction",
+      "layer": "production-loop",
+      "phaseKey": "preproduction",
+      "requiredWhen": "Before prompt or source generation for an episode.",
+      "blockingMode": "block-output",
+      "genericity": "global-generic",
+      "evidenceSchema": "preproduction/preproduction-manifest.json",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/quality_gate_system.py", "symbols": ["GATE_PHASES", "preproduction"]}],
+      "testAnchors": [{"path": "tests/test_episode_pipeline.py", "symbols": ["test_preproduction_plan_writes_storyboard_asset_briefs_and_episode_handoff"]}]
+    },
+    {
+      "gateKey": "episode-output",
+      "layer": "production-loop",
+      "phaseKey": "episode-output",
+      "requiredWhen": "Before prompt output, browser handoff, or episode artifact publication.",
+      "blockingMode": "block-output",
+      "genericity": "global-generic",
+      "evidenceSchema": "output-gates.json",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/quality_gate_system.py", "symbols": ["GATE_PHASES", "episode-output"]}],
+      "testAnchors": [{"path": "tests/test_episode_pipeline.py", "symbols": ["test_episode_output_gate_blocks_unregistered_quality_contracts"]}]
+    },
+    {
+      "gateKey": "quality-iteration",
+      "layer": "production-loop",
+      "phaseKey": "quality-iteration",
+      "requiredWhen": "After a candidate fails or any production layer is changed for quality recovery.",
+      "blockingMode": "block-output",
+      "genericity": "global-generic",
+      "evidenceSchema": "preproduction/quality-iteration-ledger.json",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/quality_gate_system.py", "symbols": ["GATE_PHASES", "quality-iteration"]}],
+      "testAnchors": [{"path": "tests/test_episode_pipeline.py", "symbols": ["test_preproduction_quality_loop_requires_next_mutation_for_failed_iterations", "test_preproduction_quality_loop_requires_pending_mutation_resolution"]}]
+    },
+    {
+      "gateKey": "asset-source",
+      "layer": "source-quality",
+      "phaseKey": "asset-source",
+      "requiredWhen": "Before render candidates can use selected visual sources.",
+      "blockingMode": "block-render",
+      "genericity": "global-generic",
+      "evidenceSchema": "preproduction/asset-candidate-review.json",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/quality_gate_system.py", "symbols": ["GATE_PHASES", "asset-source"]}],
+      "testAnchors": [{"path": "tests/test_episode_pipeline.py", "symbols": ["test_preproduction_asset_candidate_review_requires_accepted_motion_sources", "test_preproduction_asset_candidate_review_blocks_without_motion_sources"]}]
+    },
+    {
+      "gateKey": "render-quality",
+      "layer": "render-quality",
+      "phaseKey": "render-quality",
+      "requiredWhen": "After every render and before any final or upload readiness claim.",
+      "blockingMode": "block-final-readiness",
+      "genericity": "global-generic",
+      "evidenceSchema": "render-quality-report.json",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/quality_gate_system.py", "symbols": ["GATE_PHASES", "render-quality", "RENDER_QUALITY_CHECK_KEYS"]}],
+      "testAnchors": [{"path": "tests/test_manual_clip_pipeline.py", "symbols": ["test_finalize_render_rejects_stale_quality_report_without_current_checks"]}]
+    },
+    {
+      "gateKey": "final-readiness",
+      "layer": "final-readiness",
+      "phaseKey": "final-readiness",
+      "requiredWhen": "Before a final-library item is treated as ready for operator upload or goal completion.",
+      "blockingMode": "block-upload-claim",
+      "genericity": "global-generic",
+      "evidenceSchema": "/api/final-video-library/audit",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/quality_gate_system.py", "symbols": ["GATE_PHASES", "final-readiness", "FINAL_READINESS_GATE_KEYS"]}],
+      "testAnchors": [{"path": "tests/test_manual_clip_pipeline.py", "symbols": ["test_finalize_render_copies_ready_publish_packet", "test_finalize_render_rejects_channel_packet_when_channel_readiness_fails"]}]
+    },
+    {
+      "gateKey": "post-publish-loop",
+      "layer": "post-publish",
+      "phaseKey": "post-publish-loop",
+      "requiredWhen": "After upload when platform analytics are claimed as improvement evidence.",
+      "blockingMode": "keep-loop-open",
+      "genericity": "global-generic",
+      "evidenceSchema": "platform-analytics.json",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/quality_gate_system.py", "symbols": ["GATE_PHASES", "post-publish-loop"]}],
+      "testAnchors": [{"path": "tests/test_manual_clip_pipeline.py", "symbols": ["test_final_video_library_audit_accepts_platform_analytics_artifact", "test_final_video_library_audit_rejects_platform_analytics_generic_next_action"]}]
+    }
+  ],
+  "renderQualityGroups": [
+    {
+      "groupKey": "source-intake-and-visual-fit",
+      "layer": "render-quality",
+      "coveredKeys": [
+        "outputSpec",
+        "noPlaceholders",
+        "movingClipPriority",
+        "sourceMotionEvidence",
+        "providerConsistency",
+        "antiAiNaturalness",
+        "sourceEditorialImageContext",
+        "internetSourceAcquisition",
+        "internetSourceContext",
+        "internetSourceEditorialIntegration",
+        "audienceInterestSourceFit",
+        "sceneSourceIntentBinding",
+        "visualFrameReviewEvidence",
+        "aiSlopVisualFit",
+        "stockAiClipFit",
+        "grokSourceCuration",
+        "sourceFirstSourceGate",
+        "stockOnlyCaveat",
+        "templateSourcePlan",
+        "assetReuseDiversity",
+        "freeAssetProvenance",
+        "stockCandidateCuration",
+        "sourceLoopRhythm",
+        "manualSelectionEvidence",
+        "continuityEvidence",
+        "qualitySampleSet"
+      ],
+      "blockingMode": "block-final-readiness",
+      "genericity": "global-generic",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/quality_gate_system.py", "symbols": ["RENDER_QUALITY_CHECK_KEYS"]}],
+      "testAnchors": [{"path": "tests/test_manual_clip_pipeline.py", "symbols": ["test_render_quality_report_blocks_reference_profile_without_generated_video_sources", "test_render_quality_report_flags_reused_visual_assets", "test_source_loop_rhythm_blocks_same_file_replay_without_reframe"]}]
+    },
+    {
+      "groupKey": "story-copy-caption-voice-audio",
+      "layer": "render-quality",
+      "coveredKeys": [
+        "captionSafePresets",
+        "captionSystem",
+        "viewerTakeaway",
+        "sourceEditorialLayout",
+        "topicHookPayoffStructure",
+        "conversationalCopyStyle",
+        "ttsPacingAlignment",
+        "endingPayoff",
+        "endingTailPacing",
+        "subtitleArtifact",
+        "firstTwoSecondHook",
+        "cutDensityPacing",
+        "thumbnailFirstFrameStrength",
+        "ttsNarrationEvidence",
+        "voicePolicyCompliance",
+        "captionLayoutReview",
+        "captionDensityAndSafeZone",
+        "referenceEditGrammar",
+        "freeAudioCreditsExport",
+        "bgmAssetRotation",
+        "bgmSoundQuality"
+      ],
+      "blockingMode": "block-final-readiness",
+      "genericity": "global-generic",
+      "docPaths": ["docs/RENDERING-SPEC.md", "docs/reference/tts-providers.md", "docs/reference/editorial-direction-gate.md"],
+      "codeAnchors": [{"path": "worker/quality_gate_system.py", "symbols": ["RENDER_QUALITY_CHECK_KEYS"]}],
+      "testAnchors": [{"path": "tests/test_manual_clip_pipeline.py", "symbols": ["test_conversational_copy_style_blocks_report_style_korean_source_copy", "test_tts_pacing_alignment_blocks_rap_speed_source_narration", "test_render_quality_report_blocks_dense_shorts_captions"]}]
+    },
+    {
+      "groupKey": "iteration-publish-and-provider-readiness",
+      "layer": "render-quality",
+      "coveredKeys": [
+        "zeroPaidProviders",
+        "qualityRatchet",
+        "publishReadinessGate",
+        "channelReadinessGate",
+        "uploadReviewGate",
+        "topTierReadinessGate"
+      ],
+      "blockingMode": "block-upload-claim",
+      "genericity": "global-generic",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/quality_gate_system.py", "symbols": ["RENDER_QUALITY_CHECK_KEYS"]}],
+      "testAnchors": [{"path": "tests/test_manual_clip_pipeline.py", "symbols": ["test_finalize_render_rejects_top_tier_packet_without_grok_or_local_hero", "test_final_video_library_audit_rejects_copied_goal_proof_templates"]}]
+    }
+  ],
+  "finalReadinessGates": [
+    {
+      "gateKey": "artifact-gate",
+      "layer": "final-readiness",
+      "requiredWhen": "A final MP4 artifact is claimed.",
+      "blockingMode": "block-upload-claim",
+      "genericity": "global-generic",
+      "evidenceSchema": "publish packet plus final-library audit",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/quality_gate_system.py", "symbols": ["FINAL_READINESS_GATE_KEYS", "artifact-gate"]}],
+      "testAnchors": [{"path": "tests/test_manual_clip_pipeline.py", "symbols": ["test_finalize_render_copies_ready_publish_packet"]}]
+    },
+    {
+      "gateKey": "fresh-source-import-review",
+      "layer": "final-readiness",
+      "requiredWhen": "A final candidate claims source-generation or import quality.",
+      "blockingMode": "block-upload-claim",
+      "genericity": "global-generic",
+      "evidenceSchema": "final-library fresh import review",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/quality_gate_system.py", "symbols": ["FINAL_READINESS_GATE_KEYS", "fresh-source-import-review"]}],
+      "testAnchors": [{"path": "tests/test_manual_clip_pipeline.py", "symbols": ["test_final_video_library_audit_blocks_stale_or_invalid_fresh_imports"]}]
+    },
+    {
+      "gateKey": "fresh-source-proof",
+      "layer": "final-readiness",
+      "requiredWhen": "A final candidate claims fresh source proof.",
+      "blockingMode": "block-upload-claim",
+      "genericity": "global-generic",
+      "evidenceSchema": "fresh-source proof artifact",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/quality_gate_system.py", "symbols": ["FINAL_READINESS_GATE_KEYS", "fresh-source-proof"]}],
+      "testAnchors": [{"path": "tests/test_manual_clip_pipeline.py", "symbols": ["test_final_video_library_audit_accepts_fresh_source_repeatability_artifact", "test_final_video_library_audit_rejects_weak_fresh_source_repeatability_artifact"]}]
+    },
+    {
+      "gateKey": "phone-sized-human-review",
+      "layer": "final-readiness",
+      "requiredWhen": "A candidate claims visible quality or upload readiness.",
+      "blockingMode": "block-upload-claim",
+      "genericity": "global-generic",
+      "evidenceSchema": "phone-sized human full-watch review",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/quality_gate_system.py", "symbols": ["FINAL_READINESS_GATE_KEYS", "phone-sized-human-review"]}],
+      "testAnchors": [{"path": "tests/test_manual_clip_pipeline.py", "symbols": ["test_final_video_library_audit_accepts_phone_sized_human_review_artifact", "test_final_video_library_audit_rejects_phone_review_without_human_full_watch"]}]
+    },
+    {
+      "gateKey": "same-day-upload-decision",
+      "layer": "final-readiness",
+      "requiredWhen": "A candidate is described as ready to upload.",
+      "blockingMode": "block-upload-claim",
+      "genericity": "global-generic",
+      "evidenceSchema": "operator upload decision",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/quality_gate_system.py", "symbols": ["FINAL_READINESS_GATE_KEYS", "same-day-upload-decision"]}],
+      "testAnchors": [{"path": "tests/test_manual_clip_pipeline.py", "symbols": ["test_upload_review_blocks_live_channel_original_source_mix_gap"]}]
+    },
+    {
+      "gateKey": "platform-analytics-loop",
+      "layer": "final-readiness",
+      "requiredWhen": "Post-publish performance is claimed.",
+      "blockingMode": "keep-loop-open",
+      "genericity": "global-generic",
+      "evidenceSchema": "platform-analytics.json",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/quality_gate_system.py", "symbols": ["FINAL_READINESS_GATE_KEYS", "platform-analytics-loop"]}],
+      "testAnchors": [{"path": "tests/test_manual_clip_pipeline.py", "symbols": ["test_final_video_library_audit_accepts_platform_analytics_artifact"]}]
+    },
+    {
+      "gateKey": "broad-operating-goal",
+      "layer": "final-readiness",
+      "requiredWhen": "The production system itself is claimed to have met the broader operating goal.",
+      "blockingMode": "keep-loop-open",
+      "genericity": "global-generic",
+      "evidenceSchema": "goalReadiness appended gate in final-library audit",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/quality_gate_system.py", "symbols": ["broad-operating-goal", "build_final_readiness_gate_system"]}],
+      "testAnchors": [{"path": "tests/test_manual_clip_pipeline.py", "symbols": ["test_final_video_library_audit_rejects_copied_goal_proof_templates"]}]
+    }
+  ],
+  "sourceAcquisitionGates": [
+    {
+      "gateKey": "assetQualityGate",
+      "layer": "source-acquisition",
+      "requiredWhen": "Grok or browser-handoff assets are matched for render/import.",
+      "blockingMode": "block-render-payload",
+      "genericity": "global-generic",
+      "evidenceSchema": "grok handoff asset qualityGate object",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/QUALITY-RECOVERY-RUNBOOK-20260607.md"],
+      "codeAnchors": [{"path": "worker/bridge/routes_grok.py", "symbols": ["_asset_quality_gate", "qualityGateRequired", "qualityGateReady"]}],
+      "testAnchors": [{"path": "tests/test_grok_handoff.py", "symbols": ["test_grok_handoff_quality_gate_requires_operator_acceptance_when_enabled"]}]
+    },
+    {
+      "gateKey": "grokMainSourceGate",
+      "layer": "source-acquisition",
+      "requiredWhen": "A handoff claims Grok/main-source readiness.",
+      "blockingMode": "block-render-payload",
+      "genericity": "global-generic",
+      "evidenceSchema": "mainSourceGate object in Grok render payload",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/QUALITY-RECOVERY-RUNBOOK-20260607.md"],
+      "codeAnchors": [{"path": "worker/bridge/routes_grok.py", "symbols": ["_grok_main_source_gate", "mainSourceGate", "needs-accepted-grok-clips"]}],
+      "testAnchors": [{"path": "tests/test_grok_handoff.py", "symbols": ["test_grok_main_source_gate_blocks_stock_heavy_handoff_before_render", "test_grok_main_source_gate_requires_first_hook_grok_clip"]}]
+    },
+    {
+      "gateKey": "grokRenderPayloadReadiness",
+      "layer": "source-acquisition",
+      "requiredWhen": "A Grok handoff render payload is requested.",
+      "blockingMode": "block-render-payload",
+      "genericity": "global-generic",
+      "evidenceSchema": "qualityGateReady/mainSourceGate/allReady render payload fields",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/QUALITY-RECOVERY-RUNBOOK-20260607.md"],
+      "codeAnchors": [{"path": "worker/bridge/routes_grok.py", "symbols": ["qualityGateRequired", "qualityGateReady", "mainSourceGate", "allReady"]}],
+      "testAnchors": [{"path": "tests/test_grok_handoff.py", "symbols": ["test_grok_main_source_requires_candidate_curation_evidence", "test_grok_handoff_render_payload_requires_complete_mp4s"]}]
+    }
+  ],
+  "sourceRightsGates": [
+    {
+      "gateKey": "editorialRightsGate",
+      "layer": "source-rights",
+      "requiredWhen": "An editorial source pilot plan is built.",
+      "blockingMode": "block-source-promotion",
+      "genericity": "global-generic",
+      "evidenceSchema": "sourcePlan.rightsGate",
+      "docPaths": ["docs/reference/gate-ontology.md"],
+      "codeAnchors": [{"path": "worker/bridge/routes_sources.py", "symbols": ["rightsGate", "pilot-ready"]}],
+      "testAnchors": [{"path": "tests/test_editorial_sources.py", "symbols": ["test_editorial_source_plan_separates_official_original_and_ai_roles", "test_editorial_source_plan_blocks_social_broll_without_commentary"]}]
+    },
+    {
+      "gateKey": "operatorApprovedSourceFetch",
+      "layer": "source-rights",
+      "requiredWhen": "A route attempts to fetch internet media into local storage.",
+      "blockingMode": "block-source-fetch",
+      "genericity": "global-generic",
+      "evidenceSchema": "operatorApprovedSourceFetch request flag",
+      "docPaths": ["docs/reference/gate-ontology.md"],
+      "codeAnchors": [{"path": "worker/bridge/routes_sources.py", "symbols": ["operatorApprovedSourceFetch", "operatorApprovedSourceFetch=true is required"]}],
+      "testAnchors": [{"path": "tests/test_editorial_sources.py", "symbols": ["test_editorial_source_fetch_route_requires_approval", "test_source_fetch_rejects_weak_operator_approved_flag"]}]
+    },
+    {
+      "gateKey": "motionSourceReady",
+      "layer": "source-rights",
+      "requiredWhen": "Fetched editorial sources are promoted toward render binding.",
+      "blockingMode": "block-source-promotion",
+      "genericity": "global-generic",
+      "evidenceSchema": "rightsGate.counts.motionSourceReady",
+      "docPaths": ["docs/reference/gate-ontology.md"],
+      "codeAnchors": [{"path": "worker/bridge/routes_sources.py", "symbols": ["motionSourceReady", "bind fetched GIF/video source paths"]}],
+      "testAnchors": [{"path": "tests/test_editorial_sources.py", "symbols": ["test_editorial_source_fetch_downloads_direct_gif_with_ledger", "test_editorial_source_fetch_requires_scene_context_before_render_promotion"]}]
+    }
+  ],
+  "activeProductionPacketLocks": [
+    {
+      "gateKey": "longformProductionModeGate",
+      "layer": "production-packet-lock",
+      "requiredWhen": "A render manifest declares formatProfile=longform_10m or reaches longform duration before FFmpeg.",
+      "blockingMode": "block-render-before-ffmpeg",
+      "genericity": "global-generic",
+      "evidenceSchema": "production mode packet path/object evaluated by video-studio.production-mode-gate.v1",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/production_packet_lock.py", "symbols": ["longformProductionModeGate", "_apply_longform_production_mode_gate"]}],
+      "testAnchors": [{"path": "tests/test_production_packet_lock.py", "symbols": ["test_longform_manifest_blocks_render_without_production_mode_packet", "test_compose_blocks_longform_manifest_before_ffmpeg_without_production_mode_packet"]}]
+    },
+    {
+      "gateKey": "longformMinimumReleaseGate",
+      "layer": "production-packet-lock",
+      "requiredWhen": "A longform render manifest claims final or publish readiness before FFmpeg.",
+      "blockingMode": "block-final-render-before-ffmpeg",
+      "genericity": "global-generic",
+      "evidenceSchema": "longform minimum release packet path/object evaluated by video-studio.longform-minimum-release-gate.v1",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-minimum-release-gate.md"],
+      "codeAnchors": [{"path": "worker/render/production_packet_lock.py", "symbols": ["longformMinimumReleaseGate", "_apply_longform_minimum_release_gate"]}],
+      "testAnchors": [{"path": "tests/test_production_packet_lock.py", "symbols": ["test_longform_final_claim_blocks_without_minimum_release_packet", "test_longform_final_claim_allows_with_passing_minimum_release_packet"]}]
+    },
+    {
+      "gateKey": "activePointer",
+      "layer": "production-packet-lock",
+      "requiredWhen": "An ACTIVE production packet pointer exists.",
+      "blockingMode": "block-render-before-ffmpeg",
+      "genericity": "global-generic",
+      "evidenceSchema": "storage/approval-packets/ACTIVE.json pointer",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/render/production_packet_lock.py", "symbols": ["evaluate_active_production_packet_lock", "activePointer"]}],
+      "testAnchors": [{"path": "tests/test_production_packet_lock.py", "symbols": ["test_active_packet_lock_skips_when_pointer_missing"]}]
+    },
+    {
+      "gateKey": "activeStatus",
+      "layer": "production-packet-lock",
+      "requiredWhen": "The ACTIVE pointer status determines whether the lock applies.",
+      "blockingMode": "block-render-before-ffmpeg",
+      "genericity": "global-generic",
+      "evidenceSchema": "ACTIVE pointer status field",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/render/production_packet_lock.py", "symbols": ["activeStatus", "active"]}],
+      "testAnchors": [{"path": "tests/test_production_packet_lock.py", "symbols": ["test_active_packet_lock_skips_when_pointer_missing"]}]
+    },
+    {
+      "gateKey": "scopeMatch",
+      "layer": "production-packet-lock",
+      "requiredWhen": "A render manifest may be bound to the active production packet scope.",
+      "blockingMode": "block-render-before-ffmpeg",
+      "genericity": "global-generic",
+      "evidenceSchema": "ACTIVE pointer scope fields",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/render/production_packet_lock.py", "symbols": ["scopeMatch", "_manifest_matches_active_scope"]}],
+      "testAnchors": [{"path": "tests/test_production_packet_lock.py", "symbols": ["test_active_packet_lock_skips_unrelated_manifest"]}]
+    },
+    {
+      "gateKey": "activePacketPath",
+      "layer": "production-packet-lock",
+      "requiredWhen": "The active pointer claims a production packet path.",
+      "blockingMode": "block-render-before-ffmpeg",
+      "genericity": "global-generic",
+      "evidenceSchema": "ACTIVE pointer packetPath field",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/render/production_packet_lock.py", "symbols": ["activePacketPath", "packetPath"]}],
+      "testAnchors": [{"path": "tests/test_production_packet_lock.py", "symbols": ["test_active_packet_lock_blocks_matching_manifest_without_packet_binding"]}]
+    },
+    {
+      "gateKey": "activePacket",
+      "layer": "production-packet-lock",
+      "requiredWhen": "The active production packet file must parse and identify a packet.",
+      "blockingMode": "block-render-before-ffmpeg",
+      "genericity": "global-generic",
+      "evidenceSchema": "active production packet JSON",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/render/production_packet_lock.py", "symbols": ["activePacket", "packetId"]}],
+      "testAnchors": [{"path": "tests/test_production_packet_lock.py", "symbols": ["test_active_packet_lock_blocks_matching_manifest_without_packet_binding"]}]
+    },
+    {
+      "gateKey": "approvalPacketBinding",
+      "layer": "production-packet-lock",
+      "requiredWhen": "A render manifest matches the active packet scope.",
+      "blockingMode": "block-render-before-ffmpeg",
+      "genericity": "global-generic",
+      "evidenceSchema": "manifest approvalPacketId",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/render/production_packet_lock.py", "symbols": ["approvalPacketBinding", "approvalPacketId"]}],
+      "testAnchors": [{"path": "tests/test_production_packet_lock.py", "symbols": ["test_active_packet_lock_blocks_matching_manifest_without_packet_binding"]}]
+    },
+    {
+      "gateKey": "packetApproval",
+      "layer": "production-packet-lock",
+      "requiredWhen": "A render manifest is bound to the active production packet.",
+      "blockingMode": "block-render-before-ffmpeg",
+      "genericity": "global-generic",
+      "evidenceSchema": "active production packet approvedForRender flag",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/render/production_packet_lock.py", "symbols": ["packetApproval", "approvedForRender"]}],
+      "testAnchors": [{"path": "tests/test_production_packet_lock.py", "symbols": ["test_active_packet_lock_blocks_matching_manifest_until_packet_is_approved", "test_active_packet_lock_allows_bound_manifest_after_packet_approval"]}]
+    }
+  ],
+  "formatProfileGates": [
+    {
+      "gateKey": "formatProfileGate",
+      "layer": "format-profile",
+      "requiredWhen": "A production packet, source prompt bible, or render candidate declares a format.",
+      "blockingMode": "block-wrong-format-workflow",
+      "genericity": "global-generic",
+      "evidenceSchema": "video-studio.production-mode-gate.v1",
+      "supportedProfiles": ["shortform_vertical", "longform_10m"],
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["FORMAT_PROFILE_GATE_KEYS", "FORMAT_PROFILES", "evaluate_production_mode_gate"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_production_mode_gate_constants_define_longform_contract_inventory", "test_longform_10m_packet_passes_chapter_provider_audio_contract"]}]
+    }
+  ],
+  "providerRoleMatrixGates": [
+    {
+      "gateKey": "providerRoleMatrixGate",
+      "layer": "provider-role-matrix",
+      "requiredWhen": "Before Grok/Gemini/browser-handoff prompts are generated or accepted.",
+      "blockingMode": "block-source-generation",
+      "genericity": "global-generic",
+      "evidenceSchema": "providerRoleMatrix object in production packet or prompt bible",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["PROVIDER_ROLE_MATRIX_GATE_KEYS", "evaluate_provider_role_matrix"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_provider_role_matrix_blocks_grok_reference_and_gemini_image_motion"]}]
+    },
+    {
+      "gateKey": "grokPrimaryMotionGate",
+      "layer": "provider-role-matrix",
+      "requiredWhen": "Grok is assigned in a provider role matrix.",
+      "blockingMode": "block-source-generation",
+      "genericity": "global-generic",
+      "evidenceSchema": "providerRoleMatrix primaryMotion/motionTake roles",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["grokPrimaryMotionGate", "_check_grok_primary_motion"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_provider_role_matrix_blocks_grok_reference_and_gemini_image_motion"]}]
+    },
+    {
+      "gateKey": "geminiReferenceGate",
+      "layer": "provider-role-matrix",
+      "requiredWhen": "Gemini image output is assigned in a provider role matrix.",
+      "blockingMode": "block-source-generation",
+      "genericity": "global-generic",
+      "evidenceSchema": "providerRoleMatrix referenceStill/visualBible/diagramStill roles",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["geminiReferenceGate", "_check_gemini_reference"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_provider_role_matrix_blocks_grok_reference_and_gemini_image_motion"]}]
+    },
+    {
+      "gateKey": "geminiFallbackMotionGate",
+      "layer": "provider-role-matrix",
+      "requiredWhen": "Gemini video output is assigned in a provider role matrix.",
+      "blockingMode": "block-source-generation",
+      "genericity": "global-generic",
+      "evidenceSchema": "providerRoleMatrix fallbackMotion/primaryMotion override reason",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["geminiFallbackMotionGate", "_check_gemini_fallback_motion"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_provider_role_matrix_blocks_grok_reference_and_gemini_image_motion"]}]
+    }
+  ],
+  "topicDiscoveryGates": [
+    {
+      "gateKey": "topicSourceLedgerGate",
+      "layer": "topic-discovery",
+      "requiredWhen": "Before a topic candidate can enter storyboard, source prompt bible, source generation, or dry-run readiness.",
+      "blockingMode": "block-topic-selection",
+      "genericity": "global-generic",
+      "evidenceSchema": "sourceLedger with fresh community, search/trend, platform, or reference observations",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/topic-discovery-community-signal.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/topic_discovery_gate.py", "symbols": ["TOPIC_DISCOVERY_GATE_KEYS", "topicSourceLedgerGate", "_check_source_ledger"]}],
+      "testAnchors": [{"path": "tests/test_topic_discovery_gate.py", "symbols": ["test_topic_discovery_gate_rejects_stale_or_missing_current_source_ledger", "test_topic_discovery_gate_constants_define_managed_inventory"]}]
+    },
+    {
+      "gateKey": "researchQueryPlanGate",
+      "layer": "topic-discovery",
+      "requiredWhen": "Before a selected topic can claim current Korean community/search/video discovery coverage.",
+      "blockingMode": "block-unplanned-topic-research",
+      "genericity": "global-generic",
+      "evidenceSchema": "researchQueryPlan entries covering search, trend, video, and community surfaces with Korean query evidence for ko-KR",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/topic-discovery-community-signal.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/topic_discovery_gate.py", "symbols": ["researchQueryPlanGate", "_check_research_query_plan"]}],
+      "testAnchors": [{"path": "tests/test_topic_discovery_gate.py", "symbols": ["test_topic_discovery_gate_rejects_missing_search_video_community_query_plan"]}]
+    },
+    {
+      "gateKey": "sourceAuthenticityGate",
+      "layer": "topic-discovery",
+      "requiredWhen": "Before sourceLedger entries can be used as discovery proof.",
+      "blockingMode": "block-placeholder-or-single-surface-sources",
+      "genericity": "global-generic",
+      "evidenceSchema": "unique source IDs, non-placeholder URLs, and search/trend/video/community source-surface diversity",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/topic-discovery-community-signal.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/topic_discovery_gate.py", "symbols": ["sourceAuthenticityGate", "_check_source_authenticity"]}],
+      "testAnchors": [{"path": "tests/test_topic_discovery_gate.py", "symbols": ["test_topic_discovery_gate_rejects_placeholder_urls_and_weak_source_surface_mix"]}]
+    },
+    {
+      "gateKey": "communitySignalDiversityGate",
+      "layer": "topic-discovery",
+      "requiredWhen": "A selected topic claims Korean community or social-interest support.",
+      "blockingMode": "block-single-thread-topic",
+      "genericity": "global-generic",
+      "evidenceSchema": "selected candidate communitySignals from at least two distinct community source IDs",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/topic-discovery-community-signal.md"],
+      "codeAnchors": [{"path": "worker/render/topic_discovery_gate.py", "symbols": ["communitySignalDiversityGate", "_check_community_signal_diversity"]}],
+      "testAnchors": [{"path": "tests/test_topic_discovery_gate.py", "symbols": ["test_topic_discovery_gate_rejects_single_community_source"]}]
+    },
+    {
+      "gateKey": "trendCrossCheckGate",
+      "layer": "topic-discovery",
+      "requiredWhen": "A selected topic claims current timing, trend relevance, or audience-interest evidence.",
+      "blockingMode": "block-uncorroborated-trend-topic",
+      "genericity": "global-generic",
+      "evidenceSchema": "selected candidate trendEvidence with at least one official/search trend source",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/topic-discovery-community-signal.md"],
+      "codeAnchors": [{"path": "worker/render/topic_discovery_gate.py", "symbols": ["trendCrossCheckGate", "_check_trend_cross_check"]}],
+      "testAnchors": [{"path": "tests/test_topic_discovery_gate.py", "symbols": ["test_topic_discovery_gate_rejects_trend_without_official_cross_check"]}]
+    },
+    {
+      "gateKey": "curiosityAngleGate",
+      "layer": "topic-discovery",
+      "requiredWhen": "A selected topic claims it can become a curiosity, explainer, investigation, or decision-rule video.",
+      "blockingMode": "block-bland-topic-angle",
+      "genericity": "global-generic",
+      "evidenceSchema": "workingTitle, centralQuestion, knowledgeGap, whyNow, and viewerPromise fields",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/topic-discovery-community-signal.md"],
+      "codeAnchors": [{"path": "worker/render/topic_discovery_gate.py", "symbols": ["curiosityAngleGate", "_check_curiosity_angle"]}],
+      "testAnchors": [{"path": "tests/test_topic_discovery_gate.py", "symbols": ["test_topic_discovery_gate_rejects_weak_curiosity_angle"]}]
+    },
+    {
+      "gateKey": "longformTopicFitGate",
+      "layer": "topic-discovery",
+      "requiredWhen": "The selected topic is planned for longform_10m or another production format with evidence depth requirements.",
+      "blockingMode": "block-thin-longform-topic",
+      "genericity": "global-generic",
+      "evidenceSchema": "sourcePlan evidence depth plus longformPlan chapter, segment, and retention-hook counts",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/topic-discovery-community-signal.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/topic_discovery_gate.py", "symbols": ["longformTopicFitGate", "_check_longform_topic_fit"]}],
+      "testAnchors": [{"path": "tests/test_topic_discovery_gate.py", "symbols": ["test_topic_discovery_gate_rejects_longform_topic_without_depth", "test_topic_discovery_gate_allows_shortform_with_smaller_depth_requirement"]}]
+    },
+    {
+      "gateKey": "audienceRetentionFitGate",
+      "layer": "topic-discovery",
+      "requiredWhen": "A selected topic claims it can become a longform_10m video or retention-sensitive shortform piece.",
+      "blockingMode": "block-topic-without-retention-fit",
+      "genericity": "global-generic",
+      "evidenceSchema": "longformPlan first30SecPromise, titleThumbnailExpectation, topMomentPreview, dipRiskMitigations, and chapterPromises",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/topic-discovery-community-signal.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/topic_discovery_gate.py", "symbols": ["audienceRetentionFitGate", "_check_audience_retention_fit"]}],
+      "testAnchors": [{"path": "tests/test_topic_discovery_gate.py", "symbols": ["test_topic_discovery_gate_rejects_longform_topic_without_retention_fit"]}]
+    },
+    {
+      "gateKey": "safetyOriginalityGate",
+      "layer": "topic-discovery",
+      "requiredWhen": "A selected topic comes from communities, social posts, news-adjacent chatter, or high-stakes domains.",
+      "blockingMode": "block-unsafe-or-copied-topic",
+      "genericity": "global-generic",
+      "evidenceSchema": "riskReview and originalityReview with fact-check, attribution, and transformative-angle fields",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/topic-discovery-community-signal.md"],
+      "codeAnchors": [{"path": "worker/render/topic_discovery_gate.py", "symbols": ["safetyOriginalityGate", "_check_safety_originality"]}],
+      "testAnchors": [{"path": "tests/test_topic_discovery_gate.py", "symbols": ["test_topic_discovery_gate_rejects_safety_and_originality_risk"]}]
+    },
+    {
+      "gateKey": "topicSelectionMatrixGate",
+      "layer": "topic-discovery",
+      "requiredWhen": "A production plan chooses one topic from a set of candidates.",
+      "blockingMode": "block-arbitrary-topic-selection",
+      "genericity": "global-generic",
+      "evidenceSchema": "at least three candidates, computed score, top selected candidate, and rejection reasons for alternatives",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/topic-discovery-community-signal.md"],
+      "codeAnchors": [{"path": "worker/render/topic_discovery_gate.py", "symbols": ["topicSelectionMatrixGate", "_check_selection_matrix", "TOPIC_SELECTION_MINIMUM_SCORE"]}],
+      "testAnchors": [{"path": "tests/test_topic_discovery_gate.py", "symbols": ["test_topic_discovery_gate_rejects_selected_topic_that_is_not_highest_score", "test_topic_discovery_gate_rejects_declared_score_inflation", "test_topic_discovery_gate_rejects_missing_rejection_reasons"]}]
+    }
+  ],
+  "longformProductionGates": [
+    {
+      "gateKey": "longformOutlineGate",
+      "layer": "longform-production",
+      "requiredWhen": "formatProfile is longform_10m.",
+      "blockingMode": "block-longform-render",
+      "genericity": "global-generic",
+      "evidenceSchema": "chapters with claims and segments",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["LONGFORM_PRODUCTION_GATE_KEYS", "longformOutlineGate"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_longform_10m_blocks_thin_outline_and_missing_evidence"]}]
+    },
+    {
+      "gateKey": "chapterContinuityGate",
+      "layer": "longform-production",
+      "requiredWhen": "formatProfile is longform_10m.",
+      "blockingMode": "block-longform-render",
+      "genericity": "global-generic",
+      "evidenceSchema": "chapter continuity plan or per-chapter bridges",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["chapterContinuityGate", "_check_chapter_continuity"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_longform_10m_packet_passes_chapter_provider_audio_contract"]}]
+    },
+    {
+      "gateKey": "evidenceDensityGate",
+      "layer": "longform-production",
+      "requiredWhen": "formatProfile is longform_10m.",
+      "blockingMode": "block-longform-render",
+      "genericity": "global-generic",
+      "evidenceSchema": "per-chapter evidence item list",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["evidenceDensityGate", "_check_evidence_density"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_longform_10m_blocks_thin_outline_and_missing_evidence"]}]
+    },
+    {
+      "gateKey": "sourceRightsCitationGate",
+      "layer": "longform-production",
+      "requiredWhen": "formatProfile is longform_10m and evidence/source items are used.",
+      "blockingMode": "block-longform-render",
+      "genericity": "global-generic",
+      "evidenceSchema": "evidence citation plus rightsStatus",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["sourceRightsCitationGate", "_check_source_rights_citations"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_longform_10m_blocks_thin_outline_and_missing_evidence"]}]
+    },
+    {
+      "gateKey": "longformVoiceConsistencyGate",
+      "layer": "longform-production",
+      "requiredWhen": "formatProfile is longform_10m.",
+      "blockingMode": "block-longform-render",
+      "genericity": "global-generic",
+      "evidenceSchema": "voicePlan provider/voiceId/targetWpm",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/tts-providers.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["longformVoiceConsistencyGate", "_check_voice_consistency"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_longform_10m_packet_passes_chapter_provider_audio_contract"]}]
+    },
+    {
+      "gateKey": "longformEditRhythmGate",
+      "layer": "longform-production",
+      "requiredWhen": "formatProfile is longform_10m.",
+      "blockingMode": "block-longform-render",
+      "genericity": "global-generic",
+      "evidenceSchema": "editPlan captionMode/maxStaticHoldSec/averageCutSec",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["longformEditRhythmGate", "_check_edit_rhythm"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_longform_10m_blocks_shortform_caption_pacing_and_missing_audio_beds"]}]
+    },
+    {
+      "gateKey": "chapterAudioBedGate",
+      "layer": "longform-production",
+      "requiredWhen": "formatProfile is longform_10m.",
+      "blockingMode": "block-longform-render",
+      "genericity": "global-generic",
+      "evidenceSchema": "audioPlan chapterBeds and narration ducking",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/tts-providers.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["chapterAudioBedGate", "_check_chapter_audio_bed"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_longform_10m_blocks_shortform_caption_pacing_and_missing_audio_beds"]}]
+    },
+    {
+      "gateKey": "fullWatchReviewGate",
+      "layer": "longform-production",
+      "requiredWhen": "A longform candidate claims final readiness.",
+      "blockingMode": "block-final-readiness",
+      "genericity": "global-generic",
+      "evidenceSchema": "fullWatchReview object",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["fullWatchReviewGate", "_check_full_watch_review"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_longform_final_readiness_requires_full_watch_review"]}]
+    }
+  ],
+  "longformStoryboardGates": [
+    {
+      "gateKey": "longformStoryboardGate",
+      "layer": "longform-storyboard",
+      "requiredWhen": "formatProfile is longform_10m before source prompt generation.",
+      "blockingMode": "block-longform-source-generation",
+      "genericity": "global-generic",
+      "evidenceSchema": "storyboard thesis/viewerPromise/timed beats",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-storyboard-web-references.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["LONGFORM_STORYBOARD_GATE_KEYS", "_check_longform_storyboard"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_longform_10m_packet_passes_chapter_provider_audio_contract"]}]
+    },
+    {
+      "gateKey": "chapterMarkerGate",
+      "layer": "longform-storyboard",
+      "requiredWhen": "formatProfile is longform_10m before source prompt generation.",
+      "blockingMode": "block-longform-source-generation",
+      "genericity": "global-generic",
+      "evidenceSchema": "storyboard chapterMarkers with startSec/title/chapterId",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-storyboard-web-references.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["chapterMarkerGate", "_check_chapter_markers"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_longform_storyboard_gate_requires_chapter_markers_and_retention_plan"]}]
+    },
+    {
+      "gateKey": "retentionPlanGate",
+      "layer": "longform-storyboard",
+      "requiredWhen": "formatProfile is longform_10m before source prompt generation.",
+      "blockingMode": "block-longform-source-generation",
+      "genericity": "global-generic",
+      "evidenceSchema": "storyboard retentionPlan first30SecPromise/titleThumbnailExpectation/topMomentPreview/dipRiskMitigations",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-storyboard-web-references.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["retentionPlanGate", "_check_retention_plan"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_longform_storyboard_gate_requires_chapter_markers_and_retention_plan"]}]
+    },
+    {
+      "gateKey": "storyboardBeatCoverageGate",
+      "layer": "longform-storyboard",
+      "requiredWhen": "formatProfile is longform_10m before source prompt generation.",
+      "blockingMode": "block-longform-source-generation",
+      "genericity": "global-generic",
+      "evidenceSchema": "storyboard beats with chapterId/startSec/durationSec/visualIntent/audioIntent/providerRole",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-storyboard-web-references.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["storyboardBeatCoverageGate", "_check_storyboard_beat_coverage"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_longform_10m_packet_passes_chapter_provider_audio_contract"]}]
+    },
+    {
+      "gateKey": "evidenceVisualBindingGate",
+      "layer": "longform-storyboard",
+      "requiredWhen": "formatProfile is longform_10m before source prompt generation.",
+      "blockingMode": "block-longform-source-generation",
+      "genericity": "global-generic",
+      "evidenceSchema": "storyboard beats bound to chapter evidence ids",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-storyboard-web-references.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["evidenceVisualBindingGate", "_check_evidence_visual_binding"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_longform_storyboard_gate_blocks_unbound_evidence_and_missing_visual_bible"]}]
+    },
+    {
+      "gateKey": "visualContinuityBibleGate",
+      "layer": "longform-storyboard",
+      "requiredWhen": "formatProfile is longform_10m before source prompt generation.",
+      "blockingMode": "block-longform-source-generation",
+      "genericity": "global-generic",
+      "evidenceSchema": "storyboard visualContinuityBible shot/color/layout/style/assets",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-storyboard-web-references.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["visualContinuityBibleGate", "_check_visual_continuity_bible"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_longform_storyboard_gate_blocks_unbound_evidence_and_missing_visual_bible"]}]
+    },
+    {
+      "gateKey": "webReferenceLedgerGate",
+      "layer": "longform-storyboard",
+      "requiredWhen": "formatProfile is longform_10m before source prompt generation.",
+      "blockingMode": "block-longform-source-generation",
+      "genericity": "global-generic",
+      "evidenceSchema": "webReferenceLedger references with sourceType/takeaways/appliedGateKeys",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-storyboard-web-references.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["webReferenceLedgerGate", "_check_web_reference_ledger"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_web_reference_ledger_gate_requires_official_and_research_refs"]}]
+    }
+  ],
+  "longformPowerUserGates": [
+    {
+      "gateKey": "packagingPremiseGate",
+      "layer": "longform-power-user",
+      "requiredWhen": "formatProfile is longform_10m before source prompt generation.",
+      "blockingMode": "block-longform-source-generation",
+      "genericity": "global-generic",
+      "evidenceSchema": "powerUserProductionPlan packagingPlan premise/titleOptions/thumbnailBriefs",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-power-user-production-references.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["LONGFORM_POWER_USER_GATE_KEYS", "packagingPremiseGate", "_check_packaging_premise"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_power_user_gates_require_packaging_and_feasibility"]}]
+    },
+    {
+      "gateKey": "productionFeasibilityGate",
+      "layer": "longform-power-user",
+      "requiredWhen": "formatProfile is longform_10m before source prompt generation.",
+      "blockingMode": "block-longform-source-generation",
+      "genericity": "global-generic",
+      "evidenceSchema": "powerUserProductionPlan feasibilityPlan risks/killCriteria/resourcePlan",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-power-user-production-references.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["productionFeasibilityGate", "_check_production_feasibility"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_power_user_gates_require_packaging_and_feasibility"]}]
+    },
+    {
+      "gateKey": "roughCutRetentionMapGate",
+      "layer": "longform-power-user",
+      "requiredWhen": "formatProfile is longform_10m before source prompt generation and rough-cut planning.",
+      "blockingMode": "block-longform-render",
+      "genericity": "global-generic",
+      "evidenceSchema": "powerUserProductionPlan roughCutRetentionMap minute-level viewerQuestion/payoff entries",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-power-user-production-references.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["roughCutRetentionMapGate", "_check_rough_cut_retention_map"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_power_user_gates_require_retention_feedback_and_clip_plan"]}]
+    },
+    {
+      "gateKey": "creatorFeedbackLoopGate",
+      "layer": "longform-power-user",
+      "requiredWhen": "formatProfile is longform_10m before source prompt generation and edit approval.",
+      "blockingMode": "block-longform-render",
+      "genericity": "global-generic",
+      "evidenceSchema": "powerUserProductionPlan feedbackLoop script/roughCut/final review passes",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-power-user-production-references.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["creatorFeedbackLoopGate", "_check_creator_feedback_loop"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_power_user_gates_require_retention_feedback_and_clip_plan"]}]
+    },
+    {
+      "gateKey": "derivativeClipPlanGate",
+      "layer": "longform-power-user",
+      "requiredWhen": "formatProfile is longform_10m before upload or derivative cutdown claims.",
+      "blockingMode": "block-upload-claim",
+      "genericity": "global-generic",
+      "evidenceSchema": "powerUserProductionPlan derivativeClipPlan cadence/qualityControl/context-preserving clips",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-power-user-production-references.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["derivativeClipPlanGate", "_check_derivative_clip_plan"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_power_user_gates_require_retention_feedback_and_clip_plan"]}]
+    },
+    {
+      "gateKey": "powerUserCaseLedgerGate",
+      "layer": "longform-power-user",
+      "requiredWhen": "formatProfile is longform_10m when power-user production workflow claims are used.",
+      "blockingMode": "block-longform-source-generation",
+      "genericity": "global-generic",
+      "evidenceSchema": "powerUserCaseLedger references with sourceType/takeaways/appliedGateKeys",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-power-user-production-references.md"],
+      "codeAnchors": [{"path": "worker/render/production_mode_gate.py", "symbols": ["powerUserCaseLedgerGate", "_check_power_user_case_ledger"]}],
+      "testAnchors": [{"path": "tests/test_production_mode_gate.py", "symbols": ["test_power_user_case_ledger_requires_creator_cases_and_research_basis"]}]
+    }
+  ],
+  "longformWorkflowStageGates": [
+    {
+      "gateKey": "longformWorkflowOrderGate",
+      "layer": "longform-workflow",
+      "requiredWhen": "Before longform source generation, rough cut, render, final readiness, or derivative clip claims.",
+      "blockingMode": "block-out-of-order-workflow",
+      "genericity": "global-generic",
+      "evidenceSchema": "video-studio.longform-workflow-stage-gate.v1 workflowStages ordered by LONGFORM_WORKFLOW_STAGE_KEYS",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-workflow-stage-gate.md"],
+      "codeAnchors": [{"path": "worker/render/longform_workflow_gate.py", "symbols": ["LONGFORM_WORKFLOW_STAGE_KEYS", "longformWorkflowOrderGate", "_check_stage_order"]}],
+      "testAnchors": [{"path": "tests/test_longform_workflow_gate.py", "symbols": ["test_longform_workflow_gate_blocks_out_of_order_source_generation"]}]
+    },
+    {
+      "gateKey": "longformWorkflowEvidenceGate",
+      "layer": "longform-workflow",
+      "requiredWhen": "Any longform workflow stage is marked pass, active, blocked, or pending.",
+      "blockingMode": "block-self-asserted-stage-pass",
+      "genericity": "global-generic",
+      "evidenceSchema": "workflowStages entries with decisionRule/exitCriteria plus evidenceRefs and reviewerRole for passed stages",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-workflow-stage-gate.md"],
+      "codeAnchors": [{"path": "worker/render/longform_workflow_gate.py", "symbols": ["longformWorkflowEvidenceGate", "_check_stage_evidence"]}],
+      "testAnchors": [{"path": "tests/test_longform_workflow_gate.py", "symbols": ["test_longform_workflow_gate_requires_evidence_for_passed_stages"]}]
+    },
+    {
+      "gateKey": "longformWorkflowDependencyGate",
+      "layer": "longform-workflow",
+      "requiredWhen": "A longform workflow stage attempts to advance or claim completion.",
+      "blockingMode": "block-stage-skip",
+      "genericity": "global-generic",
+      "evidenceSchema": "stage status map where later stages cannot pass or become active before prior stages pass",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-workflow-stage-gate.md"],
+      "codeAnchors": [{"path": "worker/render/longform_workflow_gate.py", "symbols": ["longformWorkflowDependencyGate", "_check_stage_dependencies"]}],
+      "testAnchors": [{"path": "tests/test_longform_workflow_gate.py", "symbols": ["test_longform_workflow_gate_blocks_dependency_skips", "test_longform_workflow_gate_blocks_derivative_clips_before_final_readiness"]}]
+    },
+    {
+      "gateKey": "longformWorkflowImprovementLoopGate",
+      "layer": "longform-workflow",
+      "requiredWhen": "A longform stage is blocked, failed, rejected, or a quality gate changes.",
+      "blockingMode": "block-dead-end-failure",
+      "genericity": "global-generic",
+      "evidenceSchema": "workflowImprovementLoop plus blocked-stage improvementActions with owner/mutation/verification",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-workflow-stage-gate.md"],
+      "codeAnchors": [{"path": "worker/render/longform_workflow_gate.py", "symbols": ["longformWorkflowImprovementLoopGate", "_check_improvement_loop"]}],
+      "testAnchors": [{"path": "tests/test_longform_workflow_gate.py", "symbols": ["test_longform_workflow_gate_requires_improvement_actions_for_failed_stage", "test_longform_workflow_gate_accepts_failed_stage_with_actionable_mutation"]}]
+    },
+    {
+      "gateKey": "longformWorkflowSeededFailureGate",
+      "layer": "longform-workflow",
+      "requiredWhen": "A longform workflow gate packet claims that its order and verification structure are managed.",
+      "blockingMode": "block-untested-gate-claim",
+      "genericity": "global-generic",
+      "evidenceSchema": "seededFailureSuite with passing cases for workflow order/evidence/dependency/improvement failures",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-workflow-stage-gate.md"],
+      "codeAnchors": [{"path": "worker/render/longform_workflow_gate.py", "symbols": ["LONGFORM_WORKFLOW_GATE_KEYS", "longformWorkflowSeededFailureGate", "_check_seeded_failure_suite"]}],
+      "testAnchors": [{"path": "tests/test_longform_workflow_gate.py", "symbols": ["test_longform_workflow_gate_requires_seeded_failure_suite", "test_longform_workflow_gate_constants_define_managed_inventory"]}]
+    }
+  ],
+  "longformMinimumReleaseGates": [
+    {
+      "gateKey": "longformReleaseFormatGate",
+      "layer": "longform-minimum-release",
+      "requiredWhen": "A longform final candidate claims minimum publishable readiness.",
+      "blockingMode": "block-final-readiness",
+      "genericity": "global-generic",
+      "evidenceSchema": "formatProfile, durationSec, chapters, and segments in video-studio.longform-minimum-release-gate.v1",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-minimum-release-gate.md"],
+      "codeAnchors": [{"path": "worker/render/longform_minimum_release_gate.py", "symbols": ["longformReleaseFormatGate", "_check_format"]}],
+      "testAnchors": [{"path": "tests/test_longform_minimum_release_gate.py", "symbols": ["test_longform_minimum_release_gate_rejects_shortform_packet"]}]
+    },
+    {
+      "gateKey": "longformReleaseRightsGate",
+      "layer": "longform-minimum-release",
+      "requiredWhen": "A longform final candidate uses generated, sourced, or evidence media.",
+      "blockingMode": "block-final-readiness",
+      "genericity": "global-generic",
+      "evidenceSchema": "source/evidence rightsStatus and commercialUseAllowed fields",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-minimum-release-gate.md"],
+      "codeAnchors": [{"path": "worker/render/longform_minimum_release_gate.py", "symbols": ["longformReleaseRightsGate", "_check_rights"]}],
+      "testAnchors": [{"path": "tests/test_longform_minimum_release_gate.py", "symbols": ["test_longform_minimum_release_gate_rejects_research_only_seedance_source"]}]
+    },
+    {
+      "gateKey": "longformReleaseSourceContinuityGate",
+      "layer": "longform-minimum-release",
+      "requiredWhen": "A longform final candidate depends on chaptered visual sources.",
+      "blockingMode": "block-final-readiness",
+      "genericity": "global-generic",
+      "evidenceSchema": "sourceReviewImport continuity ratio, accepted chapter coverage, and unresolved source defect fields",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-minimum-release-gate.md"],
+      "codeAnchors": [{"path": "worker/render/longform_minimum_release_gate.py", "symbols": ["longformReleaseSourceContinuityGate", "_check_source_continuity"]}],
+      "testAnchors": [{"path": "tests/test_longform_minimum_release_gate.py", "symbols": ["test_longform_minimum_release_gate_rejects_source_continuity_drift"]}]
+    },
+    {
+      "gateKey": "longformReleaseScriptTtsCaptionGate",
+      "layer": "longform-minimum-release",
+      "requiredWhen": "A longform final candidate includes Korean narration, TTS, and captions.",
+      "blockingMode": "block-final-readiness",
+      "genericity": "global-generic",
+      "evidenceSchema": "scriptTtsCaptionReview with language review, voice, WPM, caption/TTS sync, duplicate, and safe-zone fields",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-minimum-release-gate.md", "docs/reference/tts-providers.md"],
+      "codeAnchors": [{"path": "worker/render/longform_minimum_release_gate.py", "symbols": ["longformReleaseScriptTtsCaptionGate", "_check_script_tts_caption"]}],
+      "testAnchors": [{"path": "tests/test_longform_minimum_release_gate.py", "symbols": ["test_longform_minimum_release_gate_rejects_tts_caption_drift_and_duplicates"]}]
+    },
+    {
+      "gateKey": "longformReleaseEditorialGate",
+      "layer": "longform-minimum-release",
+      "requiredWhen": "A longform final candidate claims directed edit quality.",
+      "blockingMode": "block-final-readiness",
+      "genericity": "global-generic",
+      "evidenceSchema": "editorialReleaseReview with directed edit, motivated cuts, layout, source-bound cues, and baseline comparison",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-minimum-release-gate.md", "docs/reference/editorial-direction-gate.md"],
+      "codeAnchors": [{"path": "worker/render/longform_minimum_release_gate.py", "symbols": ["longformReleaseEditorialGate", "_check_editorial"]}],
+      "testAnchors": [{"path": "tests/test_longform_minimum_release_gate.py", "symbols": ["test_longform_minimum_release_gate_rejects_weak_editorial_direction"]}]
+    },
+    {
+      "gateKey": "longformReleaseAudioGate",
+      "layer": "longform-minimum-release",
+      "requiredWhen": "A longform final candidate claims usable sound design and BGM mix.",
+      "blockingMode": "block-final-readiness",
+      "genericity": "global-generic",
+      "evidenceSchema": "audioReleaseReview with audio stream, ducking, beds, cue binding, peak, and mean loudness",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-minimum-release-gate.md", "docs/reference/editorial-direction-gate.md"],
+      "codeAnchors": [{"path": "worker/render/longform_minimum_release_gate.py", "symbols": ["longformReleaseAudioGate", "_check_audio"]}],
+      "testAnchors": [{"path": "tests/test_longform_minimum_release_gate.py", "symbols": ["test_longform_minimum_release_gate_rejects_missing_audio_mix_evidence"]}]
+    },
+    {
+      "gateKey": "longformReleaseFullWatchGate",
+      "layer": "longform-minimum-release",
+      "requiredWhen": "A longform final candidate claims the full 10-minute piece was reviewed.",
+      "blockingMode": "block-final-readiness",
+      "genericity": "global-generic",
+      "evidenceSchema": "fullWatchReview with completed timeline, reviewer, issue counts, density, chapter issue log, and retention review",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-minimum-release-gate.md"],
+      "codeAnchors": [{"path": "worker/render/longform_minimum_release_gate.py", "symbols": ["longformReleaseFullWatchGate", "_check_full_watch"]}],
+      "testAnchors": [{"path": "tests/test_longform_minimum_release_gate.py", "symbols": ["test_longform_minimum_release_gate_rejects_unresolved_full_watch_issues"]}]
+    },
+    {
+      "gateKey": "longformReleaseScoreGate",
+      "layer": "longform-minimum-release",
+      "requiredWhen": "A longform final candidate claims a numeric minimum release score.",
+      "blockingMode": "block-final-readiness",
+      "genericity": "global-generic",
+      "evidenceSchema": "computed score from LONGFORM_MINIMUM_RELEASE_SCORE_WEIGHTS, with self-asserted score mismatch rejected",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/longform-minimum-release-gate.md"],
+      "codeAnchors": [{"path": "worker/render/longform_minimum_release_gate.py", "symbols": ["longformReleaseScoreGate", "_check_score", "MINIMUM_RELEASE_SCORE"]}],
+      "testAnchors": [{"path": "tests/test_longform_minimum_release_gate.py", "symbols": ["test_longform_minimum_release_gate_rejects_self_asserted_score_inflation", "test_longform_minimum_release_gate_constants_define_managed_inventory"]}]
+    }
+  ],
+  "longformDryrunReadinessGates": [
+    {
+      "gateKey": "dryrunTopicDiscoveryGate",
+      "layer": "longform-dryrun-readiness",
+      "requiredWhen": "Before a longform packet enters source-generation, render, final, publish, or operator-visible E2E dry-run work.",
+      "blockingMode": "block-longform-e2e-dry-run",
+      "genericity": "global-generic",
+      "evidenceSchema": "topicDiscoveryPacket object evaluated by video-studio.topic-discovery-gate.v1",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md", "docs/reference/topic-discovery-community-signal.md"],
+      "codeAnchors": [{"path": "worker/render/longform_dryrun_readiness.py", "symbols": ["LONGFORM_DRYRUN_READINESS_GATE_KEYS", "dryrunTopicDiscoveryGate", "_evaluate_topic_discovery_gate"]}],
+      "testAnchors": [{"path": "tests/test_longform_dryrun_readiness.py", "symbols": ["test_longform_dryrun_readiness_requires_topic_discovery_packet", "test_longform_dryrun_readiness_rejects_failed_topic_discovery_packet"]}]
+    },
+    {
+      "gateKey": "dryrunWorkflowGate",
+      "layer": "longform-dryrun-readiness",
+      "requiredWhen": "Before a longform packet enters source-generation, render, final, publish, or operator-visible E2E dry-run work.",
+      "blockingMode": "block-longform-e2e-dry-run",
+      "genericity": "global-generic",
+      "evidenceSchema": "workflowPacket object evaluated by video-studio.longform-workflow-stage-gate.v1",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/longform_dryrun_readiness.py", "symbols": ["LONGFORM_DRYRUN_READINESS_GATE_KEYS", "dryrunWorkflowGate", "evaluate_longform_dryrun_readiness"]}],
+      "testAnchors": [{"path": "tests/test_longform_dryrun_readiness.py", "symbols": ["test_longform_dryrun_readiness_requires_workflow_packet", "test_longform_dryrun_readiness_constants_define_managed_inventory"]}]
+    },
+    {
+      "gateKey": "dryrunProductionModeGate",
+      "layer": "longform-dryrun-readiness",
+      "requiredWhen": "Before a longform dry-run can trust a source prompt bible, production packet, or render manifest.",
+      "blockingMode": "block-longform-e2e-dry-run",
+      "genericity": "global-generic",
+      "evidenceSchema": "productionModePacket object evaluated by video-studio.production-mode-gate.v1",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/longform_dryrun_readiness.py", "symbols": ["dryrunProductionModeGate", "_evaluate_production_mode_gate"]}],
+      "testAnchors": [{"path": "tests/test_longform_dryrun_readiness.py", "symbols": ["test_longform_dryrun_readiness_rejects_failed_production_mode_packet"]}]
+    },
+    {
+      "gateKey": "dryrunRenderPreflightGate",
+      "layer": "longform-dryrun-readiness",
+      "requiredWhen": "Before any longform dry-run may start the render/E2E path.",
+      "blockingMode": "block-longform-e2e-dry-run",
+      "genericity": "global-generic",
+      "evidenceSchema": "renderManifest object re-evaluated by video-studio.active-production-packet-lock.v1",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/longform_dryrun_readiness.py", "symbols": ["dryrunRenderPreflightGate", "_evaluate_render_preflight_gate"]}],
+      "testAnchors": [{"path": "tests/test_longform_dryrun_readiness.py", "symbols": ["test_longform_dryrun_readiness_requires_manifest_bound_production_packet"]}]
+    },
+    {
+      "gateKey": "dryrunMinimumReleaseGate",
+      "layer": "longform-dryrun-readiness",
+      "requiredWhen": "Before a longform dry-run may claim final, upload, channel-ready, top-tier, or publish readiness.",
+      "blockingMode": "block-longform-final-e2e-dry-run",
+      "genericity": "global-generic",
+      "evidenceSchema": "longformMinimumReleasePacket object evaluated by video-studio.longform-minimum-release-gate.v1",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/longform_dryrun_readiness.py", "symbols": ["dryrunMinimumReleaseGate", "_evaluate_minimum_release_gate"]}],
+      "testAnchors": [{"path": "tests/test_longform_dryrun_readiness.py", "symbols": ["test_longform_dryrun_readiness_rejects_final_target_without_minimum_release_packet"]}]
+    },
+    {
+      "gateKey": "dryrunFinalLibraryGate",
+      "layer": "longform-dryrun-readiness",
+      "requiredWhen": "Before a longform dry-run may accept final-library upload/channel/top-tier flags.",
+      "blockingMode": "block-longform-final-e2e-dry-run",
+      "genericity": "global-generic",
+      "evidenceSchema": "finalLibraryAudit object with longformMinimumReleaseReady=true and status=pass",
+      "docPaths": ["docs/reference/gate-ontology.md", "docs/reference/longform-production-mode.md"],
+      "codeAnchors": [{"path": "worker/render/longform_dryrun_readiness.py", "symbols": ["dryrunFinalLibraryGate", "_evaluate_final_library_gate"]}],
+      "testAnchors": [{"path": "tests/test_longform_dryrun_readiness.py", "symbols": ["test_longform_dryrun_readiness_rejects_upload_flags_without_release_ready_audit"]}]
+    }
+  ],
+  "goldenReferenceOperationalChecks": [
+    {
+      "gateKey": "required",
+      "layer": "golden-preflight",
+      "requiredWhen": "Every golden-reference compliance evaluation.",
+      "blockingMode": "skip-or-run-golden-gate",
+      "genericity": "global-generic",
+      "evidenceSchema": "manifest referenceStylePreset or golden/reference requirement flag",
+      "docPaths": ["docs/reference/gate-ontology.md"],
+      "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["_is_gate_required", "required"]}],
+      "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_passes_contract_and_artifact_parity"]}]
+    },
+    {
+      "gateKey": "preset",
+      "layer": "golden-preflight",
+      "requiredWhen": "A manifest declares a reference style preset.",
+      "blockingMode": "block-render",
+      "genericity": "global-generic",
+      "evidenceSchema": "reference style preset lookup",
+      "docPaths": ["docs/reference/gate-ontology.md"],
+      "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["get_reference_style_preset", "preset"]}],
+      "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_passes_contract_and_artifact_parity"]}]
+    },
+    {
+      "gateKey": "sceneList",
+      "layer": "golden-preflight",
+      "requiredWhen": "A reference/golden manifest is required to render.",
+      "blockingMode": "block-render",
+      "genericity": "global-generic",
+      "evidenceSchema": "manifest.scenes list",
+      "docPaths": ["docs/reference/gate-ontology.md"],
+      "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["sceneList", "manifest.scenes must be a non-empty list"]}],
+      "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_manifest_self_assertions_without_contracts"]}]
+    }
+  ],
+  "goldenReferenceTopLevelGates": [
+    {
+      "gateKey": "sourceContactSheet",
+      "layer": "golden-preflight",
+      "requiredWhen": "Any reference/golden render is prepared.",
+      "blockingMode": "block-render",
+      "genericity": "global-generic",
+      "evidenceSchema": "source contact sheet artifact",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["sourceContactSheet", "_check_source_contact_sheet"]}],
+      "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_manifest_self_assertions_without_contracts"]}]
+    },
+    {
+      "gateKey": "sourceSequenceContinuity",
+      "layer": "golden-preflight",
+      "requiredWhen": "A reference/golden candidate uses multiple source clips.",
+      "blockingMode": "block-render",
+      "genericity": "global-generic",
+      "evidenceSchema": "sourceSequenceContinuity manifest contract",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["sourceSequenceContinuity", "_check_source_sequence_continuity"]}],
+      "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_requires_generic_source_sequence_continuity", "test_golden_reference_gate_rejects_topic_specific_source_sequence_gate"]}]
+    },
+    {
+      "gateKey": "visualUnityTreatment",
+      "layer": "golden-preflight",
+      "requiredWhen": "A reference/golden candidate uses generated or mixed source material.",
+      "blockingMode": "block-render",
+      "genericity": "global-generic",
+      "evidenceSchema": "visualUnityTreatment manifest contract",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["visualUnityTreatment", "_check_visual_unity_treatment"]}],
+      "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_requires_shared_visual_unity_treatment"]}]
+    },
+    {
+      "gateKey": "openingAudioContinuity",
+      "layer": "golden-preflight",
+      "requiredWhen": "A reference/golden candidate claims clean opening, voice, BGM, and payoff.",
+      "blockingMode": "block-render",
+      "genericity": "global-generic",
+      "evidenceSchema": "openingAudioContinuity manifest contract",
+      "docPaths": ["docs/RENDERING-SPEC.md", "docs/reference/tts-providers.md"],
+      "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["openingAudioContinuity", "_check_opening_audio_continuity"]}],
+      "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_manifest_self_assertions_without_contracts"]}]
+    },
+    {
+      "gateKey": "postEditGoldenReference",
+      "layer": "post-edit",
+      "requiredWhen": "A reference/golden candidate claims final-quality edit direction.",
+      "blockingMode": "block-render",
+      "genericity": "global-generic",
+      "evidenceSchema": "postEditGoldenReference manifest contract",
+      "docPaths": ["docs/RENDERING-SPEC.md", "docs/reference/editorial-direction-gate.md", "docs/reference/external-edit-elements.md", "docs/reference/capcut-automation.md"],
+      "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["postEditGoldenReference", "_check_post_edit_golden_reference"]}],
+      "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_requires_global_post_edit_reference_contract"]}]
+    }
+  ],
+  "goldenReferenceSceneGates": [
+    {"gateKey": "sourceContract", "layer": "source-quality", "docPaths": ["docs/RENDERING-SPEC.md"], "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["sourceContract", "_check_source_contract"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_manifest_self_assertions_without_contracts"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "sourceQualityRubric", "layer": "source-quality", "docPaths": ["docs/RENDERING-SPEC.md"], "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["sourceQualityRubric", "_check_source_quality_rubric"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_requires_generic_source_take_quality", "test_golden_reference_gate_rejects_low_source_take_dimension"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "sourceArtifact", "layer": "source-quality", "docPaths": ["docs/RENDERING-SPEC.md"], "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["sourceArtifact", "_check_source_artifact"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_manifest_self_assertions_without_contracts"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "promptContract", "layer": "source-quality", "docPaths": ["docs/RENDERING-SPEC.md"], "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["promptContract", "_check_prompt_contract"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_manifest_self_assertions_without_contracts"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "captionContract", "layer": "copy-caption-layout", "docPaths": ["docs/RENDERING-SPEC.md"], "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["captionContract", "_check_caption_contract"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_korean_caption_noun_label_line"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "copyTone", "layer": "copy-caption-layout", "docPaths": ["docs/RENDERING-SPEC.md"], "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["copyTone", "_check_caption_copy_tone"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_ai_slop_caption_and_tts"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "layoutContract", "layer": "copy-caption-layout", "docPaths": ["docs/RENDERING-SPEC.md"], "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["layoutContract", "_check_layout_contract"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_missing_caption_direction_numbers"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "captionDirection", "layer": "copy-caption-layout", "docPaths": ["docs/RENDERING-SPEC.md"], "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["captionDirection", "_check_caption_direction"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_missing_caption_direction_numbers"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "ttsScriptQuality", "layer": "copy-caption-layout", "docPaths": ["docs/RENDERING-SPEC.md", "docs/reference/tts-providers.md"], "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["ttsScriptQuality", "_check_tts_script_quality"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_awkward_korean_label_copy_and_tts"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "referenceParity", "layer": "golden-preflight", "docPaths": ["docs/RENDERING-SPEC.md"], "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["referenceParity", "_check_reference_parity"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_passes_contract_and_artifact_parity"]}], "blockingMode": "block-render", "genericity": "global-generic"}
+  ],
+  "postEditSubcontracts": [
+    {"gateKey": "score", "layer": "post-edit", "docPaths": ["docs/RENDERING-SPEC.md"], "evidenceSchema": "video-studio.post-edit-score.v1", "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["postEditGoldenReference.score", "_check_post_edit_score_evidence"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_fabricated_matching_post_edit_score"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "editorialDirection", "layer": "post-edit", "docPaths": ["docs/reference/editorial-direction-gate.md"], "evidenceSchema": "video-studio.editorial-pass.v1", "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["editorialDirection", "_check_editorial_direction"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_requires_editorial_direction_contract", "test_golden_reference_gate_rejects_fake_editorial_evidence_json"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "hook", "layer": "post-edit", "docPaths": ["docs/RENDERING-SPEC.md"], "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["postEditGoldenReference.hook object is required"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_weak_post_edit_caption_and_audio_polish"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "captions", "layer": "post-edit", "docPaths": ["docs/RENDERING-SPEC.md", "docs/reference/editorial-direction-gate.md"], "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["postEditGoldenReference.captions object is required"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_weak_post_edit_caption_and_audio_polish"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "layoutHud", "layer": "post-edit", "docPaths": ["docs/RENDERING-SPEC.md"], "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["layoutHud", "_check_layout_hud"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_requires_layout_hud_contract", "test_golden_reference_gate_rejects_unsafe_platform_zone"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "capcutHandoff", "layer": "capcut-handoff", "docPaths": ["docs/reference/capcut-automation.md"], "evidenceSchema": "video-studio.capcut-draft-audit.v1", "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["capcutHandoff", "_check_capcut_handoff"]}], "testAnchors": [{"path": "tests/test_capcut_handoff.py", "symbols": ["test_build_capcut_handoff_injects_gate_contract", "test_build_capcut_handoff_rejects_draft_without_exported_keyframes"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "externalEditElements", "layer": "post-edit", "docPaths": ["docs/reference/external-edit-elements.md"], "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["externalEditElements", "_check_external_edit_elements"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_allows_clean_editorial_without_generated_external_elements"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "rhythm", "layer": "post-edit", "docPaths": ["docs/RENDERING-SPEC.md"], "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["postEditGoldenReference.rhythm object is required"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_weak_post_edit_caption_and_audio_polish"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "audio", "layer": "post-edit", "docPaths": ["docs/RENDERING-SPEC.md", "docs/reference/editorial-direction-gate.md", "docs/reference/tts-providers.md"], "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["postEditGoldenReference.audio object is required"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_unbound_editorial_sfx", "test_golden_reference_gate_rejects_sfx_cue_without_audit_realization"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "color", "layer": "post-edit", "docPaths": ["docs/RENDERING-SPEC.md"], "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["postEditGoldenReference.color object is required"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_passes_contract_and_artifact_parity"]}], "blockingMode": "block-render", "genericity": "global-generic"},
+    {"gateKey": "payoff", "layer": "post-edit", "docPaths": ["docs/RENDERING-SPEC.md"], "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["postEditGoldenReference.payoff object is required"]}], "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_weak_post_edit_caption_and_audio_polish"]}], "blockingMode": "block-render", "genericity": "global-generic"}
+  ],
+  "evidenceSchemas": [
+    {
+      "schema": "video-studio.editorial-pass.v1",
+      "layer": "post-edit",
+      "genericity": "global-generic",
+      "blockingMode": "schema-guard",
+      "docPaths": ["docs/reference/editorial-direction-gate.md"],
+      "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["EDITORIAL_PASS_SCHEMA"]}],
+      "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_fake_editorial_evidence_json"]}]
+    },
+    {
+      "schema": "video-studio.post-edit-score.v1",
+      "layer": "post-edit",
+      "genericity": "global-generic",
+      "blockingMode": "schema-guard",
+      "docPaths": ["docs/RENDERING-SPEC.md"],
+      "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["POST_EDIT_SCORE_SCHEMA"]}],
+      "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_score_not_backed_by_computed_evidence"]}]
+    },
+    {
+      "schema": "video-studio.reference-comparison.v1",
+      "layer": "post-edit",
+      "genericity": "global-generic",
+      "blockingMode": "schema-guard",
+      "docPaths": ["docs/reference/editorial-direction-gate.md"],
+      "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["REFERENCE_COMPARISON_SCHEMA"]}],
+      "testAnchors": [{"path": "tests/test_golden_reference_gate.py", "symbols": ["test_golden_reference_gate_rejects_fake_editorial_evidence_json"]}]
+    },
+    {
+      "schema": "video-studio.capcut-draft-audit.v1",
+      "layer": "capcut-handoff",
+      "genericity": "global-generic",
+      "blockingMode": "schema-guard",
+      "docPaths": ["docs/reference/capcut-automation.md"],
+      "codeAnchors": [{"path": "worker/render/golden_reference_gate.py", "symbols": ["CAPCUT_DRAFT_AUDIT_SCHEMA"]}],
+      "testAnchors": [{"path": "tests/test_capcut_handoff.py", "symbols": ["test_build_capcut_handoff_rejects_draft_without_exported_keyframes"]}]
+    }
+  ]
+}

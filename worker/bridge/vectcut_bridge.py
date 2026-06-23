@@ -24,6 +24,8 @@ import os
 import shutil
 import sys
 import threading
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from urllib import request as urllib_request
 
@@ -104,6 +106,8 @@ def _import_vectcut() -> VectCutModules:
 
 _video_track_fn = None
 _video_track_fn_checked = False
+_effect_fn = None
+_effect_fn_checked = False
 
 def _get_video_track_fn():
     """Lazy import for add_video_track — requires imageio which may not be installed."""
@@ -117,6 +121,20 @@ def _get_video_track_fn():
     except ImportError as e:
         logger.warning("add_video_track unavailable: %s", e)
     return _video_track_fn
+
+
+def _get_effect_fn():
+    """Lazy import for add_effect_impl."""
+    global _effect_fn, _effect_fn_checked
+    if _effect_fn_checked:
+        return _effect_fn
+    _effect_fn_checked = True
+    try:
+        from add_effect_impl import add_effect_impl
+        _effect_fn = add_effect_impl
+    except ImportError as e:
+        logger.warning("add_effect_impl unavailable: %s", e)
+    return _effect_fn
 
 
 # Cache after first successful import (thread-safe double-check)
@@ -341,6 +359,91 @@ def add_bgm(
         return False
 
 
+def add_audio_clip(
+    draft_id: str,
+    audio_path: str,
+    target_start: float,
+    duration: float,
+    *,
+    track_name: str,
+    volume: float = 0.6,
+) -> bool:
+    """Add a short arbitrary audio clip such as an SFX cue."""
+    _audio = _get_vectcut().audio
+    try:
+        _audio(
+            audio_url=audio_path,
+            start=0,
+            end=duration,
+            target_start=target_start,
+            draft_id=draft_id,
+            track_name=track_name,
+            volume=volume,
+            duration=duration,
+        )
+        return True
+    except Exception as e:
+        logger.warning("add_audio_clip %s failed: %s", track_name, e)
+        return False
+
+
+def add_video_keyframes(
+    draft_id: str,
+    track_name: str,
+    *,
+    property_types: list[str],
+    times: list[float],
+    values: list[str],
+) -> bool:
+    """Add editable keyframes to a video track."""
+    try:
+        from add_video_keyframe_impl import add_video_keyframe_impl
+
+        add_video_keyframe_impl(
+            draft_id=draft_id,
+            track_name=track_name,
+            property_types=property_types,
+            times=times,
+            values=values,
+        )
+        return True
+    except Exception as e:
+        logger.warning("add_video_keyframes %s failed: %s", track_name, e)
+        return False
+
+
+def add_effect(
+    draft_id: str,
+    effect_type: str,
+    start: float,
+    end: float,
+    *,
+    track_name: str,
+    effect_category: str = "scene",
+    params: list[float | None] | None = None,
+) -> bool:
+    """Add a native CapCut/Jianying effect track to a draft."""
+    _effect = _get_effect_fn()
+    if _effect is None:
+        return False
+    try:
+        _effect(
+            effect_type=effect_type,
+            effect_category=effect_category,
+            start=start,
+            end=end,
+            draft_id=draft_id,
+            track_name=track_name,
+            params=params or [],
+            width=1080,
+            height=1920,
+        )
+        return True
+    except Exception as e:
+        logger.warning("add_effect %s failed: %s", effect_type, e)
+        return False
+
+
 def hash_url(url: str) -> str:
     """Hash a URL for material naming (delegates to VectCutAPI util)."""
     _hash = _get_vectcut().hash_url
@@ -354,6 +457,7 @@ def save_draft_to_capcut(
     capcut_draft_dir: Path,
     has_images: bool,
     bgm_path: str | None = None,
+    draft_display_name: str | None = None,
 ) -> str | None:
     """Save the completed draft to CapCut's project directory.
 
@@ -546,6 +650,14 @@ def save_draft_to_capcut(
                     else:
                         video.replace_path = str(video_dest / video.material_name)
 
+    # -- Materialize pending keyframes before dumping. VectCutAPI keeps
+    # add_pending_keyframe() calls outside segment JSON until this is run.
+    if hasattr(cached_script, "tracks"):
+        for track in cached_script.tracks.values():
+            if hasattr(track, "process_pending_keyframes"):
+                with redirect_stdout(StringIO()):
+                    track.process_pending_keyframes()
+
     # -- Save project file --
     cached_script.dump(str(dest / "draft_content.json"))
 
@@ -574,7 +686,7 @@ def save_draft_to_capcut(
         with open(str(meta_path), "r", encoding="utf-8") as f:
             meta = json.load(f)
         meta["draft_fold_path"] = str(dest).replace("\\", "/")
-        meta["draft_name"] = draft_id
+        meta["draft_name"] = draft_display_name or draft_id
         meta["cloud_draft_cover"] = False
         meta["cloud_draft_sync"] = False
         with open(str(meta_path), "w", encoding="utf-8") as f:

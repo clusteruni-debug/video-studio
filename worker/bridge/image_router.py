@@ -144,49 +144,63 @@ def generate_imagen_if_allowed(
 
 
 def generate_gemini_flash(prompt: str, output_dir: str | None = None) -> str | None:
-    """Generate image via Gemini 2.5 Flash (free, 500/day). Returns local file path or None."""
+    """Generate image via Gemini Flash Image/Nano Banana. Returns local file path or None."""
     api_key = _get_key("GEMINI_API_KEY") or _get_key("GOOGLE_API_KEY")
     if not api_key:
         return None
-    model = "gemini-2.5-flash-image"
-    try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-        payload = json.dumps({
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"responseModalities": ["image", "text"]},
-        }).encode("utf-8")
-        req = urllib_request.Request(
-            url,
-            data=payload,
-            headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
-        )
-        with urllib_request.urlopen(req, timeout=60) as resp:
-            body = json.loads(resp.read(16_777_216).decode("utf-8"))
-        # Extract inline image data from response parts
-        candidates = body.get("candidates", [])
-        if not candidates:
-            return None
-        parts = candidates[0].get("content", {}).get("parts", [])
-        b64_data = None
-        for part in parts:
-            inline = part.get("inlineData") or part.get("inline_data")
-            if inline and inline.get("data"):
-                b64_data = inline["data"]
-                break
-        if not b64_data:
-            return None
-        image_bytes = base64.b64decode(b64_data)
+    models = ("gemini-3.1-flash-image", "gemini-2.5-flash-image")
+    last_error: BaseException | None = None
+    for model in models:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent"
+            payload = json.dumps({
+                "contents": [{"parts": [{"text": prompt}]}],
+            }).encode("utf-8")
+            req = urllib_request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+            )
+            with urllib_request.urlopen(req, timeout=60) as resp:
+                body = json.loads(resp.read(16_777_216).decode("utf-8"))
+            candidates = body.get("candidates", [])
+            if not candidates:
+                continue
+            parts = candidates[0].get("content", {}).get("parts", [])
+            b64_data = None
+            for part in parts:
+                inline = part.get("inlineData") or part.get("inline_data")
+                if inline and inline.get("data"):
+                    b64_data = inline["data"]
+                    break
+            if not b64_data:
+                continue
+            image_bytes = base64.b64decode(b64_data)
 
-        save_dir = Path(output_dir) if output_dir else Path("storage/cache")
-        save_dir.mkdir(parents=True, exist_ok=True)
-        name_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
-        save_path = save_dir / f"gemini_flash_{name_hash}.png"
-        save_path.write_bytes(image_bytes)
-        logger.info("gemini-flash generated %d bytes → %s", len(image_bytes), save_path)
-        return str(save_path)
-    except _HTTP_ERRORS as e:
-        logger.warning("gemini-flash failed: %s", type(e).__name__)
-        return None
+            save_dir = Path(output_dir) if output_dir else Path("storage/cache")
+            save_dir.mkdir(parents=True, exist_ok=True)
+            name_hash = hashlib.sha256(f"{model}:{prompt}".encode()).hexdigest()[:16]
+            save_path = save_dir / f"gemini_flash_{name_hash}.png"
+            save_path.write_bytes(image_bytes)
+            logger.info(
+                "gemini-flash generated via %s: %d bytes -> %s",
+                model,
+                len(image_bytes),
+                save_path,
+            )
+            return str(save_path)
+        except _HTTP_ERRORS as e:
+            last_error = e
+            status = getattr(e, "code", None)
+            logger.warning(
+                "gemini-flash model %s failed: %s%s",
+                model,
+                type(e).__name__,
+                f" status={status}" if status else "",
+            )
+    if last_error is not None:
+        logger.warning("gemini-flash failed after model fallback: %s", type(last_error).__name__)
+    return None
 
 
 def search_pexels(query: str, orientation: str = "portrait") -> str | None:

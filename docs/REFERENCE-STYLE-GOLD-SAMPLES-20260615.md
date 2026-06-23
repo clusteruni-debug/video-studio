@@ -75,6 +75,10 @@ the primary visual source for an explainer render.
 ### `kr_curiosity_explainer`
 
 - Audience: `kr_casual_curiosity_20_40`.
+- Active quality reference:
+  `docs/QA/2026-06-18-kr-curiosity-bottled-water-quality-reference.md`.
+  Any V3+ bottled-water candidate must compare against the V2 layout-polish
+  baseline in that file before claiming visible quality improvement.
 - Best templates: `news_explainer`, `myth_buster`, `tutorial_steps`,
   `hot_take` when the topic is fact/object-first.
 - Layout:
@@ -103,6 +107,22 @@ the primary visual source for an explainer render.
     single still as proof.
   - Static public-domain illusion art is only acceptable if the whole format is
     explicitly an optical-demo analysis, not a general upload candidate.
+
+#### Bottled-water V2/V3 quality addendum
+
+- V2 layout polish is the current baseline, not an accepted "good" sample:
+  `storage/final-videos/kr-curiosity-bottled-water-v2-20260618/kr-curiosity-bottled-water-v2-20260618.mp4`
+  (`sha256=8E8FC4790F18C7615F2BD3E3B9F490A0B517C250D7CE891E74AC970FD327EFBB`).
+- Visual unity does not have to mean HUD. Frame lines, HUD marks, and common
+  mattes are only optional post-edit treatments. The preferred V3 quality
+  ratchet is source-level continuity: same bottle identity, same hand scale,
+  same camera distance, same daylight logic, and scene-to-scene physical action.
+- A future candidate that only changes border/HUD/color treatment without
+  improving source continuity is polish-only and must not be called a visible
+  quality improvement.
+- Use the active quality reference above as the comparison checklist for
+  baseline contact sheet review, first-second hook, subject protection,
+  platform safe-zone, source artifacts, one-package feel, and proof trail.
 
 ### `kr_maker_process`
 
@@ -228,6 +248,8 @@ A future candidate is not a gold sample unless all four layers exist:
 4. Human-visible proof:
    - Actual MP4 path and SHA-256.
    - Contact sheet or phone-sized screenshot.
+   - If a topic-specific QA reference exists, side-by-side comparison against
+     that baseline.
    - First-second hook pass.
    - Source/object proof pass.
    - `stillImageSourcePolicy` pass: generic web stills are support cards only,

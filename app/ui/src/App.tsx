@@ -2,10 +2,12 @@ import { StudioProvider, useStudioState, useStudioActions } from "./context/Stud
 import TopBar from "./components/TopBar";
 import Sidebar from "./components/Sidebar";
 import StoryboardPanel from "./components/StoryboardPanel";
-import ImageCanvas from "./components/ImageCanvas";
-import SourcesPanel from "./components/SourcesPanel";
-import BatchPanel from "./components/BatchPanel";
-import JobsPanel from "./components/JobsPanel";
+import ProductionHomePanel from "./components/ProductionHomePanel";
+import SourcesWorkspacePanel from "./components/SourcesWorkspacePanel";
+import EditWorkspacePanel from "./components/EditWorkspacePanel";
+import ReviewWorkspacePanel from "./components/ReviewWorkspacePanel";
+import AdvancedOpsPanel from "./components/AdvancedOpsPanel";
+import GatesPanel from "./components/GatesPanel";
 import BottomBar from "./components/BottomBar";
 import DebugDrawer from "./components/DebugDrawer";
 import SceneDetailPanel from "./components/SceneDetailPanel";
@@ -16,7 +18,7 @@ function StudioShell() {
   const actions = useStudioActions();
 
   const showRightPanel =
-    activeTab === "storyboard" &&
+    activeTab === "plan" &&
     selectedSceneIndex !== null &&
     draftResult?.scenes?.[selectedSceneIndex] != null;
 
@@ -26,11 +28,13 @@ function StudioShell() {
       <div className="studio-body">
         <Sidebar />
         <main className="main-canvas">
-          {activeTab === "storyboard" && <StoryboardPanel />}
-          {activeTab === "images" && <ImageCanvas />}
-          {activeTab === "sources" && <SourcesPanel />}
-          {activeTab === "batch" && <BatchPanel />}
-          {activeTab === "jobs" && <JobsPanel />}
+          {activeTab === "home" && <ProductionHomePanel />}
+          {activeTab === "topic" && <GatesPanel />}
+          {activeTab === "plan" && <StoryboardPanel />}
+          {activeTab === "sources" && <SourcesWorkspacePanel />}
+          {activeTab === "edit" && <EditWorkspacePanel />}
+          {activeTab === "review" && <ReviewWorkspacePanel />}
+          {activeTab === "advanced" && <AdvancedOpsPanel />}
         </main>
         {showRightPanel && (
           <aside className="right-panel">

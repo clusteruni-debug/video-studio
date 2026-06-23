@@ -111,16 +111,17 @@ export default function Sidebar() {
 
   return (
     <aside className="sidebar">
-      {/* Prompt */}
+      {/* Production seed memo */}
       <div className="sidebar-section">
         <div className="sidebar-field">
-          <span>주제 / 프롬프트</span>
+          <span>소재 메모</span>
           <textarea
             value={prompt}
             onChange={(e) => actions.setPrompt(e.target.value)}
-            placeholder="영상 주제를 입력하세요 (예: 비트코인의 역사)"
+            placeholder="아직 소재가 없으면 비워두고 상단의 소재 탭에서 후보부터 찾으세요."
             rows={3}
           />
+          <small className="sidebar-help-text">검증한 소재의 핵심 질문과 선택 이유를 여기에 붙이면 기획 초안에 반영됩니다.</small>
         </div>
       </div>
 
@@ -145,15 +146,15 @@ export default function Sidebar() {
             </div>
             <dl className="template-guidance-list">
               <div>
-                <dt>layout</dt>
+                <dt>화면 구성</dt>
                 <dd>{templateGuidance.layout}</dd>
               </div>
               <div>
-                <dt>free assets</dt>
+                <dt>사용 소스</dt>
                 <dd>{templateGuidance.assets}</dd>
               </div>
               <div>
-                <dt>avoid</dt>
+                <dt>피할 것</dt>
                 <dd>{templateGuidance.avoid}</dd>
               </div>
             </dl>
@@ -269,7 +270,7 @@ export default function Sidebar() {
         {creating ? (
           <><Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> 생성 중... {elapsed}s</>
         ) : (
-          <><Sparkles size={14} /> 초안 생성</>
+          <><Sparkles size={14} /> 기획 초안 생성</>
         )}
       </button>
 

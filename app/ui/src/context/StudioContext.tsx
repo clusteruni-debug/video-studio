@@ -122,7 +122,7 @@ function grokSourceProvenanceConfirmationRequired(status?: string): boolean {
 
 // ── Tab type ──
 
-export type StudioTab = "storyboard" | "images" | "sources" | "batch" | "jobs";
+export type StudioTab = "home" | "topic" | "plan" | "sources" | "edit" | "review" | "advanced";
 
 // ── State ──
 
@@ -198,7 +198,7 @@ const initialState: StudioState = {
   targetDuration: "30s",
   customInstruction: "",
 
-  activeTab: "storyboard",
+  activeTab: "home",
   selectedSceneIndex: null,
   debugOpen: false,
 

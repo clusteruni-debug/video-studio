@@ -12,6 +12,8 @@ worker/usage/usage.db
 
 # Reference analysis assets
 reference/
+!docs/reference/
+!docs/reference/*.md
 HEdbg0vaEAASMCQ.jpg
 .claude/skills/
 .cache/

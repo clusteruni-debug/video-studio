@@ -62,6 +62,14 @@ from worker.render.foley import (
     infer_procedural_foley_pattern,
     procedural_foley_metadata,
 )
+from worker.render.golden_reference_gate import (
+    evaluate_golden_reference_compliance,
+    write_golden_reference_preflight_report,
+)
+from worker.render.production_packet_lock import (
+    evaluate_active_production_packet_lock,
+    write_active_production_packet_lock_report,
+)
 from worker.render.transitions import build_xfade_filter_complex
 from worker.runtime.windows_tts import synthesize_windows_voiceover
 
@@ -124,6 +132,10 @@ class SmokeRenderResult:
     localMedia: list[dict]
     ttsBackends: list[str] | None = None
     warnings: list[str] | None = None
+    activeProductionPacketLockPath: str = ""
+    activeProductionPacketLock: dict | None = None
+    goldenReferencePreflightPath: str = ""
+    goldenReferencePreflight: dict | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -313,6 +325,100 @@ def compose_smoke_render(
     resolved_project_root = Path(project_root).resolve()
     resolved_manifest_path = Path(manifest_path).resolve()
     manifest = load_manifest(resolved_manifest_path)
+    render_dir = resolved_project_root / manifest["renderDir"]
+    render_dir.mkdir(parents=True, exist_ok=True)
+    subtitle_file_path = resolved_project_root / manifest["subtitleFilePath"]
+    concat_file_path = resolved_project_root / manifest["concatFilePath"]
+    output_path = resolved_project_root / manifest["outputPath"]
+    log_path = render_dir / "ffmpeg-smoke.log"
+    active_lock = evaluate_active_production_packet_lock(
+        manifest,
+        project_root=resolved_project_root,
+        manifest_path=resolved_manifest_path,
+    )
+    active_lock_path = ""
+    if active_lock.get("required") is True:
+        active_lock_path = write_active_production_packet_lock_report(
+            active_lock,
+            render_dir / "active-production-packet-lock.json",
+        )
+    if active_lock.get("renderAllowed") is False:
+        write_text(
+            log_path,
+            "\n".join([
+                f"project_id={manifest['projectId']}",
+                f"manifest={resolved_manifest_path}",
+                "render_status=blocked_by_active_production_packet_lock",
+                f"active_production_packet_lock={active_lock_path}",
+                f"failed_checks={','.join(active_lock.get('failedChecks') or [])}",
+                "",
+            ]),
+        )
+        return SmokeRenderResult(
+            ok=False,
+            projectId=manifest["projectId"],
+            manifestPath=str(resolved_manifest_path),
+            outputPath=str(output_path),
+            concatFilePath=str(concat_file_path),
+            subtitleFilePath=str(subtitle_file_path),
+            logPath=str(log_path),
+            ffmpeg={"ready": None, "detail": "not checked; active production packet lock blocked render"},
+            sceneClipPaths=[],
+            localMediaPlanPath="",
+            localMediaReportPath="",
+            qualityReportPath="",
+            qualityReport=None,
+            localMediaSummary={},
+            localMedia=[],
+            warnings=["active production packet lock blocked render"],
+            activeProductionPacketLockPath=active_lock_path,
+            activeProductionPacketLock=active_lock,
+        )
+    preflight = evaluate_golden_reference_compliance(
+        manifest,
+        project_root=resolved_project_root,
+        manifest_path=resolved_manifest_path,
+    )
+    preflight_path = ""
+    if preflight.get("required") is True:
+        preflight_path = write_golden_reference_preflight_report(
+            preflight,
+            render_dir / "golden-reference-preflight.json",
+        )
+    if preflight.get("renderAllowed") is False:
+        write_text(
+            log_path,
+            "\n".join([
+                f"project_id={manifest['projectId']}",
+                f"manifest={resolved_manifest_path}",
+                "render_status=blocked_by_golden_reference_preflight",
+                f"golden_reference_preflight={preflight_path}",
+                f"failed_checks={','.join(preflight.get('failedChecks') or [])}",
+                "",
+            ]),
+        )
+        return SmokeRenderResult(
+            ok=False,
+            projectId=manifest["projectId"],
+            manifestPath=str(resolved_manifest_path),
+            outputPath=str(output_path),
+            concatFilePath=str(concat_file_path),
+            subtitleFilePath=str(subtitle_file_path),
+            logPath=str(log_path),
+            ffmpeg={"ready": None, "detail": "not checked; golden-reference preflight blocked render"},
+            sceneClipPaths=[],
+            localMediaPlanPath="",
+            localMediaReportPath="",
+            qualityReportPath="",
+            qualityReport=None,
+            localMediaSummary={},
+            localMedia=[],
+            warnings=["golden-reference preflight blocked render"],
+            activeProductionPacketLockPath=active_lock_path,
+            activeProductionPacketLock=active_lock if active_lock.get("required") is True else None,
+            goldenReferencePreflightPath=preflight_path,
+            goldenReferencePreflight=preflight,
+        )
     local_media_plan = write_local_media_plan(
         manifest=manifest,
         manifest_path=resolved_manifest_path,
@@ -320,13 +426,6 @@ def compose_smoke_render(
     )
 
     ffmpeg_path, ffmpeg_info = resolve_ffmpeg_executable(resolved_project_root)
-
-    render_dir = resolved_project_root / manifest["renderDir"]
-    render_dir.mkdir(parents=True, exist_ok=True)
-    subtitle_file_path = resolved_project_root / manifest["subtitleFilePath"]
-    concat_file_path = resolved_project_root / manifest["concatFilePath"]
-    output_path = resolved_project_root / manifest["outputPath"]
-    log_path = render_dir / "ffmpeg-smoke.log"
 
     transition_type, transition_duration = get_manifest_transition(manifest)
 
@@ -890,6 +989,10 @@ def compose_smoke_render(
         localMedia=local_media_payload,
         ttsBackends=sorted(tts_backends_used) if tts_backends_used else None,
         warnings=render_warnings if render_warnings else None,
+        activeProductionPacketLockPath=active_lock_path,
+        activeProductionPacketLock=active_lock if active_lock.get("required") is True else None,
+        goldenReferencePreflightPath=preflight_path,
+        goldenReferencePreflight=preflight if preflight.get("required") is True else None,
     )
 
 
@@ -927,7 +1030,7 @@ def main() -> int:
     result = compose_smoke_render(manifest_path=manifest_path, project_root=project_root)
     # CLI stdout contract: JSON-only output so shell callers can pipe into jq.
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
-    return 0
+    return 0 if result.ok else 2
 
 
 if __name__ == "__main__":

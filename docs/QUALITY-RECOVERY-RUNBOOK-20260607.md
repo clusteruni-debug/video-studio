@@ -1,8 +1,8 @@
 # Video Studio Quality Recovery Runbook
 
-Status: active execution plan  
-Created: 2026-06-07  
-Scope: Video Studio AI Web Companion, Grok/Gemini browser handoffs, prompt compiler, source recovery, zero-paid voice, and publish-quality gates  
+Status: active execution plan
+Created: 2026-06-07
+Scope: Video Studio AI Web Companion, Grok/Gemini browser handoffs, prompt compiler, source recovery, zero-paid voice, and publish-quality gates
 Policy: zero-paid by default; no xAI/Gemini paid API calls; no DB/schema/dependency changes without explicit approval
 
 ## Purpose
@@ -456,6 +456,27 @@ It should continue as follows:
 
 Important current gap:
 - Extension-only recovery remains useful for diagnostics, but production progress is blocked by missing Grok browser-control MP4 generation/import proof, not by missing extension reload proof.
+
+## Topic-To-Source Work Order 2026-06-22
+
+The `Topic` dashboard stage now creates a candidate-specific verification
+worklist before any storyboard, Grok, Gemini, or CapCut work starts.
+
+1. Select a ranked topic candidate.
+2. Open its search, trend, video, and community verification links.
+3. Record operator-confirmed URLs and observations into `sourceLedger`; the
+   research links alone are only a worklist.
+4. Run the topic-discovery gate. If it passes, the dashboard prepares the
+   longform dry-run packet from the same topic packet.
+5. Run the longform dry-run gate before storyboard/source-prompt-bible work.
+6. Only after both gates pass should Gemini reference-image prompts or Grok raw
+   video prompts be generated.
+7. CapCut remains an editable timeline/export surface, not proof of a better
+   edit by itself. Automatic CapCut export still requires explicit dependency
+   approval and a separate live UI automation proof.
+
+This sequence is the safe path for the 12-item backlog: source evidence first,
+longform readiness second, browser generation third, edit/export proof last.
 
 ## Code-Level Next Work Order
 

@@ -503,6 +503,555 @@ Runtime enforcement:
   `asset-candidate-review.json`, and `accepted-source-map.json`, so another
   session cannot start a new source/render loop without seeing the ratchet.
 
+### 6.7 Opening, BGM, Bridge, And Payoff Gate
+
+Reference-styled renders must not start with a black screen, a title card, or a
+caption-only frame. The first frame needs the real source object/action visible;
+caption text may support the frame but cannot be the frame.
+
+`worker/render/golden_reference_gate.py` enforces an
+`openingAudioContinuity` manifest object before FFmpeg runs. Passing manifests
+must provide:
+
+- `coldOpen.firstFrameHasPrimaryVisual=true`.
+- `coldOpen.firstFrameIsBlack=false`.
+- `coldOpen.captionOnlyOpening=false` and
+  `coldOpen.firstFrameHasOnlySubtitleOrText=false`.
+- `coldOpen.blackScreenStartSec<=0.08`.
+- `coldOpen.firstVisibleActionSec<=0.60`.
+- `coldOpen.firstTwoSecReviewPath` pointing to local first-2s visual evidence.
+- `audioBed.bgmPresent=true`, `bgmAudibleUnderVoice=true`,
+  `introBgmAudible=true`, `outroBgmTailAudible=true`, and
+  `bgmNonPlaceholder=true`.
+- `audioBed.bgmMeanVolumeDb` between `-34.0` and `-10.0` dB for the BGM evidence
+  layer. This is not final loudness; it proves the bed was not erased.
+- `audioBed.audioMixEvidencePath` pointing to local mix evidence.
+- `ttsAlignment.required=true` and `ttsAlignment.timelineReviewed=true`.
+- `ttsAlignment.voiceQuality.required=true`. The default approved free provider
+  is `edge-tts` with a Korean Neural voice such as `ko-KR-SunHiNeural` or
+  `ko-KR-InJoonNeural`.
+- `ttsAlignment.voiceQuality.voiceNaturalnessReviewed=true`,
+  `speechRateReviewed=true`, `fallbackUsed=false`, and
+  `perceivedRoboticOrSapi=false`.
+- `ttsAlignment.voiceQuality.candidateComparisonPath` must point to local
+  voice-candidate evidence. A self-claimed provider name is not enough.
+- Azure Speech F0, MeloTTS, or human-recorded voice can replace `edge-tts` only
+  when `candidateEvaluationStatus=approved` or an explicit provider exception
+  is recorded. Otherwise the default remains `edge-tts`.
+- Azure Speech F0 is explicit operator opt-in only, not a zero-paid default.
+  The free neural-character allowance does not remove the Azure account,
+  card/key, and pay-as-you-go management boundary.
+- `ttsAlignment.voiceQuality.ratePercent` must stay within `-18` to `+12` for
+  Korean reference narration unless a future spec revision records a better
+  phone-review range.
+- `ttsAlignment.timelineDurationSec` must be positive, and TTS duration/span
+  must be provided by `narrationDurationSec`, `voiceTimelineSpanSec`, or a
+  measurable local WAV path such as `narrationAudioPath`.
+- TTS duration/span and `narrationEndSec` must not exceed the video timeline.
+  A render like 26.09s of narration inside a 24.20s MP4 is an automatic fail,
+  regardless of the claimed score.
+- `ttsAlignment.allVoiceLinesComplete=true`,
+  `finalSpokenLineComplete=true`, `finalCaptionCoversFinalVoiceLine=true`, and
+  `captionsDoNotAdvanceBeforeVoice=true`.
+- `ttsAlignment.voiceEndsBeforeVideoEndSec>=0.35`,
+  `maxCaptionVoiceDesyncSec<=0.65`, and `maxSceneVoiceOverflowSec<=0.25`.
+- `ttsAlignment.sceneTimings[]` must cover every scene with `sceneEndSec`,
+  `voiceEndSec`, and `captionEndSec`. Voice cannot continue more than 0.25s
+  after a scene cut, and captions cannot disappear more than 0.45s before the
+  corresponding voice line ends.
+- `audioBridges[]` with one bridge per scene transition. Each bridge must use
+  `j-cut`, `l-cut`, `crossfade`, `acrossfade`, or `sound-bridge`, and
+  `durationSec>=0.20`.
+- `payoffTail.finalBeatHasVisualResolution=true`.
+- `payoffTail.endingIsBlank=false`, `blankOutroSec<=0.15`,
+  `finalVisualHoldSec>=0.60`, `finalBgmTailSec>=0.60`, and
+  `finalAudioFadeSec>=0.50`.
+- `payoffTail.finalTwoSecReviewPath` pointing to local ending evidence.
+
+Forbidden shortcuts:
+
+- A black frame with only subtitles at the start.
+- A title-card or text-only first beat for object/process/curiosity videos.
+- Lavfi/sine/noise/silent placeholder assets counted as BGM.
+- Hard audio cuts between scenes when the video claims reference edit grammar.
+- TTS that keeps speaking after the scene/caption has already moved on.
+- Windows SAPI/Desktop voices, including `Microsoft Heami Desktop` and
+  `System.Speech`, in any golden/reference render. They are allowed only for
+  throwaway smoke checks and cannot satisfy `voiceQuality`.
+- Final answer narration that is cut off or only partially captioned.
+- Empty outro padding after the answer. The ending tail must hold the visible
+  answer while the audio resolves.
+
+### 6.8 Global Post-Edit Golden Reference Gate
+
+This gate is global, not packet-specific. Any manifest that declares
+`referenceStylePreset`, `goldenReferenceComplianceRequired=true`, or
+`referenceComplianceRequired=true` must include a `postEditGoldenReference`
+object before FFmpeg runs. Source quality remains mandatory, but post-edit
+quality is a separate contract and cannot be waived by saying "better sources
+will fix it."
+
+Global gates must not encode topic-specific objects such as a specific product,
+prop, location, body part, or incident. Project prompt bibles provide those
+concrete anchors. The global gate only knows generic slots:
+`primarySubject`, `actorOrManipulator`, `environment`, `primaryAction`,
+`camera`, `lighting`, and `style`.
+
+`worker/render/golden_reference_gate.py` enforces:
+
+- `postEditGoldenReference.required=true`.
+- Top-level `sourceSequenceContinuity.required=true` for multi-source renders.
+  It must use generic continuity slots and score `entityContinuity`,
+  `environmentContinuity`, `actionContinuity`, `cameraContinuity`,
+  `lightingContinuity`, `styleContinuity`, and `repairability`.
+- Every scene must include `sourceQualityRubric.required=true`. Its generic
+  source-take dimensions are `promptIntentFit`, `primarySubjectIntegrity`,
+  `actorOrManipulatorIntegrity`, `actionReadability`, `physicalPlausibility`,
+  `cameraGrammar`, `lightingColorNaturalness`, `temporalStability`,
+  `aiArtifactControl`, and `editability`.
+- `sourceSequenceContinuity.topicSpecificCriteriaInGlobalGate=true` or
+  `sourceQualityRubric.topicSpecificCriteriaInGlobalGate=true` is rejected.
+- `referenceBasis[]` must include current reusable reference anchors:
+  YouTube Shorts editing/tooling practice, TikTok Creative Center Top Ads or
+  equivalent high-performing vertical examples, first-3s hook-period evidence,
+  and short-form accessibility/cognitive-load evidence.
+- `score.overall>=score.minOverall`; default minimum is `72`.
+- `score.dimensions` must use the generic 10-part rubric:
+  `sourceTakeQuality`, `sourceSequenceContinuity`, `hookClarity`,
+  `storyPayoff`, `copyTtsQuality`, `captionAccessibility`, `editRhythm`,
+  `audioMix`, `colorTechnicalQuality`, and `platformReferenceFit`.
+- Each dimension must be at least `score.minDimension`; default minimum is `60`.
+- Required evidence paths must exist:
+  `firstThreeSecReviewPath`, `captionSafeZoneEvidencePath`,
+  `audioMixEvidencePath`, `colorMatchEvidencePath`, `finalTwoSecReviewPath`,
+  and `scoringReviewPath`.
+- `scoringReviewPath` must use schema `video-studio.post-edit-score.v1`.
+  Its `computedScore` and the manifest `score` must match the score derived by
+  `worker/render/golden_reference_gate.py` from source take dimensions, source
+  sequence continuity, hook, payoff, copy/TTS, captions, rhythm, audio, color,
+  and platform reference checks. A manifest and evidence file that simply type
+  the same inflated number fail when they do not match the gate-derived result.
+
+Required subcontracts:
+
+- `hook`: first 3 seconds must contain the primary visual, motion/action, an
+  audible audio bed, and a clear viewer question. First caption must appear
+  after source visibility and by `1.25s`.
+- `captions`: max 2 lines, max 28 chars per caption, stable safe-zone system,
+  no main-subject occlusion, timeline reviewed, and max screen area ratio
+  `<=0.18`.
+- `layoutHud`: web-referenced layout/HUD contract. It must include YouTube
+  Shorts text/timeline/voiceover/filter references, TikTok Creative Center Top
+  Ads reference, WCAG contrast/caption accessibility reference, and timed-text
+  line treatment reference. Required values:
+  - `safeZone.platformUiReviewed=true`, `subjectOcclusion=false`,
+    `topReservedPx>=96`, `bottomReservedPx>=240`, and `rightReservedPx>=96`.
+  - `typography.hookFontSizePx` between `54` and `74`;
+    `typography.bodyFontSizePx` between `44` and `60`.
+  - `typography.lineCountMax<=2`, `lineLengthMaxKorean<=16`,
+    `textContrastRatio>=4.5`, and `boxOpacity` between `0.28` and `0.62`.
+  - `hud.mode` must be `none`, `minimal-frame`, or `soft-frame`;
+    `hud.opacity<=0.10`, `hud.screenAreaRatio<=0.025`, and no HUD text labels
+    or debug marks.
+  - `transitions.purposeDeclaredPerCut=true`, `beatAligned=true`,
+    `decorativeOnlyTransitions=false`, and `maxTransitionDurationSec<=0.36`.
+- `editorialDirection`: web-referenced post-source direction grammar. It is
+  required before CapCut handoff, external edit elements, or final scoring can
+  claim post-edit quality. Required values:
+  - `required=true`.
+  - `referenceBasis[]` must include YouTube Shorts, CapCut caption/sound tools,
+    sound-design/SFX matching, short-form accessibility, and continuity-editing
+    references.
+  - `evidence.directingPlanPath` must be valid UTF-8 JSON with schema
+    `video-studio.editorial-pass.v1` and pass/reviewed-pass status.
+    It must include `shotIntentMap[]`, `motivatedCutPlan[]`,
+    `captionPlan[]`, `ttsSegments[]`, and `audioCueSheet[]` evidence.
+    The evidence arrays must match the manifest contract's scene IDs, cut
+    fields, caption cues, TTS segments, and audio cue fields; stale or
+    partially copied plan JSON is rejected.
+  - `evidence.referenceComparisonPath` must be valid UTF-8 JSON with schema
+    `video-studio.reference-comparison.v1`, at least two external references,
+    `noHudAbReviewed=true`, and `editImprovesComprehensionOverNoHud=true`.
+  - `phoneReviewPath` and `noHudComparisonPath` must be local image/video
+    review evidence, not empty placeholder files.
+  - `shotIntentMap[]` must exactly match `manifest.scenes[]` scene ID order and
+    include `role`, `viewerQuestionOrAnswer`, `visibleEvent`, `focusTarget`,
+    `sourceEventReadable=true`, `subjectProtected=true`, and
+    `captionExplainsMissingVisual=false`.
+  - `motivatedCutPlan[]` must cover every cut. Allowed `cutReason` values are
+    `match-action`, `new-information`, `spatial-reorientation`, `payoff`,
+    `rhythm`, `audio-bridge`, or `continuity-bridge`; `unmotivatedHoldSec`
+    must be `0`. Each cut must include `fromSceneId`, `toSceneId`, and
+    `cutAtSec` matching the adjacent manifest scene boundary.
+  - `audioVisualBinding.everyCueBoundToVisibleEvent=true`,
+    `unrelatedAudioCues=false`, `maxSyncOffsetSec<=0.20`, and
+    `minimumSfxCueCount=0`. SFX/foley/transition hits must name the visible
+    `sourceEvent` they support, bind to a manifest `sceneId`, include
+    `startSec`, and include `auditOperationId` so the CapCut draft audit can
+    prove the cue was realized.
+  - `captionPerformance.notTtsDuplicate=true`, `timelineReviewed=true`,
+    `safeZoneReviewed=true`, `subjectOcclusion=false`,
+    `captionExplainsMissingVisual=false`, `maxLines<=2`, and
+    `maxCharsPerCaption<=24`. It must include timed caption cues and matching
+    TTS segments for every scene; caption/TTS start and end times must stay
+    within `0.30s`, and caption text must not duplicate the TTS line.
+  - `continuityMap.continuitySlots[]` must include `primarySubject`,
+    `actorOrManipulator`, `environment`, `primaryAction`, `camera`,
+    `lighting`, and `audio`; `adjacentContinuityPassRatio>=0.80`; subject
+    identity drift, subject scale jumps, and unexplained camera-world jumps are
+    false.
+  - `restraintMode.effectsAreOptional=true`,
+    `effectCountIsNotQuality=true`, `symbolCuesDefault=false`, and
+    `noGeneratedStickerPresetSpray=true`.
+  - `referenceComparison.comparedAgainstExternalReferences>=2`,
+    `noHudAbReviewed=true`, and `editImprovesComprehensionOverNoHud=true`.
+- `externalEditElements`: web-referenced external edit-element layer. It is
+  separate from captions, HUD/frame, source quality, TTS, and BGM. Required
+  values:
+  - `required=true`.
+  - `referenceBasis[]` must include YouTube Shorts, TikTok, motion-continuity,
+    and WCAG anchors.
+  - `layerPurpose.editorialFunctionDeclared=true`,
+    `supportsNarrativeBeats=true`, `decorativeOnly=false`, and
+    `sourceReplacementClaim=false`.
+  - `elementTypes[]` must declare at least two allowed reusable types such as
+    `keyword-emphasis`, `pointer-line`, `callout`, `motion-graphic`,
+    `sticker`, `beat-sync`, `sfx-hit`, `match-cut-assist`, or
+    `freeze-hold`.
+  - `safety.platformSafeZoneReviewed=true`, `subjectOcclusion=false`,
+    `debugOrEditorLabels=false`, `rapidFlashes=false`,
+    `reducedMotionSafe=true`, and `templateLook=false`.
+  - `safety.maxScreenAreaRatio<=0.14`, `maxOpacity<=0.78`, and
+    `maxFlashPerSecond<=3`.
+  - `perceptualSalience.recognizableSymbolRequired=false`,
+    `semanticCueMatchesNarration=true`, `viewerCanNameCueAfterOneWatch=true`,
+    `sourceEventBindingRequired=true`,
+    `everyCueBoundToVisibleSourceEvent=true`,
+    `effectCountIsNotQuality=true`, and `symbolCuesDefault=false`.
+  - `perceptualSalience.minVisualCueScreenAreaRatio>=0.012` and
+    `minCueOpacity>=0.50`.
+  - When the layer declares `containsWarningOrNegativeAction=true`, it must
+    also set `warningBeatSourceEventBound=true` and include a `warning-no`
+    semantic role element bound to a visible source event.
+  - When the layer declares `containsPositiveResolution=true`, it must set
+    `positiveResolutionSourceEventBound=true` and include a `safe-resolution`
+    semantic role element bound to a visible source event.
+  - `perScenePlan[]` must cover every scene. At least two scenes must actively
+    use external elements when the video has two or more scenes. The scene IDs
+    and order must exactly match `manifest.scenes[]`, including clean
+    editorial mode where every scene only records a no-element reason.
+  - Each element must include `type`, `purpose`, `startSec`, `endSec`,
+    `screenAreaRatio`, `opacity`, `semanticRole`, `sourceEvent`,
+    `bindingMode`, `semanticCueMatchesNarration=true`,
+    `subjectOcclusion=false`, and `decorativeOnly=false`.
+  - Symbolic X/OK/check cues require `manualExceptionApproved=true`, a visible
+    `sourceEvent`, and `whySymbolBeatsCleanerEdit`; they are never the default
+    edit language.
+  - Each element duration must stay `<=2.40s`.
+  - `evidence.editElementPlanPath` and a phone/visual preview evidence path
+    must exist locally before render.
+- `capcutHandoff`: required for every golden/reference post-edit candidate.
+  FFmpeg output is only a preview until a CapCut draft exists and is reviewed.
+  Required values:
+  - `required=true`, `draftRequired=true`, and
+    `pipelineMode` is `capcut-draft-first` or `capcut-review-handoff`.
+  - `referenceBasis[]` must include CapCut keyframes, CapCut captions, YouTube
+    Shorts timeline editing, TikTok Top Ads reference comparison, easing/motion
+    timing, CapCut native effects/templates/SFX references, and VectCutAPI draft
+    automation.
+  - `capcutIsPrimaryEditSurface=true`, `ffmpegPreviewOnly=true`, and
+    `ffmpegOnlyAllowed=false`.
+  - `manualExportRequired=true` and `humanReviewBeforeUpload=true`.
+  - `editableTextAndTiming=true` so captions/timing can still be corrected in
+    CapCut instead of being burned into a brittle FFmpeg-only render.
+  - `motionDesignedEditElements=true`; raw debug-looking `drawbox`/`drawtext`
+    overlays are not enough for high-quality candidates.
+  - `automationSurface.tool` must be `VectCutAPI`, `pyJianYingDraft`, or an
+    equivalent CapCut draft automation path. `targetEditor` must be CapCut,
+    `draftFormat` must be `draft_content.json`, and local draft root, CapCut
+    install, operator export, and FFmpeg-preview-only status must be verified.
+  - `editModel` must keep the edit multitrack and editable: text/timing,
+    captions, audio levels, and motion elements cannot be flattened before
+    CapCut review. It must also set `nativeCapCutEffectsRequired=true`,
+    `editElementsUseNonTextVisuals=true`, and `extraTextCalloutsAllowed=false`
+    for final-quality edit layers; repeated subtitle-like callouts are not a
+    valid effect pass.
+  - `effectPass` is required. Default mode is
+    `clean-editorial-no-canned-effects`: generated stock/native CapCut effects,
+    generated visual overlays, random SFX hits, and preset spray are disabled.
+    In this mode `usesNativeCapCutEffects=false`, `nativeEffectsDisabled=true`,
+    `cannedEffectsRejected=true`, `effectTrackCount=0`, and
+    `maxEffectTracks=0`.
+  - Manually reviewed effects mode is a later explicit exception, not the
+    default. If a human selects an effect preset, `effectPass` must describe the
+    visual source-action/on-screen-cue/audio-hit binding and stay under a strict
+    upper bound.
+  - `motionDesign` must use keyframes, easing or speed curves, at least two
+    keyframed elements, no raw `drawbox`/`drawtext` final overlays, and
+    restrained short motion between `83ms` and `400ms`.
+  - `mediaLinked.sourceVideoTracks`, `ttsTracks`, `bgmTrack`, and
+    `captionTracks` must be true. `editElementTracks` and `effectTracks` are
+    required only when the manifest declares active external edit elements or
+    a manually reviewed effect pass. `sfxTracks` must be true when the
+    editorial/audio plan declares SFX, foley, or transition-hit cues.
+  - `draftPath`, `draftContentPath`, and `draftAuditPath` must exist locally.
+    `draftContentPath` must be valid JSON. `draftAuditPath` must be valid JSON
+    with schema `video-studio.capcut-draft-audit.v1`, an `operations[]` list,
+    and keyframe/track counts that satisfy the manifest's motion and media
+    claims.
+    The gate parses `draft_content.json` and requires non-empty tracks,
+    source-video segments, audio segments for TTS/BGM claims, text segments for
+    caption claims, and exported video keyframes. Audit `trackCounts` and
+    keyframe totals must match the draft JSON, and audit operations must back
+    source motion, TTS, BGM, captions, and SFX claims.
+  - In clean editorial mode, `effectTracks=0` and
+    `editElementVisualLayers=0` must be proven by the draft audit. If active
+    external edit elements are declared, `mediaLinked.editElementTracks=true`
+    and the audit's `editElementVisualLayers` count must cover the planned
+    elements.
+  - `roundTripStatus` must be `draft-created`, `operator-review-required`, or
+    `export-reviewed`.
+- `rhythm`: action beats aligned to cuts, no hard jump without bridge,
+  `minShotHoldSec>=1.10`, `maxDeadAirSec<=0.65`, and transition count covers
+  every scene transition.
+- `audio`: ducking applied, BGM continuous, source ambience or foley present,
+  speech/BGM separation reviewed, and full mix mean between `-24dB` and `-12dB`.
+- `color`: one grade applied to all scenes, no unmotivated flashes,
+  `maxLumaDelta<=0.30`, and `maxSaturationDelta<=0.30`.
+- `payoff`: final answer resolves the question, no new information in the last
+  second, `finalVisualHoldSec>=1.00`, and `finalAudioTailSec>=0.70`.
+
+### 6.9 Global Korean Copy, Caption, And TTS Naturalness Gate
+
+This gate is global for Korean reference/golden renders. It is not specific to
+any packet, topic, object, product, or location. Korean copy quality must pass
+before later tuning of caption position, motion direction, font size, layout
+variants, HUD, or frame overlays.
+
+`worker/render/golden_reference_gate.py` enforces this inside each scene's
+`copyTone` and `ttsScriptQuality` checks:
+
+- Captions must read like natural Korean viewer copy, not literal keyword
+  labels. Reject examples are language-smell seeds, not topic criteria:
+  awkward compound labels, literal translated answer labels, broken condition
+  phrases, and bare action nouns such as `답은 보관 시간` or `그냥 피하기`.
+- Caption lines may be short, but they must carry a natural phrase, question,
+  condition, or action. Bare noun-label lines are rejected even when the nouns
+  are factually related to the topic.
+- TTS scripts must read naturally when spoken aloud. They need Korean sentence
+  endings such as `-요`, `-까요`, `-세요`, `-예요`, or equivalent natural spoken
+  endings.
+- TTS may add context, but it must not merely repeat the caption, sound like a
+  report, or use over-friendly AI-host phrases.
+- Korean copy review comes before layout/HUD review. A clean HUD cannot
+  compensate for awkward Korean.
+
+### 6.10 Global Caption Layout, Motion Direction, Size, And HUD Reference Gate
+
+This gate locks the non-source visual treatment. It exists because source-level
+unity is not enough: bad Korean captions, oversized boxes, arbitrary HUD labels,
+and decorative transitions can make a usable source feel amateur.
+
+Reference anchors consulted on 2026-06-20:
+
+- YouTube Help, "Shorts editing tips":
+  `https://support.google.com/youtube/answer/13380879`.
+  Use sound, text, voiceover, filters, and timeline review deliberately; text
+  can provide context through fast edits and the timeline must be checked before
+  publishing.
+- TikTok Creative Center Top Ads:
+  `https://ads.tiktok.com/business/creativecenter/inspiration/topads/pc/en`.
+  Compare against high-performing vertical ad examples rather than internal
+  taste.
+- WCAG 2.2:
+  `https://www.w3.org/TR/WCAG22/`. Text contrast needs a minimum 4.5:1 ratio
+  for normal text, and captions are part of time-based media accessibility.
+- Netflix timed text guidance:
+  `https://partnerhelp.netflixstudios.com/hc/en-us/articles/217350977-English-USA-Timed-Text-Style-Guide`.
+  Maximum two lines, controlled line length, and reading speed constraints are
+  the floor for caption readability.
+
+The resulting production rule:
+
+- Captions are editorial beats, not labels. One active caption block at a time.
+- Caption boxes must be smaller than the previous V4.1 style and must not cover
+  the primary subject, actor/manipulator, or primary action.
+- The bottom platform/UI area remains clear; avoid putting captions into the
+  bottom rail unless a scene-specific phone review proves it is safe.
+- HUD/frame treatment is optional and must be nearly invisible. No `REC`, scene
+  labels, debug marks, guide lines, or editor-like labels.
+- Transitions need an editorial reason: condition shift, location shift, action
+  answer, or payoff. Decorative wipes and big full-screen cards are not default
+  grammar.
+
+Use the score as a ratchet:
+
+- `60-69`: reviewable but not golden; source or edit grammar still visibly weak.
+- `70-79`: acceptable draft candidate; needs human full-watch before upload.
+- `80-89`: strong channel candidate; only minor source/polish caveats remain.
+- `90+`: gold sample candidate; reusable as future reference evidence.
+
+### 6.11 Global External Edit Elements Layer Gate
+
+This gate locks the extra editing layer beyond camera zooms, pans, captions,
+TTS, BGM, and the minimal HUD/frame. It exists because a video can pass source
+continuity but still feel empty, flat, or amateur when no editorial emphasis,
+callout, beat cue, or continuity assist exists. It can also fail in the other
+direction when stickers, debug labels, guide lines, or decorative motion cover
+the source.
+
+The gate is about implementation, not paperwork. A line that is too subtle for
+the viewer to notice is a failure even if the manifest has a plan and a purpose
+field. The viewer must be able to name the cue after one watch, for example
+`red X`, `warning pulse`, `safe check`, `answer highlight`, or `beat marker`.
+
+Reference history is persisted in
+`docs/reference/external-edit-elements.md`. The current 2026-06-20 anchors are:
+
+- YouTube Blog, "New creation tools coming to YouTube Shorts":
+  `https://blog.youtube/news-and-events/new-creation-tools-youtube-shorts-2025/`.
+  Use clip timing, timed text, music, beat sync, templates, effects, and
+  stickers as edit tools, not random decoration.
+- YouTube Help, "Shorts editing tips":
+  `https://support.google.com/youtube/answer/13380879`.
+  Text and timeline controls must guide viewers through fast edits and be
+  reviewed before publishing.
+- YouTube Help, "Enhance your Shorts":
+  `https://support.google.com/youtube/answer/16215842`.
+  Visual guides, stickers, text, timeline editor, beat sync, music, and
+  voiceover all imply deliberate placement and timing.
+- TikTok Creative Center Top Ads:
+  `https://ads.tiktok.com/business/creativecenter/inspiration/topads/pc/en`.
+  External edit density should be compared with high-performing vertical
+  examples, not internal taste alone.
+- Microsoft Learn connected animation:
+  `https://learn.microsoft.com/en-us/windows/apps/develop/motion/connected-animation`.
+  Motion should maintain context and draw focus to shared content across a
+  change.
+- WCAG 2.2:
+  `https://www.w3.org/TR/WCAG22/`.
+  Flash and motion safety are hard constraints, not polish preferences.
+
+Runtime enforcement:
+
+- `worker/render/golden_reference_gate.py` fails golden/reference manifests
+  without `postEditGoldenReference.editorialDirection`.
+- `editorialDirection` must prove shot intent, motivated cuts, source-bound
+  audio cues, caption performance, continuity, restraint, and reference
+  comparison before CapCut handoff or external edit elements can be used as
+  quality evidence.
+- SFX/effect counts are not quality floors. A candidate with zero generated
+  external effects can pass when the no-effect direction is intentional and
+  evidenced; a candidate with many effects fails when they are not bound to
+  visible source events.
+- Symbolic X/OK/check cues are high-risk exceptions. The default gate rejects
+  symbolic-cue defaults and requires manual exception evidence when a symbol is
+  used.
+- `worker/render/golden_reference_gate.py` fails golden/reference manifests
+  without `postEditGoldenReference.externalEditElements`.
+- External elements must be timed per scene and evidenced by both an edit plan
+  artifact and a phone/visual preview artifact.
+- External elements must include perceptual salience: narration/caption
+  semantic match, viewer-nameable cue, source-event binding, and minimum
+  visible area/opacity.
+- Warning/negative-action and positive-resolution beats require visible
+  source-event binding, not default symbolic marks.
+- The gate is generic. It rejects
+  `topicSpecificCriteriaInGlobalGate=true` so future topics do not overfit this
+  bottled-water example.
+- The layer is not allowed to claim source replacement. If source quality is
+  weak, source acceptance must still fail or stay caveated.
+
+### 6.12 CapCut Handoff Gate
+
+FFmpeg-only rendering is useful for fast previews, automated contact sheets,
+decode checks, and regression proof. It is not the default final-quality path
+for Shorts/TikTok/Reels candidates that claim golden/reference post-edit
+quality. The production path is:
+
+1. Generate/import source clips, TTS, BGM, SFX, captions, and edit-element plan.
+2. Build a CapCut draft with editable tracks.
+3. Open/review the draft in CapCut.
+4. Export from CapCut.
+5. Run final MP4 verification on the exported file.
+
+Reference history is persisted in
+`docs/reference/capcut-automation.md`. The current 2026-06-20 anchors are:
+
+- CapCut keyframe animation:
+  `https://www.capcut.com/tools/keyframe-animation`.
+  Motion must remain editable as keyframes with position, scale, rotation,
+  opacity, color, and speed/easing controls.
+- CapCut auto caption generator:
+  `https://www.capcut.com/tools/auto-caption-generator`.
+  Caption text, timing, style, and sync must remain editable in the editor.
+- CapCut online video editor:
+  `https://www.capcut.com/tools/online-video-editor`.
+  Effects, transitions, filters, stickers, audio, and text are timeline-level
+  edit surfaces; effect claims need editable timeline evidence.
+- CapCut video effect and filter:
+  `https://www.capcut.com/tools/video-effect-and-filter`.
+  Effects, filters, transitions, and animations should be chosen by purpose:
+  focus, warning, impact, atmosphere, or transition. For generated drafts, the
+  default is no stock effects because canned presets can read as unrelated.
+- CapCut effects templates:
+  `https://www.capcut.com/template/effects`.
+  Common reusable effect language includes flash, glitch, smooth motion, light
+  leak, grain, and HUD-style overlays layered to beat and scene intent. These
+  are not automatic quality markers; generated preset spray is rejected.
+- CapCut sound effects:
+  `https://www.capcut.com/tools/sound-effects`.
+  SFX should match motion, transitions, scene changes, tone, and pacing. Random
+  whooshes or beeps without a visible event are rejected.
+- YouTube Help, "Enhance your Shorts":
+  `https://support.google.com/youtube/answer/16215842`.
+  Shorts editing is a timeline of video, text, stickers, music, voiceover,
+  TTS, beat sync, and platform-safe placement.
+- YouTube Help, "Shorts editing tips":
+  `https://support.google.com/youtube/answer/13380879`.
+  Sound and text guide fast edits; timeline review is part of quality.
+- TikTok Creative Center Top Ads:
+  `https://ads.tiktok.com/business/creativecenter/inspiration/topads/pc/en`.
+  Edit density and execution should be compared with high-performing vertical
+  examples.
+- Microsoft Learn connected animation and timing/easing:
+  `https://learn.microsoft.com/en-us/windows/apps/develop/motion/connected-animation`
+  and
+  `https://learn.microsoft.com/en-us/windows/apps/design/motion/timing-and-easing`.
+  Motion should preserve context, guide attention, and avoid raw linear motion.
+- VectCutAPI:
+  `https://github.com/sun-guannan/VectCutAPI`.
+  The automation path must create editable CapCut/Jianying-style drafts, not
+  only a flattened FFmpeg output.
+
+Runtime enforcement:
+
+- `worker/render/golden_reference_gate.py` fails golden/reference manifests
+  without `postEditGoldenReference.capcutHandoff`.
+- `ffmpegOnlyAllowed=true` is a hard failure.
+- A candidate may still store FFmpeg preview MP4s, but it cannot be scored or
+  presented as a final/upload candidate until the CapCut draft handoff exists.
+- The CapCut draft must link source video, TTS, BGM, captions, and edit-element
+  tracks when those layers are intentionally used. Clean editorial mode may
+  have zero generated edit-element/effect/SFX tracks. This keeps the
+  user-facing fix path editable inside CapCut instead of forcing another
+  code-render loop for every caption, timing, sticker, SFX, or effect
+  correction.
+- The handoff must include web-backed `referenceBasis`, `automationSurface`,
+  `editModel`, `motionDesign`, and `effectPass` objects. A draft folder without
+  keyframed motion, easing, editable captions, editable audio, an explicit
+  clean/effect-pass decision, and operator-export review is not enough.
+- Raw FFmpeg `drawbox`/`drawtext` edit elements are preview aids only. They
+  cannot be claimed as final-quality CapCut edit elements unless recreated as
+  editable CapCut tracks.
+- PNG/image overlays and native effect tracks are disabled by default for
+  generated drafts. A clean editorial CapCut draft should lean on source
+  keyframes, cut timing, editable captions, BGM balance, and operator review.
+- Native effect tracks require manual selection and visual anchoring. Adding
+  more effects, more families, or more template-looking presets is a negative
+  signal when those effects do not match the source action, visible cue, or
+  audio hit.
+
 ---
 
 ## 7. Verification Criteria

@@ -3953,6 +3953,119 @@ export function auditFinalVideoLibrary(limit = 20): Promise<FinalVideoLibraryAud
   );
 }
 
+export interface GateCheckResult {
+  status?: string;
+  detail?: string;
+}
+
+export interface GateEvaluationReport {
+  schema?: string;
+  status?: string;
+  topicReady?: boolean;
+  dryrunAllowed?: boolean;
+  finalAllowed?: boolean;
+  selectedTopicId?: string;
+  selectedScore?: number;
+  minimumScore?: number;
+  failedChecks?: string[];
+  checks?: Record<string, GateCheckResult>;
+  computedScores?: Record<string, number>;
+  [key: string]: unknown;
+}
+
+export interface GateUxCheckSummary {
+  key: string;
+  label: string;
+  status?: string;
+  detail?: string;
+  rawDetail?: string;
+}
+
+export interface GateUxSummary {
+  title?: string;
+  statusLabel?: string;
+  primaryMessage?: string;
+  nextAction?: string;
+  failedChecks?: Array<{ key: string; label: string }>;
+  checkSummaries?: GateUxCheckSummary[];
+}
+
+export interface GateEvaluationResult {
+  ok: boolean;
+  gate?: string;
+  status?: string;
+  ready?: boolean;
+  finalReady?: boolean;
+  failedChecks?: string[];
+  ux?: GateUxSummary;
+  report?: GateEvaluationReport;
+  error?: string;
+}
+
+export interface HotTopicCandidate {
+  id: string;
+  label: string;
+  title: string;
+  centralQuestion: string;
+  whyHot: string;
+  viewerPromise: string;
+  searchSeed: string;
+  first30SecPromise: string;
+  score: number;
+  evidencePlan: string[];
+  sourceRefs?: string[];
+  sourceStatus?: string;
+  sourceUrl?: string;
+  publishedAt?: string;
+}
+
+export interface HotTopicSourceLedgerEntry {
+  sourceId: string;
+  sourceType: string;
+  title: string;
+  url: string;
+  capturedAt: string;
+  observation: string;
+}
+
+export interface HotTopicQueryPlanEntry {
+  provider: string;
+  surface: string;
+  query: string;
+  intent: string;
+  capturedAt: string;
+}
+
+export interface HotTopicCandidatesResult {
+  ok: boolean;
+  mode?: "auto-hot-topic" | "keyword-filtered" | string;
+  source?: string;
+  live?: boolean;
+  warning?: string;
+  seed?: string;
+  fetchedAt?: string;
+  candidates?: HotTopicCandidate[];
+  sourceLedger?: HotTopicSourceLedgerEntry[];
+  researchQueryPlan?: HotTopicQueryPlanEntry[];
+  operatorWarning?: string;
+  error?: string;
+}
+
+export function fetchHotTopicCandidates(seed = "", limit = 3): Promise<HotTopicCandidatesResult> {
+  return _apiFetch<HotTopicCandidatesResult>(
+    `/api/topic-discovery/hot-candidates${_buildQuery({ seed, limit })}`,
+    { timeout: 20_000 },
+  );
+}
+
+export function evaluateTopicDiscoveryGate(packet: Record<string, unknown>): Promise<GateEvaluationResult> {
+  return _post<GateEvaluationResult>("/api/gates/topic-discovery/evaluate", { packet }, 60_000);
+}
+
+export function evaluateLongformDryrunGate(packet: Record<string, unknown>): Promise<GateEvaluationResult> {
+  return _post<GateEvaluationResult>("/api/gates/longform-dryrun/evaluate", { packet }, 60_000);
+}
+
 export interface EpisodeSourceLibraryAsset {
   assetId: string;
   provider: string;

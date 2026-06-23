@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Film, Plus, Trash2, ChevronUp, ChevronDown, Play, Square, RotateCcw } from "lucide-react";
 import { useStudioState, useStudioActions } from "../context/StudioContext";
 import SceneDetailPanel from "./SceneDetailPanel";
-import RenderReviewPanel, { FinalVideoLibraryPanel } from "./RenderReviewPanel";
+import ProductionWorkflowGatePanel from "./ProductionWorkflowGatePanel";
 
 function EditableText({
   value,
@@ -69,7 +69,7 @@ function EditableText({
 }
 
 export default function StoryboardPanel() {
-  const { draftResult, selectedSceneIndex, renderResult } = useStudioState();
+  const { draftResult, selectedSceneIndex } = useStudioState();
   const actions = useStudioActions();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -103,7 +103,7 @@ export default function StoryboardPanel() {
           <h2>스토리보드</h2>
           <p>왼쪽에서 주제를 입력하고 초안을 생성하세요</p>
         </div>
-        <FinalVideoLibraryPanel autoLoad />
+        <ProductionWorkflowGatePanel focus="plan" />
       </div>
     );
   }
@@ -129,7 +129,7 @@ export default function StoryboardPanel() {
         </div>
       </div>
 
-      {renderResult?.renderResult?.outputPath ? <RenderReviewPanel /> : <FinalVideoLibraryPanel autoLoad />}
+      <ProductionWorkflowGatePanel focus="plan" />
 
       {/* Scene list (vertical) */}
       <div className="scene-list" style={{ marginTop: 16 }}>

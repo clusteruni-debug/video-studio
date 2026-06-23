@@ -36,6 +36,7 @@ from worker.bridge.routes_grok import grok_bp, init_grok_routes
 from worker.bridge.routes_episodes import episodes_bp, init_episode_routes
 from worker.bridge.routes_sources import sources_bp, init_source_routes
 from worker.bridge.routes_admin import admin_bp, init_admin_routes
+from worker.bridge.routes_gates import gates_bp
 from worker.bridge.draft_executor import (
     BRIDGE_HOST,
     BRIDGE_PORT,
@@ -401,6 +402,7 @@ app.register_blueprint(grok_bp)
 app.register_blueprint(episodes_bp)
 app.register_blueprint(sources_bp)
 app.register_blueprint(admin_bp)
+app.register_blueprint(gates_bp)
 
 job_queue.set_execute_fn(execute_draft_core)
 

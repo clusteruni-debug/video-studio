@@ -80,11 +80,11 @@ export default function SourcesPanel() {
     }
   };
 
-  // View result in storyboard — dispatch draft result then switch tab
+  // View result in planning — dispatch draft result then switch tab
   const viewInStoryboard = () => {
     if (lastResult) {
       actions.setDraftResult(lastResult);
-      actions.setActiveTab("storyboard");
+      actions.setActiveTab("plan");
     }
   };
 

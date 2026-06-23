@@ -1,14 +1,16 @@
 import type { LucideIcon } from "lucide-react";
-import { Settings, Film, ImageIcon, Rss, Layers, Briefcase } from "lucide-react";
+import { ClipboardCheck, Film, FolderOpen, LayoutDashboard, SearchCheck, Settings, SlidersHorizontal, Sparkles } from "lucide-react";
 import { useStudioState, useStudioActions } from "../context/StudioContext";
 import type { StudioTab } from "../context/StudioContext";
 
 const TAB_CONFIG: { tab: StudioTab; label: string; icon: LucideIcon }[] = [
-  { tab: "storyboard", label: "스토리보드", icon: Film },
-  { tab: "images", label: "이미지", icon: ImageIcon },
-  { tab: "sources", label: "소싱", icon: Rss },
-  { tab: "batch", label: "배치", icon: Layers },
-  { tab: "jobs", label: "작업", icon: Briefcase },
+  { tab: "home", label: "홈", icon: LayoutDashboard },
+  { tab: "topic", label: "소재", icon: SearchCheck },
+  { tab: "plan", label: "기획", icon: Film },
+  { tab: "sources", label: "소스", icon: FolderOpen },
+  { tab: "edit", label: "편집", icon: SlidersHorizontal },
+  { tab: "review", label: "검수", icon: ClipboardCheck },
+  { tab: "advanced", label: "고급", icon: Sparkles },
 ];
 
 export default function TopBar() {
@@ -20,6 +22,7 @@ export default function TopBar() {
       <div className="top-bar-brand">
         <span className="top-bar-logo">VS</span>
         <span className="top-bar-title">Video Studio</span>
+        <span className="top-bar-subtitle">제작 흐름</span>
         <span
           className={`bridge-dot bridge-dot-${bridgeStatus}`}
           title={bridgeStatus}
