@@ -88,6 +88,15 @@ ADAPTER_CONFIG = {
         "costTier": "free",
         "costPerUnit": 0.0,
     },
+    "grok": {
+        "label": "Grok Imagine handoff",
+        "category": "video",
+        "model": "grok-imagine-browser-handoff",
+        "outputKind": "video",
+        "envPrefix": "VIDEO_STUDIO_GROK",
+        "costTier": "manual",
+        "costPerUnit": 0.0,
+    },
     # Sora 2 retired 2026-04 — see memory/project-video-studio-ollama.md.
     # Candidate replacement: Kling 3.0 / Runway Gen-4 Turbo (see
     # docs/VIDEO-PROVIDER-RESEARCH.md). Entry removed to stop probing a

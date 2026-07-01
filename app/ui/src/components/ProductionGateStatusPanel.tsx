@@ -62,6 +62,24 @@ type DryrunPreflightResponse = {
   error?: string;
 };
 
+type ProductionStatus = {
+  truthSource?: string;
+  nextAction?: {
+    label?: string;
+    status?: string;
+    message?: string;
+    detail?: string;
+    tab?: string;
+    source?: string;
+  };
+};
+
+type ProductionStatusResponse = {
+  ok: boolean;
+  productionStatus?: ProductionStatus;
+  error?: string;
+};
+
 const BRIDGE_URL = "http://127.0.0.1:5161";
 const STALE_BRIDGE_MESSAGE = "현재 실행 중인 브리지가 오래된 코드입니다. 5161 bridge를 재시작해야 소재 DB API가 보입니다.";
 
@@ -78,12 +96,15 @@ export default function ProductionGateStatusPanel({ onOpenTopic, onOpenPlan }: P
   const [loading, setLoading] = useState(false);
   const [preflighting, setPreflighting] = useState(false);
   const [dryrunPreflight, setDryrunPreflight] = useState<DryrunPreflightStatus | null>(null);
+  const [productionStatus, setProductionStatus] = useState<ProductionStatus | null>(null);
+  const [productionStatusStale, setProductionStatusStale] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const latest = useMemo(() => status?.summaries?.[0] ?? null, [status]);
   const stats = status?.stats;
   const currentDryrun = dryrunPreflight ?? status?.dryrunPreflight ?? null;
   const hasReusableMaterial = Boolean((stats?.withSourceLedger ?? 0) > 0 || (stats?.withTopicPass ?? 0) > 0);
+  const canonicalNext = productionStatus?.nextAction ?? null;
 
   async function refresh() {
     setLoading(true);
@@ -96,7 +117,25 @@ export default function ProductionGateStatusPanel({ onOpenTopic, onOpenPlan }: P
       setStatus(payload);
       if (payload.dryrunPreflight?.available) setDryrunPreflight(payload.dryrunPreflight);
     } catch (err) {
+      setProductionStatus(null);
+      setProductionStatusStale("서버 production status를 새로 확인하지 못했습니다. 이전 서버 nextAction은 숨기고 소재 fallback만 표시합니다.");
       setError(err instanceof Error ? err.message : "소재 DB 상태를 불러오지 못했습니다.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const productionResponse = await fetch(`${BRIDGE_URL}/api/production/status`);
+      if (productionResponse.status === 404) throw new Error(STALE_BRIDGE_MESSAGE);
+      const productionPayload = await productionResponse.json() as ProductionStatusResponse;
+      if (!productionResponse.ok || !productionPayload.ok || !productionPayload.productionStatus) {
+        throw new Error(productionPayload.error || "서버 production status를 확인하지 못했습니다.");
+      }
+      setProductionStatus(productionPayload.productionStatus);
+      setProductionStatusStale(null);
+    } catch (err) {
+      setProductionStatus(null);
+      setProductionStatusStale(err instanceof Error ? `${err.message} 이전 서버 nextAction은 숨겼습니다.` : "서버 production status 실패: 이전 서버 nextAction은 숨겼습니다.");
     } finally {
       setLoading(false);
     }
@@ -149,6 +188,13 @@ export default function ProductionGateStatusPanel({ onOpenTopic, onOpenPlan }: P
         </div>
       ) : null}
 
+      {productionStatusStale ? (
+        <div className="gate-help-note warn">
+          <AlertTriangle size={14} />
+          <span>{productionStatusStale}</span>
+        </div>
+      ) : null}
+
       <div className="workspace-stat-strip">
         <span><Database size={14} /> 누적 {stats?.total ?? 0}</span>
         <span><ShieldCheck size={14} /> 출처 보유 {stats?.withSourceLedger ?? 0}</span>
@@ -156,13 +202,15 @@ export default function ProductionGateStatusPanel({ onOpenTopic, onOpenPlan }: P
       </div>
 
       <div className="next-action-panel">
-        <span>소재 레이어 다음 행동</span>
-        <strong>{hasReusableMaterial ? "저장된 소재를 기획으로 넘길 수 있습니다" : "먼저 조사 가능한 소재를 쌓아야 합니다"}</strong>
+        <span>{canonicalNext ? "서버 production status 다음 행동" : "소재 레이어 다음 행동"}</span>
+        <strong>{canonicalNext?.label || (hasReusableMaterial ? "저장된 소재를 기획으로 넘길 수 있습니다" : "먼저 조사 가능한 소재를 쌓아야 합니다")}</strong>
         <p>
-          {hasReusableMaterial
-            ? "게이트 탭에서 저장된 소재를 선택하고 제작 핸드오프를 기획 메모에 반영하세요."
-            : "소재 탭에서 후보를 찾고 실제 URL, 관찰 메모, 선택 이유를 저장하세요."}
+          {canonicalNext?.message
+            || (hasReusableMaterial
+              ? "게이트 탭에서 저장된 소재를 선택하고 제작 핸드오프를 기획 메모에 반영하세요."
+              : "소재 탭에서 후보를 찾고 실제 URL, 관찰 메모, 선택 이유를 저장하세요.")}
         </p>
+        {canonicalNext?.detail ? <small>{canonicalNext.detail}</small> : null}
       </div>
 
       <div className="next-action-panel">

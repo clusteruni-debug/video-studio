@@ -7,12 +7,22 @@ pipeline without paid APIs or paid AI providers.
 
 ### Plan Inventory
 
-- `docs/plans/done/PLAN-FRONTEND-ROADMAP.md` — shipped, with historical image
-  pipeline notes now superseded by the zero-paid policy.
+Active implementation plans:
+
+- `docs/plans/PLAN-VIDEO-STUDIO-LOCAL-GATE-HARDENING.md` — `IN_PROGRESS`.
+  Static source-level gate hardening and full Vite build are verified; the
+  remaining blocker is Windows-local runtime proof.
+
+Archived or historical plans:
+
+- `docs/plans/done/PLAN-FRONTEND-ROADMAP.md` — shipped historical roadmap.
+  Unchecked body tasks are retained as historical notes, not active work.
 - `docs/plans/done/PLAN-QUALITY-PASS-2.md` — shipped quality pass.
 - `docs/plans/done/RENDERING-TASKS.md` — shipped rendering task list.
-- No active `docs/plans/*.md` file remains outside `done/`; the active work is
-  this roadmap plus the operator checklist.
+
+Plan inventory rule: if a new `docs/plans/PLAN-*.md` file is created for this
+project, add it here with only the status, blocker summary, and link. Detailed
+work stays in the plan file; this roadmap is the project-level index.
 
 ### Completion Checklist
 
@@ -31,6 +41,56 @@ pipeline without paid APIs or paid AI providers.
   uploaded visuals/Pexels/local placeholders as the default no-paid path.
 - [ ] Add a Grok UI handoff/export workflow if the operator wants Grok-created
   clips without using the paid xAI video API.
+
+Source-level status update on 2026-06-25:
+
+- `/api/human-operator/adapter-command-readiness` now exposes Wan and Gemini
+  Flash command-adapter readiness without running those providers. It reports
+  command mode, entry point, command preview, and the manual operator action.
+- `/api/human-operator/worklist` now keeps the remaining roadmap/runbook work
+  visible to a human operator. It deliberately labels Windows runtime proof,
+  Grok generation/import proof, phone review, and live-channel upload evidence
+  as pending external/runtime proof.
+- Wan and Gemini are not marked complete by this source-level implementation.
+  They still require operator-machine command configuration and Windows runtime
+  proof before the roadmap checkboxes can be closed.
+
+Plan sync and local-gate update on 2026-06-26:
+
+- `PLAN-VIDEO-STUDIO-LOCAL-GATE-HARDENING` added source-level guards for local
+  source proof, Auto Studio import payloads, render artifact binding, phone
+  review lineage, publish packet blockers, and stale dashboard production
+  status.
+- The source-level static stack passed: bridge/render `py_compile`, focused
+  pytest, and `tsc --noEmit`.
+- The plan remains `IN_PROGRESS` because Windows-local runtime proof was not
+  run. `npm run build` passed after restoring Rollup's Linux optional native
+  package in current `node_modules`.
+- Remaining release work is runtime/proof work, not another static gate claim:
+  accepted-source save in the dashboard, phone full-watch review, publish
+  packet inspection, signed-in Grok/Gemini generate/import proof, and platform
+  upload evidence.
+
+Auto Studio operator-handoff update on 2026-06-25:
+
+- Auto Studio now has an explicit provider execution contract:
+  `auto-route`, `command`, `operator-handoff`, `manual-import`, and `api`.
+- Grok/Gemini/Seedance/custom-external are no longer presented as automatic
+  generation providers. Grok and Gemini require human web generation plus local
+  PNG/MP4 import; Seedance/custom-external are manual or future command/API
+  slots.
+- `/api/auto-studio/run` emits a scene-level `handoffQueue`, render readiness,
+  and publish readiness boundaries. Handoff scenes block render readiness until
+  local import proof is present.
+- `/api/auto-studio/import-asset` attaches imported scene files as
+  `SceneAssetPayload` objects and writes provenance sidecars with provider,
+  prompt, task id, source surface, operator note, import time, and proof mode.
+- The dashboard now exposes Scene Director as a scene-level operator tool for
+  provider choice, prompt copy, local import, fallback selection, and readiness
+  review. It is not a full NLE.
+- Windows proof exists for bridge/UI startup, provider/latest endpoints, a
+  blank-seed Grok handoff draft, and fallback demo MP4 render. Grok/Gemini live
+  generation/import proof is still human-only and pending.
 
 ## Phase 0 — Scaffold
 - create the project folders
@@ -89,6 +149,9 @@ Current status:
 - the bridge can now run a draft FFmpeg render that uses uploaded scene assets when present, otherwise tries the local FLUX/Wan adapter skeletons and falls back to scene cards plus local Windows TTS if those adapters stay in `stub` mode or fail
 - save now writes `local-media-plan.json`, render now writes `local-media-report.json`, and the bridge/UI surface generated/uploaded/placeholder scene summaries
 - real FLUX/Wan/Whisper-generated media still depends on the operator wiring actual adapter commands and model runtimes behind the new skeleton (TTS is now handled by Edge TTS)
+- human-mode provider readiness now exposes whether Wan/Gemini command adapter
+  wiring is ready, config-required, off, or unknown before a user attempts a
+  render.
 
 ## Phase 4 — Paid Premium Routing
 

@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, ClipboardCheck, FileVideo2, RotateCcw } from "lucide-react";
 import { useStudioActions, useStudioState } from "../context/StudioContext";
+import { PhoneReviewPublishPanel } from "./HumanOperatorMvpPanels";
 import ProductionWorkflowGatePanel from "./ProductionWorkflowGatePanel";
 
 export default function ReviewWorkspacePanel() {
@@ -24,6 +25,7 @@ export default function ReviewWorkspacePanel() {
       </div>
 
       <ProductionWorkflowGatePanel focus="review" />
+      <PhoneReviewPublishPanel />
 
       {renderPath ? (
         <div className="review-result-layout">

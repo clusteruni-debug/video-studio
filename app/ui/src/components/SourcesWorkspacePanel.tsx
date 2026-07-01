@@ -3,6 +3,7 @@ import { FileImage, FolderOpen } from "lucide-react";
 import ImageCanvas from "./ImageCanvas";
 import SourcesPanel from "./SourcesPanel";
 import { useStudioState } from "../context/StudioContext";
+import { SourceReviewMvpPanel } from "./HumanOperatorMvpPanels";
 import ProductionWorkflowGatePanel from "./ProductionWorkflowGatePanel";
 
 type SourceWorkspaceMode = "library" | "generate";
@@ -28,6 +29,7 @@ export default function SourcesWorkspacePanel() {
       </div>
 
       <ProductionWorkflowGatePanel focus="sources" />
+      <SourceReviewMvpPanel />
 
       <div className="workflow-subnav">
         <button className={mode === "library" ? "active" : ""} onClick={() => setMode("library")}>

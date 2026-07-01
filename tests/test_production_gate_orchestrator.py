@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 from worker.render.production_gate_orchestrator import build_process_gate_audit, evaluate_production_gates
 
 
@@ -147,7 +149,15 @@ def _proof_packets() -> dict:
         "assetImportReview": {"acceptedSources": [{"sourceId": "asset-01"}], "reviewVerdict": "pass"},
         "editAssembly": {"cuts": [{"cutId": "cut-01"}], "renderManifest": {"projectId": "proof-render"}},
         "renderPreflight": {"manifest": {"projectId": "proof-render"}, "safeZone": {"status": "pass"}},
-        "qualityReview": {"qaReport": {"status": "pass"}, "phoneReview": {"status": "pass"}},
+        "qualityReview": {
+            "qaReport": {"status": "pass"},
+            "phoneReview": {
+                "status": "pass",
+                "fullWatchCompleted": True,
+                "phoneViewport": True,
+                "reviewSnapshotPath": "storage/final-videos/proof/phone-review.jpg",
+            },
+        },
         "releasePacket": _release_packet(),
         "publishPacket": {"publishReadiness": {"status": "pass"}, "uploadPacket": {"status": "ready"}},
         "postPublishLearning": {"analyticsPacket": {"views": 1}, "learningNotes": ["first learning loop"]},
@@ -221,6 +231,18 @@ def test_orchestrator_passes_when_every_stage_has_proof_packet():
     assert report["overallStatus"] == "pass"
     assert all(stage["status"] == "pass" for stage in report["stages"])
     assert report["currentStage"] == "post-publish-learning"
+
+
+def test_orchestrator_blocks_publish_until_phone_review_proof_exists():
+    packets = deepcopy(_proof_packets())
+    packets["qualityReview"] = {"qaReport": {"status": "pass"}}
+    report = evaluate_production_gates(_material(topic_pass=True), packets=packets)
+
+    publish_stage = next(stage for stage in report["stages"] if stage["stage"] == "publish-readiness")
+    assert report["overallStatus"] == "blocked"
+    assert publish_stage["status"] == "pending"
+    assert publish_stage["failedChecks"] == ["phoneReview"]
+    assert "phone full-watch review proof" in publish_stage["detail"]
 
 
 def test_process_gate_audit_maps_every_stage_to_dashboard_code_tests_and_evidence():

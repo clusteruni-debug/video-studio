@@ -1,8 +1,21 @@
 # Video Studio Live-Channel Operating System
 
 Status: operational baseline for Shorts/Reels/TikTok repeat production  
-Updated: 2026-05-31  
+Updated: 2026-06-25
 Policy: zero-paid sources only; no paid AI/API; manual Grok handoff stays Chrome-based.
+
+## Auto Studio Operator Handoff Boundary 2026-06-25
+
+- Auto Studio can now prepare scene-level Grok/Gemini operator handoff tasks
+  and import local scene assets into the render path.
+- The product flow is dashboard operator handoff plus manual/local import. The
+  browser-control rail remains development proof only and is not live-channel
+  production success.
+- A Windows fallback demo render exists at
+  `storage/renders/human-operator-local-demo-p0/no-llm-local-demo-for-video-studio-human-operato.mp4`.
+- This does not make any live-channel packet upload-ready. Fresh-source proof,
+  accepted source review, phone-sized full-watch review, publish packet review,
+  platform metadata, and explicit operator upload decision remain required.
 
 ## Baseline Re-Audit
 
@@ -257,6 +270,19 @@ Fresh source runway:
 - Compare no-voice BGM candidates per series so repeated uploads do not sound identical.
 - Add a human visual review note after watching the final MP4 on a phone-sized viewport, not only through automated gates.
 - Improve automatic title/description generation beyond the two routine templates; current Korean candidates are acceptable for the reset-routine samples but not yet a general copywriting system.
+
+## Human-Mode Worklist Surface
+
+Source-level update on 2026-06-25:
+
+- `/api/human-operator/worklist` now reports live-channel readiness as
+  `blocked-runtime-proof`.
+- The dashboard can show that the live-channel operating system is not
+  upload-ready because fresh-source proof, phone review, publish packet,
+  dashboard smoke, and platform analytics are still required.
+- This is a visibility improvement only. It does not create
+  `fresh-source-proof.json`, `phone-review.json`, `platform-analytics.json`, a
+  new final MP4, or any upload approval.
 
 ## Local Candidate Review Evidence Update 2026-06-03
 

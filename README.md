@@ -1,6 +1,10 @@
 # Video Studio App
 
-Windows-first short-form video generation workspace scaffold.
+Windows-first short-form video generation and editing app.
+
+The first supported path is **Demo Mode**: a local no-LLM, no-paid-provider
+workflow that prepares a deterministic sample packet, renders with FFmpeg, then
+requires human source review and phone review before any publish claim.
 
 ## Current Goal
 - Plan and build a hybrid video tool that can:
@@ -26,10 +30,14 @@ Windows-first short-form video generation workspace scaffold.
 - No DB or remote persistence yet
 
 ## Working Model
-- OpenClaw + Codex plans the video
-- Local/free providers generate the default assets
-- Paid APIs are blocked unless the operator explicitly opts in
-- FFmpeg composes the final 9:16 output
+- Demo Mode uses bundled sample scenes, local storage, and FFmpeg. It does not
+  require Claude Code, Codex, Gemini, Grok, CapCut, or paid APIs.
+- Manual Production uses operator-owned local files, accepted-source review,
+  local render proof, phone review, and a publish packet.
+- Provider-Assisted mode is optional. Gemini, Pexels, Grok browser handoff,
+  CapCut export, and paid providers are never default requirements.
+- Paid APIs are blocked unless the operator explicitly opts in with
+  `VIDEO_STUDIO_ALLOW_PAID_PROVIDERS=1`.
 
 ## Folder Map
 - `app/ui/` — React frontend source
@@ -46,12 +54,14 @@ Windows-first short-form video generation workspace scaffold.
 - `config/` — local config samples
 
 ## Recommended Build Sequence
-1. Complete the operator checklist in `docs/OPERATOR-CHECKLIST.md`
-2. Implement the planner and contract layer first
-3. Configure local Wan adapter commands if you want generated video beyond stock/placeholder output
-4. Keep `VIDEO_STUDIO_ALLOW_PAID_PROVIDERS` unset unless you intentionally allow paid providers
-5. Add FFmpeg composition path
-6. Add Grok UI handoff only as browser/manual import, not paid API wiring
+1. Follow `docs/GETTING-STARTED-HUMAN.md`.
+2. Run the bridge and dashboard locally.
+3. Open Home and inspect `Human operator P0`.
+4. Prepare the no-LLM demo packet.
+5. Run the demo render from the Edit tab.
+6. Accept at least one local source in Sources.
+7. Record phone review in Review.
+8. Inspect the publish packet; upload remains operator-owned.
 
 ## Zero-Paid Runtime Choices
 - Uploaded visual/audio assets:
@@ -104,6 +114,17 @@ Windows-first short-form video generation workspace scaffold.
 - `npm run build`
   - validates the React/Vite UI shell and shared TypeScript contracts
 
+No-provider source checks for contributors:
+- `python3 -m py_compile worker/bridge/routes_human_operator.py worker/bridge/human_operator_mvp.py`
+- `pytest -q tests/test_human_operator_p0_routes.py tests/test_dashboard_ia_contract.py`
+- `./node_modules/.bin/tsc --noEmit`
+- `powershell -ExecutionPolicy Bypass -File scripts\check-human-setup.ps1` for
+  report-only Windows setup diagnostics
+
+Human-operable release proof still requires Windows runtime smoke: bridge
+`5161`, dashboard `5160`, demo render, accepted-source review, phone review,
+and publish packet inspection.
+
 Note:
 - `npm run dev` now builds the React app and serves `dist/` through Python on port `5160`
 - this avoids the TSX/JSX blank-screen issue that appeared when the app was served without the React transform
@@ -116,4 +137,6 @@ Note:
 - `docs/ARCHITECTURE.md`
 - `docs/MODEL-ROUTING.md`
 - `docs/IMPLEMENTATION-ROADMAP.md`
+- `docs/GETTING-STARTED-HUMAN.md`
+- `docs/TROUBLESHOOTING.md`
 - `docs/OPERATOR-CHECKLIST.md`

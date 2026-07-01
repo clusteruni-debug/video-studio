@@ -212,3 +212,19 @@ Target for the next candidate:
 
 Do not raise the score because a draft exists, because effects were added, or
 because keyframe counts are high.
+
+## Human-Mode Worklist Surface
+
+Source-level update on 2026-06-25:
+
+- `/api/human-operator/worklist` now exposes this plan as the
+  `bottled-water-v6` pending render/CapCut handoff item.
+- The worklist does not mark the bottled-water candidate complete. It only
+  points the operator back to this editorial direction contract before the next
+  render or CapCut handoff.
+- Final upload readiness still requires the next candidate's render evidence,
+  no-HUD/no-effect comparison, phone-sized review, reference comparison,
+  publish packet, and explicit operator decision.
+- Auto Studio/Scene Director can now be used to prepare scene-level handoff and
+  local import work for this direction, but this bottled-water plan remains a
+  reference direction until a fresh rendered candidate passes those proof gates.

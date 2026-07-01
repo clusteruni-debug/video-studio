@@ -70,6 +70,12 @@ def test_topic_stage_starts_with_discovery_before_validation():
     material_library = _read("app/ui/src/components/MaterialLibraryPanel.tsx")
     sidebar = _read("app/ui/src/components/Sidebar.tsx")
     home = _read("app/ui/src/components/ProductionHomePanel.tsx")
+    auto_studio = _read("app/ui/src/components/AutoStudioPanel.tsx")
+    scene_director = _read("app/ui/src/components/SceneDirectorPanel.tsx")
+    bridge = _read("app/ui/src/lib/bridge.ts")
+    auto_studio_backend = _read("worker/bridge/auto_studio.py")
+    human_operator = _read("app/ui/src/components/HumanOperatorP0Panel.tsx")
+    human_mvp = _read("app/ui/src/components/HumanOperatorMvpPanels.tsx")
     gate_status = _read("app/ui/src/components/ProductionGateStatusPanel.tsx")
     process_audit = _read("app/ui/src/components/ProductionProcessAuditPanel.tsx")
     workflow_gate = _read("app/ui/src/components/ProductionWorkflowGatePanel.tsx")
@@ -147,11 +153,59 @@ def test_topic_stage_starts_with_discovery_before_validation():
     assert "<span>소재 메모</span>" in sidebar
     assert "상단의 소재 탭에서 후보부터 찾으세요" in sidebar
     assert "먼저 소재 후보를 찾으세요" in home
+    assert "HumanOperatorP0Panel" in home
+    assert "AutoStudioPanel" in home
     assert "ProductionGateStatusPanel" in home
     assert "ProductionWorkflowGatePanel" in home
     assert "ProductionProcessAuditPanel" in home
+    assert "SourceReviewMvpPanel" in sources_workspace
+    assert "RenderRecoveryPanel" in edit_workspace
+    assert "PhoneReviewPublishPanel" in review_workspace
     assert '<ProductionWorkflowGatePanel focus="topic" />' in gates
     assert "ProductionProcessAuditPanel" in advanced
+
+    for required in [
+        "Auto Studio MVP",
+        "actions.setDraftResult",
+        "actions.setRenderResult",
+        "SceneDirectorPanel",
+    ]:
+        assert required in auto_studio
+
+    for required in [
+        "/api/auto-studio/providers",
+        "/api/auto-studio/run",
+        "/api/auto-studio/import-asset",
+        "AutoStudioProviderRegistry",
+        "AutoStudioRunResult",
+        "AutoStudioHandoffTask",
+    ]:
+        assert required in bridge
+
+    for required in [
+        "Grok Imagine handoff",
+        "Gemini web handoff",
+        "Seedance manual slot",
+        "operator-handoff",
+        "manual-import",
+        "Grok /c/* redirects",
+        "SceneAssetPayload-compatible adapter",
+        "devProofRail",
+    ]:
+        assert required in auto_studio_backend
+
+    for required in [
+        "Scene Director",
+        "Open Provider",
+        "Copy Prompt",
+        "Mark Generated",
+        "Import File",
+        "Use Fallback",
+        "importAutoStudioSceneAsset",
+        "updateAutoStudioHandoffTask",
+        "operator-local-import",
+    ]:
+        assert required in scene_director
 
     workflow_contract = {
         "app/ui/src/components/StoryboardPanel.tsx": storyboard,
@@ -164,12 +218,47 @@ def test_topic_stage_starts_with_discovery_before_validation():
         assert "ProductionWorkflowGatePanel" in text, f"{path} must surface workflow gate status"
 
     for required in [
+        "Human operator P0",
+        "/api/human-operator/status",
+        "/api/human-operator/demo/prepare",
+        "No-LLM demo 준비",
+        "First-run setup",
+        "No-LLM demo path",
+        "Local source proof",
+        "Render health",
+        "external AI not required",
+        "ProviderReadinessPanel",
+    ]:
+        assert required in human_operator
+
+    for required in [
+        "Provider readiness matrix",
+        "Demo Mode",
+        "Manual Production",
+        "Provider-Assisted",
+        "/api/human-operator/provider-readiness",
+        "Accepted-source review",
+        "/api/human-operator/sources/status",
+        "/api/human-operator/sources/review",
+        "Render health and recovery",
+        "/api/human-operator/render-health",
+        "/api/human-operator/demo/render",
+        "Phone review and publish packet",
+        "/api/human-operator/phone-review",
+        "/api/human-operator/publish-packet",
+        "phone review 저장",
+    ]:
+        assert required in human_mvp
+
+    for required in [
         "소재 DB / 제작 게이트 상태",
         "외부 조사로 쌓은 소재",
         "/api/topic-library/materials",
+        "/api/production/status",
         "/api/topic-library/materials/dryrun-preflight",
         "Dry-run 사전 준비",
         "소재 seed + dry-run report 저장",
+        "서버 production status 다음 행동",
         "현재 실행 중인 브리지가 오래된 코드입니다.",
         "소재 DB 열기",
         "기획으로 이동",
@@ -196,7 +285,9 @@ def test_topic_stage_starts_with_discovery_before_validation():
         "렌더 전 점검",
         "품질 검수",
         "게시 준비",
-        "현재 화면 상태를 기준으로 통과, 대기, 차단을 분리합니다.",
+        "/api/production/status",
+        "서버 production status 기준",
+        "브리지 미연결: 화면 상태 fallback",
     ]:
         assert required in workflow_gate
 
@@ -205,7 +296,7 @@ def test_dashboard_ux_reference_doc_is_discoverable_and_enforceable():
     reference = _read("docs/reference/dashboard-ux-ia.md")
 
     for required in [
-        "last_verified: 2026-06-23",
+        "last_verified: 2026-06-25",
         "- video studio dashboard",
         "- dashboard UX",
         "- production workflow UI",
@@ -214,8 +305,22 @@ def test_dashboard_ux_reference_doc_is_discoverable_and_enforceable():
         "material library",
         "production-wide gate",
         "dry-run readiness report",
+        "/api/production/status",
+        "/api/production/thin-loop/status",
     ]:
         assert required in reference
 
     for stage in ["`Home`", "`Topic`", "`Plan`", "`Sources`", "`Edit`", "`Review`", "`Advanced`"]:
         assert stage in reference
+
+
+def test_production_status_panels_do_not_reuse_stale_server_truth():
+    gate_status = _read("app/ui/src/components/ProductionGateStatusPanel.tsx")
+    workflow_gate = _read("app/ui/src/components/ProductionWorkflowGatePanel.tsx")
+
+    assert "setProductionStatus(null)" in gate_status
+    assert "이전 서버 nextAction은 숨" in gate_status
+    assert "productionStatusStale" in gate_status
+    assert "window.setInterval" in workflow_gate
+    assert "서버 production status 확인 실패" in workflow_gate
+    assert "fallback gate는 현재 화면 상태만 반영" in workflow_gate

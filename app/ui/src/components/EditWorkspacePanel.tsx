@@ -1,5 +1,6 @@
 import { Captions, Film, Music2, Play, Scissors, Volume2 } from "lucide-react";
 import { useStudioActions, useStudioState } from "../context/StudioContext";
+import { RenderRecoveryPanel } from "./HumanOperatorMvpPanels";
 import ProductionWorkflowGatePanel from "./ProductionWorkflowGatePanel";
 
 const editChecks = [
@@ -61,6 +62,7 @@ export default function EditWorkspacePanel() {
       </div>
 
       <ProductionWorkflowGatePanel focus="edit" />
+      <RenderRecoveryPanel />
 
       <div className="edit-check-grid">
         {editChecks.map(({ title, body, icon: Icon }) => (

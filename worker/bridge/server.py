@@ -37,6 +37,8 @@ from worker.bridge.routes_episodes import episodes_bp, init_episode_routes
 from worker.bridge.routes_sources import sources_bp, init_source_routes
 from worker.bridge.routes_admin import admin_bp, init_admin_routes
 from worker.bridge.routes_gates import gates_bp
+from worker.bridge.routes_human_operator import human_operator_bp, init_human_operator_routes
+from worker.bridge.routes_auto_studio import auto_studio_bp, init_auto_studio_routes
 from worker.bridge.draft_executor import (
     BRIDGE_HOST,
     BRIDGE_PORT,
@@ -396,6 +398,8 @@ init_admin_routes(
     PROJECT_ROOT, CAPCUT_DRAFT_DIR, batch_manager, job_queue,
     execute_draft_core, safe_resolve,
 )
+init_human_operator_routes(PROJECT_ROOT)
+init_auto_studio_routes(PROJECT_ROOT)
 
 app.register_blueprint(media_bp)
 app.register_blueprint(grok_bp)
@@ -403,6 +407,8 @@ app.register_blueprint(episodes_bp)
 app.register_blueprint(sources_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(gates_bp)
+app.register_blueprint(human_operator_bp)
+app.register_blueprint(auto_studio_bp)
 
 job_queue.set_execute_fn(execute_draft_core)
 

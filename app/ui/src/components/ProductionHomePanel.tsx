@@ -1,8 +1,10 @@
 import { ArrowRight, CheckCircle2, Circle, ClipboardCheck, Film, FolderOpen, SearchCheck, SlidersHorizontal } from "lucide-react";
 import { useStudioActions, useStudioState } from "../context/StudioContext";
 import ProductionGateStatusPanel from "./ProductionGateStatusPanel";
+import HumanOperatorP0Panel from "./HumanOperatorP0Panel";
 import ProductionProcessAuditPanel from "./ProductionProcessAuditPanel";
 import ProductionWorkflowGatePanel from "./ProductionWorkflowGatePanel";
+import AutoStudioPanel from "./AutoStudioPanel";
 
 type StageStatus = "done" | "current" | "blocked" | "idle";
 
@@ -138,6 +140,10 @@ export default function ProductionHomePanel() {
         <strong>{nextAction.title}</strong>
         <p>{nextAction.body}</p>
       </div>
+
+      <AutoStudioPanel />
+
+      <HumanOperatorP0Panel />
 
       <ProductionGateStatusPanel
         onOpenTopic={() => actions.setActiveTab("topic")}

@@ -1,8 +1,10 @@
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
   Circle,
   ClipboardCheck,
+  Database as DatabaseIcon,
   FileVideo2,
   FolderOpen,
   ListChecks,
@@ -32,10 +34,51 @@ type ProductionWorkflowGatePanelProps = {
   compact?: boolean;
 };
 
+type ServerGate = {
+  stage: string;
+  label?: string;
+  status?: string;
+  detail?: string;
+  nextAction?: string;
+};
+
+type ProductionStatusResponse = {
+  ok: boolean;
+  productionStatus?: {
+    truthSource?: string;
+    workflowGates?: ServerGate[];
+    nextAction?: {
+      stage?: string;
+      label?: string;
+      status?: string;
+      message?: string;
+      tab?: StudioTab;
+      source?: string;
+    };
+  };
+};
+
 const statusCopy: Record<GateStatus, string> = {
   pass: "통과",
   pending: "대기",
   blocked: "차단",
+};
+
+const BRIDGE_URL = "http://127.0.0.1:5161";
+
+const stageConfig: Record<string, { tab: StudioTab; focus: GateFocus[]; icon: WorkflowGate["icon"] }> = {
+  "material-intake": { tab: "topic", focus: ["all", "topic", "plan"], icon: SearchCheck },
+  "source-ledger": { tab: "topic", focus: ["all", "topic", "sources"], icon: DatabaseIcon },
+  "topic-discovery": { tab: "topic", focus: ["all", "topic", "plan"], icon: ShieldCheck },
+  storyboard: { tab: "plan", focus: ["all", "plan", "sources"], icon: ListChecks },
+  "source-acquisition": { tab: "sources", focus: ["all", "sources", "edit"], icon: FolderOpen },
+  "prompt-quality": { tab: "plan", focus: ["all", "plan", "sources", "edit"], icon: ClipboardCheck },
+  "asset-import-review": { tab: "sources", focus: ["all", "sources", "review"], icon: FolderOpen },
+  "edit-assembly": { tab: "edit", focus: ["all", "edit", "review"], icon: SlidersHorizontal },
+  "render-preflight": { tab: "edit", focus: ["all", "edit", "review"], icon: FileVideo2 },
+  "quality-review": { tab: "review", focus: ["all", "review"], icon: ClipboardCheck },
+  "publish-readiness": { tab: "review", focus: ["all", "review"], icon: ShieldCheck },
+  "post-publish-learning": { tab: "advanced", focus: ["all", "review"], icon: ClipboardCheck },
 };
 
 function sourceReady(scene: Scene) {
@@ -59,6 +102,27 @@ function gateClass(status: GateStatus) {
   return "warn";
 }
 
+function normalizeGateStatus(status: string | undefined): GateStatus {
+  if (status === "pass") return "pass";
+  if (status === "pending") return "pending";
+  return "blocked";
+}
+
+function gateFromServer(gate: ServerGate): WorkflowGate {
+  const config = stageConfig[gate.stage] ?? { tab: "home" as StudioTab, focus: ["all"] as GateFocus[], icon: ShieldCheck };
+  const status = normalizeGateStatus(gate.status);
+  return {
+    id: gate.stage,
+    label: gate.label || gate.stage,
+    status,
+    detail: gate.detail || "",
+    nextAction: gate.nextAction || gate.detail || "다음 제작 행동을 확인하세요.",
+    tab: config.tab,
+    focus: config.focus,
+    icon: config.icon,
+  };
+}
+
 function StatusIcon({ status }: { status: GateStatus }) {
   if (status === "pass") return <CheckCircle2 size={14} />;
   if (status === "blocked") return <AlertTriangle size={14} />;
@@ -68,6 +132,9 @@ function StatusIcon({ status }: { status: GateStatus }) {
 export default function ProductionWorkflowGatePanel({ focus = "all", compact = false }: ProductionWorkflowGatePanelProps) {
   const { prompt, draftResult, renderResult } = useStudioState();
   const actions = useStudioActions();
+  const [serverStatus, setServerStatus] = useState<ProductionStatusResponse["productionStatus"] | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [serverCheckedAt, setServerCheckedAt] = useState<string | null>(null);
   const scenes = draftResult?.scenes ?? [];
   const sceneCount = scenes.length;
   const hasPrompt = prompt.trim().length > 0;
@@ -79,7 +146,37 @@ export default function ProductionWorkflowGatePanel({ focus = "all", compact = f
   const hasManifest = Boolean(renderResult?.renderResult?.manifestPath);
   const hasQualityReport = Boolean(renderResult?.renderResult?.qualityReportPath);
 
-  const gates: WorkflowGate[] = [
+  useEffect(() => {
+    let alive = true;
+    async function loadStatus() {
+      try {
+        const response = await fetch(`${BRIDGE_URL}/api/production/status`);
+        const payload = await response.json() as ProductionStatusResponse;
+        if (!response.ok || !payload.ok || !payload.productionStatus) {
+          throw new Error("production-status-unavailable");
+        }
+        if (alive) {
+          setServerStatus(payload.productionStatus);
+          setServerError(null);
+          setServerCheckedAt(new Date().toISOString());
+        }
+      } catch (err) {
+        if (alive) {
+          setServerStatus(null);
+          setServerError(err instanceof Error ? err.message : "production-status-unavailable");
+          setServerCheckedAt(null);
+        }
+      }
+    }
+    void loadStatus();
+    const timer = window.setInterval(() => void loadStatus(), 15000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, [sceneCount, readySources, promptReady, continuityReady, hasRender, hasManifest, hasQualityReport]);
+
+  const localGates: WorkflowGate[] = [
     {
       id: "material-intake",
       label: "소재 입력",
@@ -174,24 +271,52 @@ export default function ProductionWorkflowGatePanel({ focus = "all", compact = f
     },
   ];
 
+  const serverGates = useMemo(
+    () => (serverStatus?.workflowGates ?? []).map(gateFromServer),
+    [serverStatus],
+  );
+  const gates = serverGates.length > 0 ? serverGates : localGates;
   const visibleGates = gates.filter((gate) => focus === "all" || gate.focus.includes(focus));
   const passCount = visibleGates.filter((gate) => gate.status === "pass").length;
   const blockedCount = visibleGates.filter((gate) => gate.status === "blocked").length;
-  const currentGate = visibleGates.find((gate) => gate.status !== "pass") ?? visibleGates[visibleGates.length - 1];
+  const currentGate = serverStatus?.nextAction
+    ? {
+        id: serverStatus.nextAction.stage || "production-status",
+        label: serverStatus.nextAction.label || "제작 상태",
+        status: normalizeGateStatus(serverStatus.nextAction.status),
+        detail: serverStatus.nextAction.message || "",
+        nextAction: serverStatus.nextAction.message || "다음 제작 행동을 확인하세요.",
+        tab: serverStatus.nextAction.tab || "home",
+        focus: ["all"] as GateFocus[],
+        icon: ShieldCheck,
+      }
+    : visibleGates.find((gate) => gate.status !== "pass") ?? visibleGates[visibleGates.length - 1];
   const CurrentIcon = currentGate?.icon;
+  const sourceLabel = serverGates.length > 0
+    ? `서버 production status 기준${serverCheckedAt ? " · refreshed" : ""}`
+    : serverError
+      ? "브리지 미연결: 화면 상태 fallback"
+      : "화면 상태 fallback";
 
   return (
     <div className="gate-advanced-panel production-workflow-gate-panel">
       <div className="gate-candidate-stack-head">
         <div>
           <strong>{compact ? "제작 게이트" : "대시보드 제작 게이트"}</strong>
-          <span>현재 화면 상태를 기준으로 통과, 대기, 차단을 분리합니다.</span>
+          <span>{sourceLabel}</span>
         </div>
         <div className="gate-selected-candidate-plan">
           <span>통과 {passCount}</span>
           <span>차단 {blockedCount}</span>
         </div>
       </div>
+
+      {serverError ? (
+        <div className="gate-help-note warn">
+          <AlertTriangle size={14} />
+          <span>서버 production status 확인 실패: fallback gate는 현재 화면 상태만 반영합니다.</span>
+        </div>
+      ) : null}
 
       {currentGate ? (
         <div className={`gate-help-note ${currentGate.status === "blocked" ? "warn" : ""}`}>

@@ -73,6 +73,8 @@ export type LocalVideoProvider = "wan" | "ltx-video" | "hunyuan-video";
 export type UploadKind = "image" | "video";
 export type CaptionPreset = "none" | "center-short" | "top-hook" | "lower-info";
 export type VisualQualityVerdict = "pass" | "fail" | "needs-review" | "needs-rework" | "not-ready";
+export type ProviderExecutionMode = "auto-route" | "command" | "operator-handoff" | "manual-import" | "api" | string;
+export type HandoffTaskStatus = "queued" | "prompt-copied" | "operator-generated" | "imported" | "blocked" | "fallback-used";
 
 export interface PexelsVideoCandidate {
   id: string;
@@ -152,6 +154,13 @@ export interface Scene {
   local_generation_log_path?: string;
   local_generation_command_preview?: string;
   local_command_template_json?: string;
+  handoff_provider?: string;
+  handoff_status?: HandoffTaskStatus | "";
+  handoff_task_id?: string;
+  handoff_expected_file?: string;
+  handoff_target_url?: string;
+  handoff_output_kind?: string;
+  handoff_provenance_path?: string;
   is_commentary?: boolean;
   transition?: string;
 }
@@ -582,6 +591,9 @@ export interface SceneAssetPayload {
   sourceGeneratorPromptPath?: string;
   sourceGeneratorLogPath?: string;
   sourceGeneratorCommand?: string | null;
+  previewUrl?: string | null;
+  provenancePath?: string;
+  handoffTaskId?: string;
 }
 
 export interface LocalVideoGeneratedAsset extends SceneAssetPayload {
@@ -653,6 +665,13 @@ export interface DraftScenePayload {
   layout_variant_note?: string;
   selected_pexels_video?: PexelsVideoCandidate | null;
   local_video_provider?: LocalVideoProvider;
+  handoff_provider?: string;
+  handoff_status?: HandoffTaskStatus | "";
+  handoff_task_id?: string;
+  handoff_expected_file?: string;
+  handoff_target_url?: string;
+  handoff_output_kind?: string;
+  handoff_provenance_path?: string;
 }
 
 export interface RenderSmokeResult {
@@ -4051,11 +4070,196 @@ export interface HotTopicCandidatesResult {
   error?: string;
 }
 
+export interface AutoStudioProvider {
+  key: string;
+  label: string;
+  mediaKind: string;
+  mode: ProviderExecutionMode;
+  executionMode?: ProviderExecutionMode;
+  handoffKind?: string;
+  sourceIntent?: string;
+  ready?: boolean;
+  default?: boolean;
+  renderableNow?: boolean;
+  canGenerateNow?: boolean;
+  canImportResult?: boolean;
+  requiresOperatorProof?: boolean;
+  expectedOutputKind?: string;
+  targetUrl?: string;
+  adapterInterface?: string;
+  proofBoundary?: string;
+  detail?: string;
+  status?: Record<string, unknown>;
+  devProofRail?: Record<string, unknown> | null;
+}
+
+export interface AutoStudioProviderRegistry {
+  ok: boolean;
+  schema?: string;
+  defaultProvider?: string;
+  executionModes?: ProviderExecutionMode[];
+  devProofRail?: Record<string, unknown>;
+  providers?: AutoStudioProvider[];
+  extensionContract?: Record<string, unknown>;
+  error?: string;
+}
+
+export interface AutoStudioHandoffTask {
+  taskId: string;
+  sceneId: string;
+  provider: string;
+  targetUrl?: string;
+  prompt: string;
+  expectedFileName: string;
+  outputKind: string;
+  proofChecklist: string[];
+  status: HandoffTaskStatus;
+  handoffKind?: string;
+  proofBoundary?: string;
+  importedAssetPath?: string;
+  provenancePath?: string;
+  operatorNote?: string;
+  sourceSurface?: string;
+  updatedAt?: string;
+}
+
+export interface AutoStudioRenderReadiness {
+  status?: "draft-ready" | "render-ready" | "render-blocked" | string;
+  draftReady?: boolean;
+  renderReady?: boolean;
+  publishReady?: boolean;
+  missingImportProofSceneIds?: string[];
+  importedSceneIds?: string[];
+  draftReadyBoundary?: string;
+  renderReadyBoundary?: string;
+  publishReadyBoundary?: string;
+  proofBoundary?: string;
+}
+
+export interface AutoStudioRunResult {
+  ok: boolean;
+  schema?: string;
+  runId?: string;
+  status?: "draft-ready" | "render-ready" | "render-blocked" | "manual-handoff-required" | string;
+  publishReady?: boolean;
+  releaseBoundary?: string;
+  seed?: string;
+  discovery?: HotTopicCandidatesResult;
+  selectedCandidate?: HotTopicCandidate & Record<string, unknown>;
+  creatorPrompt?: {
+    title?: string;
+    topicPrompt?: string;
+    customInstruction?: string;
+    sceneCount?: number;
+    targetDuration?: string;
+    visualStyle?: string;
+    researchTerms?: string[];
+  };
+  assetPipeline?: {
+    selectedProvider?: AutoStudioProvider;
+    registry?: AutoStudioProviderRegistry;
+    generatedAssets?: Array<Record<string, unknown>>;
+    sceneAssetsAttached?: number;
+    importedSceneAssets?: SceneAssetPayload[];
+    handoffQueue?: AutoStudioHandoffTask[];
+    renderReadiness?: AutoStudioRenderReadiness;
+    warnings?: string[];
+    futureProviderSlots?: string[];
+  };
+  draftScenes?: DraftScenePayload[];
+  draftResult?: DraftResult;
+  projectSave?: Record<string, unknown>;
+  renderResult?: RenderSmokeResult["renderResult"] | Record<string, unknown> | null;
+  metrics?: Record<string, unknown>;
+  nextActions?: string[];
+  runPath?: string;
+  latestPath?: string;
+  error?: string;
+}
+
+export interface AutoStudioLatestResult {
+  ok: boolean;
+  schema?: string;
+  latest?: Record<string, unknown> | null;
+  run?: AutoStudioRunResult | null;
+  error?: string;
+}
+
+export interface AutoStudioImportAssetResult {
+  ok: boolean;
+  schema?: string;
+  runId?: string;
+  sceneId?: string;
+  asset?: SceneAssetPayload;
+  provenancePath?: string;
+  sidecar?: Record<string, unknown>;
+  run?: AutoStudioRunResult | null;
+  error?: string;
+}
+
+export interface AutoStudioHandoffTaskUpdateResult {
+  ok: boolean;
+  runId?: string;
+  task?: AutoStudioHandoffTask;
+  handoffQueue?: AutoStudioHandoffTask[];
+  error?: string;
+}
+
 export function fetchHotTopicCandidates(seed = "", limit = 3): Promise<HotTopicCandidatesResult> {
   return _apiFetch<HotTopicCandidatesResult>(
     `/api/topic-discovery/hot-candidates${_buildQuery({ seed, limit })}`,
     { timeout: 20_000 },
   );
+}
+
+export function fetchAutoStudioProviders(): Promise<AutoStudioProviderRegistry> {
+  return _apiFetch<AutoStudioProviderRegistry>("/api/auto-studio/providers", { timeout: 15_000 });
+}
+
+export function fetchAutoStudioLatest(): Promise<AutoStudioLatestResult> {
+  return _apiFetch<AutoStudioLatestResult>("/api/auto-studio/latest", { timeout: 15_000 });
+}
+
+export function runAutoStudio(opts: {
+  seed?: string;
+  assetProvider?: string;
+  renderMode?: "draft" | "smoke";
+  generateAssets?: boolean;
+  sceneCount?: number;
+  templateType?: TemplateType;
+  tone?: TonePreset;
+  lang?: "ko" | "en";
+  targetDuration?: "30s" | "1min" | "custom";
+  subtitleStyle?: string;
+  bgmEnabled?: boolean;
+  visualStyle?: string;
+}): Promise<AutoStudioRunResult> {
+  return _post<AutoStudioRunResult>("/api/auto-studio/run", opts, 900_000);
+}
+
+export function updateAutoStudioHandoffTask(opts: {
+  runId: string;
+  taskId: string;
+  status: HandoffTaskStatus;
+  operatorNote?: string;
+  sourceSurface?: string;
+}): Promise<AutoStudioHandoffTaskUpdateResult> {
+  return _post<AutoStudioHandoffTaskUpdateResult>("/api/auto-studio/handoff-task", opts, 20_000);
+}
+
+export function importAutoStudioSceneAsset(opts: {
+  runId: string;
+  sceneId: string;
+  provider: string;
+  handoffTaskId: string;
+  prompt: string;
+  fileName: string;
+  fileBase64: string;
+  sourceSurface?: string;
+  operatorNote?: string;
+  proofMode?: string;
+}): Promise<AutoStudioImportAssetResult> {
+  return _post<AutoStudioImportAssetResult>("/api/auto-studio/import-asset", opts, 120_000);
 }
 
 export function evaluateTopicDiscoveryGate(packet: Record<string, unknown>): Promise<GateEvaluationResult> {

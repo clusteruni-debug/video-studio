@@ -490,6 +490,31 @@ longform readiness second, browser generation third, edit/export proof last.
 7. Import and review the MP4 with source provenance and caption-safe evidence.
 8. Render only after the imported source candidate passes review.
 
+Source-level human-mode update on 2026-06-25:
+
+- `/api/human-operator/worklist` now exposes this runbook's unresolved Grok UI
+  handoff/export proof and repeatable source-import proof as human-visible
+  blockers.
+- `/api/human-operator/sources/review` rejects accepted browser proof when the
+  evidence is surface-only, a Grok `/c/*` redirect, or dependent on a native
+  Chrome Download/Save/Export prompt.
+- This does not complete the recovery plan. The plan still requires real
+  signed-in Chrome/Grok Imagine generation, local MP4 import or operator-owned
+  upload, source acceptance, render, dashboard smoke, phone review, and publish
+  packet evidence.
+
+Auto Studio operator-handoff update on 2026-06-25:
+
+- Auto Studio now treats Grok and Gemini as operator handoffs with local
+  import required, not automatic generation providers.
+- Scene Director records prompt-copy, operator-generated, imported, blocked,
+  and fallback-used states per scene. Marking a scene generated does not create
+  or fake a source asset.
+- Handoff scenes fail render readiness until an imported local PNG/MP4 is
+  attached with provenance.
+- Windows fallback demo render proof exists, but Grok/Gemini live source proof
+  remains blocked on human operation in a signed-in browser.
+
 ## Definition Of Done For This Recovery Plan
 
 This plan is not done when a document exists.

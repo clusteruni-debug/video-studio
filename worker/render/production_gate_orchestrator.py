@@ -343,6 +343,23 @@ def _publish_readiness_stage(packets: dict[str, Any], prerequisite_status: str) 
     if prerequisite_status != "pass":
         return _stage_result("publish-readiness", status="blocked", detail="이전 제작 게이트가 먼저 통과해야 합니다.", failed_checks=["previousStage"])
 
+    phone_name, phone_packet = _first_packet(packets, "phoneReview")
+    if not phone_name:
+        quality_review = _as_dict(packets.get("qualityReview"))
+        nested_phone = quality_review.get("phoneReview")
+        if _meaningful(nested_phone):
+            phone_name = "qualityReview.phoneReview"
+            phone_packet = nested_phone
+    phone_ok, phone_detail = _packet_has_production_proof("quality-review", phone_packet)
+    if not phone_name or not phone_ok:
+        failed = "phoneReview" if not phone_name else f"insufficientEvidence:{phone_name}:{phone_detail}"
+        return _stage_result(
+            "publish-readiness",
+            status="pending",
+            detail="publish-readiness에는 phone full-watch review proof가 먼저 필요합니다.",
+            failed_checks=[failed],
+        )
+
     release_name, release_packet = _first_packet(
         packets,
         "longformMinimumReleasePacket",

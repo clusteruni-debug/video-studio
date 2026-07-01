@@ -1,6 +1,43 @@
+---
+plan_id: VIDEO-STUDIO-FRONTEND-ROADMAP
+project: video-studio
+status: SHIPPED
+status_reason: Historical frontend roadmap archive; unchecked body checkboxes are retained as historical notes, not active work.
+milestones:
+  - { id: P1, label: "Script quality", done: true }
+  - { id: P2, label: "Scene editing", done: true }
+  - { id: P3, label: "Delete and cleanup actions", done: true }
+  - { id: P4, label: "Progress and timing UX", done: true }
+  - { id: P5, label: "Layout and UI polish", done: true }
+  - { id: P6, label: "Image pipeline enhancement", done: true }
+decisions_pending: []
+blockers: []
+depends_on: []
+git_strategy: sub-repo
+last_verified: 2026-06-26
+drift_overrides:
+  W3: historical_checklist_retained
+ko_translation:
+  status_reason_ko: "과거 프론트엔드 로드맵 아카이브이며, 본문 미체크 항목은 활성 작업이 아니라 역사 기록으로 유지한다."
+  milestones_ko:
+    - { id: P1, label_ko: "스크립트 품질" }
+    - { id: P2, label_ko: "씬 편집" }
+    - { id: P3, label_ko: "삭제 및 정리 액션" }
+    - { id: P4, label_ko: "진행 및 시간 UX" }
+    - { id: P5, label_ko: "레이아웃 및 UI 정리" }
+    - { id: P6, label_ko: "이미지 파이프라인 강화" }
+  decisions_pending_ko: []
+  blockers_ko: []
+---
+
 # Video Studio App — Frontend Roadmap
 
-Status: MOSTLY COMPLETE (created 2026-03-28, verified 2026-04-02)
+Status: SHIPPED historical archive (created 2026-03-28, verified 2026-04-02, archive marker refreshed 2026-06-26)
+
+Archive note 2026-06-26: this file is retained for historical context. The
+unchecked task boxes below are not the active queue. Active Video Studio work is
+tracked in `projects/video-studio/docs/IMPLEMENTATION-ROADMAP.md` and active
+`projects/video-studio/docs/plans/PLAN-*.md` files.
 
 ---
 

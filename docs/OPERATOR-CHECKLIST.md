@@ -15,6 +15,25 @@
 
 ## Step-by-Step
 
+### 0. Human-Mode First Run
+
+Start with Demo Mode before configuring optional providers.
+
+- Run `npm run bridge`.
+- Run `npm run dev`.
+- Open `http://127.0.0.1:5160`.
+- On Home, check `Human operator P0`.
+- Confirm `GET /api/human-operator/status` reports setup, demo, provider,
+  source, render, phone review, publish packet, and operator blocker summaries.
+- Prepare the no-LLM demo packet.
+- Run the demo render from Edit.
+- Accept source proof from Sources.
+- Record phone review from Review.
+- Inspect the publish packet blockers before any upload.
+
+Claude Code, Codex, Gemini, Grok, CapCut automation, and paid providers are not
+runtime requirements for this first path.
+
 ### 1. Machine Prep
 - install or keep Python 3.14 x64
 - install FFmpeg and ensure `ffmpeg -version` works
@@ -38,6 +57,16 @@ With only local tools, the tool can render through:
 With optional free keys, it can also use:
 - Gemini Flash Image for free-tier image generation
 - Pexels/Klipy/Freesound stock fallbacks
+
+Provider readiness is visible at:
+
+```text
+GET /api/human-operator/provider-readiness
+GET /api/human-operator/adapter-command-readiness
+GET /api/human-operator/worklist
+```
+
+Optional providers must not block Demo Mode.
 
 Set these in your environment or `.env`:
 ```

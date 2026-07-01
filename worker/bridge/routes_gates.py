@@ -21,6 +21,8 @@ from worker.bridge.material_library import (
     material_summary,
 )
 from worker.bridge.material_dryrun import latest_material_dryrun_summary, run_material_dryrun_preflight
+from worker.bridge.production_status import build_production_status
+from worker.bridge.thin_production_loop import build_thin_loop_status
 from worker.render.longform_dryrun_readiness import evaluate_longform_dryrun_readiness
 from worker.render.longform_minimum_release_gate import build_longform_publish_packet_template
 from worker.render.production_gate_orchestrator import build_process_gate_audit, evaluate_production_gates
@@ -561,6 +563,18 @@ def production_gates_publish_packet_template_route():
 @gates_bp.route("/api/production-gates/process-audit", methods=["GET"])
 def production_gates_process_audit_route():
     return jsonify({"ok": True, "audit": build_process_gate_audit()})
+
+
+@gates_bp.route("/api/production/status", methods=["GET"])
+def production_status_route():
+    return jsonify({"ok": True, "productionStatus": build_production_status()})
+
+
+@gates_bp.route("/api/production/thin-loop/status", methods=["GET", "POST"])
+def production_thin_loop_status_route():
+    packet = request.get_json(silent=True) if request.method == "POST" else None
+    packet = packet if isinstance(packet, dict) else {}
+    return jsonify({"ok": True, "thinLoop": build_thin_loop_status(packet)})
 
 
 def _check_label(key: str) -> str:

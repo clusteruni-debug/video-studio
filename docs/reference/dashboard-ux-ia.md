@@ -1,6 +1,6 @@
 ---
 title: Video Studio Dashboard UX and Information Architecture Reference
-last_verified: 2026-06-23
+last_verified: 2026-06-25
 sources:
   - CapCut online video editor
   - Runway product
@@ -27,6 +27,9 @@ raw tools, logs, queues, or gate details.
 ## Reference History
 
 Checked on 2026-06-23.
+
+Updated on 2026-06-25 for the canonical production status read-model and
+thin-loop proof contract.
 
 | Source | URL | Reusable finding | Video Studio application |
 |---|---|---|---|
@@ -79,6 +82,15 @@ can remain available inside workflow stages or under `Advanced`.
   ledger, topic validation, storyboard, source acquisition, prompt quality,
   import review, edit assembly, render preflight, quality review, publish
   readiness, and post-publish learning.
+- The canonical server read-model is `/api/production/status`. UI panels may
+  keep a local fallback for stale bridge sessions, but when the bridge exposes
+  this endpoint, Home and shared workflow gate panels must treat it as the
+  source of truth for `nextAction`, workflow gate rows, active approval packet
+  blockers, and thin-loop state.
+- The thin production loop is exposed through `/api/production/thin-loop/status`
+  and must stay stricter than generic render evidence: material, rough-cut
+  dry-run, accepted source, render candidate, and phone review pass before
+  final/publish work can proceed.
 - The `Home` dashboard should surface material library totals, source-ledger
   coverage, topic-gate pass counts, and a stale-bridge warning when the running
   bridge does not expose the current material DB API.
@@ -153,6 +165,11 @@ Use this checklist before claiming a Video Studio dashboard UX change is done:
   visible outside the raw gate tab.
 - The shared workflow gate panel separates `통과`, `대기`, and `차단` states,
   and every row links to the production tab where that evidence is repaired.
+- The shared workflow gate panel uses `/api/production/status` when available
+  and must disclose local fallback state when the bridge is stale or offline.
+- The thin-loop route rejects Grok `/c/*` redirects as source proof. Grok source
+  proof must reach `/imagine` and still needs generation plus import evidence
+  before it can pass the source-accepted stage.
 - The dashboard must include a process-wide audit surface that checks every
   production stage against four anchors: dashboard surface, gate code anchor,
   test anchor, and required evidence. This is distinct from a runtime pass/fail

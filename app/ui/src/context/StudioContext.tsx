@@ -302,6 +302,13 @@ function reducer(state: StudioState, action: Action): StudioState {
             layout_variant_key: scene.layout_variant_key || "",
             layout_variant_label: scene.layout_variant_label || "",
             layout_variant_note: scene.layout_variant_note || "",
+            handoff_provider: scene.handoff_provider || "",
+            handoff_status: scene.handoff_status || "",
+            handoff_task_id: scene.handoff_task_id || "",
+            handoff_expected_file: scene.handoff_expected_file || "",
+            handoff_target_url: scene.handoff_target_url || "",
+            handoff_output_kind: scene.handoff_output_kind || "",
+            handoff_provenance_path: scene.handoff_provenance_path || "",
           })),
         },
       };
@@ -358,6 +365,9 @@ function reducer(state: StudioState, action: Action): StudioState {
         visual_quality_verdict: "",
         thumbnail_review_note: "", audio_mix_review_note: "", platform_comparison_note: "",
         layout_variant_key: "", layout_variant_label: "", layout_variant_note: "",
+        handoff_provider: "", handoff_status: "", handoff_task_id: "",
+        handoff_expected_file: "", handoff_target_url: "", handoff_output_kind: "",
+        handoff_provenance_path: "",
       };
       raw.splice(action.afterIndex + 1, 0, newScene);
       const scenes = raw.map((s, i) => ({ ...s, scene_num: i + 1 }));
@@ -402,6 +412,7 @@ export interface StudioActions {
   toggleDebug(): void;
   handleCreate(): Promise<void>;
   setDraftResult(result: DraftResult): void;
+  setRenderResult(result: RenderSmokeResult | null): void;
   recheckBridge(): Promise<void>;
   enqueueImages(scenes: Scene[]): void;
   retryImage(id: string): void;
@@ -587,9 +598,21 @@ function summarizeGrokAutomation(result: Partial<GrokBrowserAutomationResult>): 
 }
 
 const LOCAL_VIDEO_SOURCES = new Set<VisualSource>(["wan", "ltx-video", "hunyuan-video"]);
+const HANDOFF_IMPORT_REQUIRED_SOURCES = new Set(["grok", "gemini", "seedance", "custom-external"]);
 
 function isLocalVideoSource(source?: string): source is LocalVideoProvider {
   return source === "wan" || source === "ltx-video" || source === "hunyuan-video";
+}
+
+function missingHandoffImportProof(scenes: Scene[]): string[] {
+  return scenes
+    .map((scene, index) => ({ scene, sceneId: sceneIdFor(scene, index) }))
+    .filter(({ scene }) => {
+      const source = scene.handoff_provider || scene.image_source || "";
+      if (!HANDOFF_IMPORT_REQUIRED_SOURCES.has(source)) return false;
+      return !scene._upload_file && !scene._server_asset_path;
+    })
+    .map(({ sceneId }) => sceneId);
 }
 
 function parseCommandTemplateJson(value?: string): string[] | null {
@@ -678,6 +701,9 @@ async function buildSceneAssets(scenes: Scene[]): Promise<SceneAssetPayload[]> {
       ...(scene.local_generation_prompt_path ? { sourceGeneratorPromptPath: scene.local_generation_prompt_path } : {}),
       ...(scene.local_generation_log_path ? { sourceGeneratorLogPath: scene.local_generation_log_path } : {}),
       ...(scene.local_generation_command_preview ? { sourceGeneratorCommand: scene.local_generation_command_preview } : {}),
+      ...(scene.handoff_provider ? { provider: scene.handoff_provider, sourceProvider: scene.handoff_provider } : {}),
+      ...(scene.handoff_task_id ? { handoffTaskId: scene.handoff_task_id } : {}),
+      ...(scene.handoff_provenance_path ? { provenancePath: scene.handoff_provenance_path } : {}),
     };
     if (scene._upload_file) {
       assets.push({
@@ -764,6 +790,13 @@ function buildDraftScenes(scenes: Scene[]): DraftScenePayload[] {
     layout_variant_note: scene.layout_variant_note || "",
     selected_pexels_video: scene._selected_pexels_video || null,
     local_video_provider: scene.local_video_provider,
+    handoff_provider: scene.handoff_provider || "",
+    handoff_status: scene.handoff_status || "",
+    handoff_task_id: scene.handoff_task_id || "",
+    handoff_expected_file: scene.handoff_expected_file || "",
+    handoff_target_url: scene.handoff_target_url || "",
+    handoff_output_kind: scene.handoff_output_kind || "",
+    handoff_provenance_path: scene.handoff_provenance_path || "",
   }));
 }
 
@@ -1120,6 +1153,9 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     setDraftResult(result) {
       dispatch({ type: "DRAFT_OK", result });
     },
+    setRenderResult(result) {
+      dispatch({ type: "SET_FIELD", field: "renderResult", value: result });
+    },
 
     async recheckBridge() {
       dispatch({ type: "SET_FIELD", field: "bridgeStatus", value: "checking" });
@@ -1204,6 +1240,10 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: "EDIT_SCENE", index, field: "_video_url", value: uploadKind === "video" ? previewUrl : null });
       dispatch({ type: "EDIT_SCENE", index, field: "_selected_pexels_video", value: null });
       dispatch({ type: "EDIT_SCENE", index, field: "image_source", value: source });
+      if (HANDOFF_IMPORT_REQUIRED_SOURCES.has(source)) {
+        dispatch({ type: "EDIT_SCENE", index, field: "handoff_provider", value: source });
+        dispatch({ type: "EDIT_SCENE", index, field: "handoff_status", value: "imported" });
+      }
       if (LOCAL_VIDEO_SOURCES.has(source)) {
         dispatch({ type: "EDIT_SCENE", index, field: "local_video_provider", value: source });
       }
@@ -2364,6 +2404,15 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       const s = stateRef.current;
       const scenes = s.draftResult?.scenes ?? [];
       if (!s.draftResult?.ok || scenes.length === 0 || s.rendering) return null;
+      const missingHandoffProof = missingHandoffImportProof(scenes);
+      if (missingHandoffProof.length > 0) {
+        dispatch({
+          type: "SET_FIELD",
+          field: "error",
+          value: `operator handoff import proof가 없는 씬은 렌더할 수 없습니다: ${missingHandoffProof.join(", ")}`,
+        });
+        return null;
+      }
       dispatch({ type: "RENDER_START" });
       try {
         const sceneAssets = await buildSceneAssets(scenes);
