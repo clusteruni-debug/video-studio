@@ -1,8 +1,8 @@
 ---
 plan_id: VIDEO-STUDIO-SEMI-AUTO-QUALITY-LOOP
 project: video-studio
-status: PROPOSED
-status_reason: Revised after triple adversarial review (CC + agy + Codex code-verified) — milestones reordered (source/prompt quality first, render hotfixes retargeted to the Grok-MP4 path, editorial gate promoted to primary acceptance, local-video extracted); awaiting go-signal
+status: IN_PROGRESS
+status_reason: "PROPOSED->IN_PROGRESS per WORKSPACE-AUDIT-V2 M2: 32/41 body items already done; PROPOSED no longer reflects reality"
 milestones:
   - { id: M0, label: "Foundation — confirm canonical render path + narrow CRITICAL security guards + minimal hygiene prerequisites", done: false }
   - { id: M1, label: "Source & prompt quality FIRST — controlled camera/style lexicon, fix search-query seeds, one-click handoff, preregistered A/B vs manual Grok", done: false }
@@ -15,7 +15,7 @@ decisions_pending: []
 blockers: []
 depends_on: []
 git_strategy: sub-repo
-last_verified: 2026-07-04
+last_verified: 2026-07-05
 ko_translation:
   status_reason_ko: "3자 적대 리뷰(CC+agy+Codex 코드검증) 후 개정 — 마일스톤 재배열(소스/프롬프트 품질 먼저, 렌더 핫픽스를 Grok-MP4 경로로 재조준, 창작 게이트를 1급 합격기준으로 승격, 로컬비디오 분리); go 사인 대기"
   milestones_ko:
