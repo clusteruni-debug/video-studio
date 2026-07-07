@@ -17,7 +17,7 @@ depends_on: []
 git_strategy: sub-repo
 last_verified: 2026-07-05
 ko_translation:
-  status_reason_ko: "3자 적대 리뷰(CC+agy+Codex 코드검증) 후 개정 — 마일스톤 재배열(소스/프롬프트 품질 먼저, 렌더 핫픽스를 Grok-MP4 경로로 재조준, 창작 게이트를 1급 합격기준으로 승격, 로컬비디오 분리); go 사인 대기"
+  status_reason_ko: "WORKSPACE-AUDIT-V2 M2에 따라 PROPOSED->IN_PROGRESS 전환: 본문 41개 항목 중 32개 이미 완료, PROPOSED는 더 이상 실상을 반영하지 않음"
   milestones_ko:
     - { id: M0, label_ko: "기반 — canonical 렌더경로 확정 + narrow CRITICAL 보안 가드 + 최소 위생 전제조건" }
     - { id: M1, label_ko: "소스/프롬프트 품질 먼저 — 통제된 카메라/스타일 사전, 검색쿼리 씨앗 수정, 원클릭 핸드오프, 수동 Grok 대비 사전등록 A/B" }
@@ -178,6 +178,14 @@ render polish on a branch the user never hits. Local-video is out (separate plan
   next-action/gate widgets; resolve `GatesPanel` dual-mount.
 - **Acceptance**: `check-project-rules.py` 0 violations on touched files + wired as hard pre-commit; undefined-CSS-var == 0; `npm run build` + `tsc --noEmit` green; `ARCHITECTURE.md` references only real components.
 - **Verify**: lint exit 0 on touched files; `npm run build` exit 0; grep undefined vars == 0.
+
+> 2026-07-07 (gap-sweep): WORKSPACE-AUDIT-V2 `## P video-studio` (memory/reviews/workspace-audit-v2-findings-20260704.md, verdict "fold into SEMI-AUTO-QUALITY-LOOP") findings were never folded in — verified still open 2026-07-07. Absorb into M6 docs/hygiene scope:
+> - [ ] [MED] Add an "Artifact-Quality Gates" pointer section to project CLAUDE.md/AGENTS.md linking `config/project-quality.json` + `worker/render/{golden_reference_gate,production_mode_gate,longform_minimum_release_gate}.py` (currently 0 mentions in either entry doc — verified).
+> - [ ] [LOW] AGENTS.md:6 "Python 3.11" → 3.14 (.venv is 3.14.2).
+> - [ ] [LOW] docs/IMPLEMENTATION-ROADMAP.md:132 drop "and Ollama" (resolver removed 2026-04) — verified still present.
+> - [ ] [LOW] CLAUDE.md Rendering Rules blockquote (3 Korean lines) → English per doc-language rule.
+> - [ ] M6 targeted-split candidate list should also weigh audit-verified god-files not named here: `tests/test_manual_clip_pipeline.py` (14.7k) and `worker/bridge/routes_media.py` (11.4k) — evaluate, still touched-files-only, not big-bang.
+> (Board stale/superseded-row triage from the same audit is owned by WORKSPACE-AUDIT-V2 master M3, not this plan.)
 
 > **Extracted**: local-video-model full-auto spike → separate opt-in plan `PLAN-VIDEO-STUDIO-LOCAL-VIDEO-SPIKE.md`
 > (one model, one CLI/server run, one MP4 artifact, measured VRAM/time/quality, then decide). Kept out of this

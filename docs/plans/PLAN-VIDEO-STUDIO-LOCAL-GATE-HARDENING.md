@@ -14,7 +14,7 @@ blockers:
   - Windows-local bridge/dashboard runtime proof was not run.
 depends_on: []
 git_strategy: sub-repo
-last_verified: 2026-06-26
+last_verified: 2026-07-01
 ko_translation:
   status_reason_ko: "로컬 대시보드 게이트 정적 강화와 전체 Vite 빌드는 검증됐고, Windows 런타임 증명은 대기로 남는다."
   milestones_ko:
@@ -143,6 +143,8 @@ Verification evidence:
 - `./node_modules/.bin/tsc --noEmit` passed.
 - `npm run build` passed after restoring Rollup's optional native package `@rollup/rollup-linux-x64-gnu` in current `node_modules`.
 - Windows-local bridge/dashboard runtime proof was not run.
+
+> 2026-07-07 (gap-sweep): Reciprocal link — `PLAN-VIDEO-STUDIO-SEMI-AUTO-QUALITY-LOOP.md` (2026-07-04) supersedes this plan's "gates as quality proof" premise: its M3 editorial sign-off gate becomes primary acceptance and its M4 perceptual floor replaces manifest-only checks (that plan already records this one-way; noted here so this plan is not read as the final quality-gate word). The remaining Windows-local bridge/dashboard runtime proof blocker here overlaps SEMI-AUTO M0's canonical-render-path question — running that runtime smoke should also capture which endpoint the user's real render comes from. Board row `VIDEO-STUDIO-LOCAL-GATE-HARDENING-20260626-01` has sat in `review` with no QA sidecar since 06-26 (audit-v2 board finding); closure is gated on the same runtime proof.
 
 ## Acceptance Criteria (overall)
 
