@@ -2,7 +2,7 @@
 plan_id: VIDEO-STUDIO-LOCAL-GATE-HARDENING
 project: video-studio
 status: IN_PROGRESS
-status_reason: Static local dashboard gate hardening and full Vite build are verified; Windows runtime proof remains pending.
+status_reason: "Static gate hardening verified earlier; Windows-local runtime proof RUN 2026-07-09: bridge(5161) /api/health + /api/production/status + thin-loop/status all ok with gates truthfully blocked (publish gate held closed pre-phone-review), dashboard(5160) served 200, save_plan -> compose produced final mp4 (runtime-smoke-sample). Remaining operator-owned proofs (signed-in Grok/Gemini, phone review, publish evidence) are release gates tracked by SEMI-AUTO-QUALITY-LOOP, not this plan's blocker."
 milestones:
   - { id: M0, label: "Static bypass audit and red-test map", done: true }
   - { id: M1, label: "Source and import proof validation hardening", done: true }
@@ -10,13 +10,12 @@ milestones:
   - { id: M3, label: "Dashboard truth-source and stale-state repair", done: true }
   - { id: M4, label: "Static quality gate suite and GitHub-local checklist", done: true }
 decisions_pending: []
-blockers:
-  - Windows-local bridge/dashboard runtime proof was not run.
+blockers: []
 depends_on: []
 git_strategy: sub-repo
-last_verified: 2026-07-01
+last_verified: 2026-07-09
 ko_translation:
-  status_reason_ko: "로컬 대시보드 게이트 정적 강화와 전체 Vite 빌드는 검증됐고, Windows 런타임 증명은 대기로 남는다."
+  status_reason_ko: "정적 게이트 강화는 검증 완료. Windows 로컬 런타임 증명 2026-07-09 실행: bridge(5161) health/production-status/thin-loop 정상 + 게이트가 blocked를 정직 보고(폰 리뷰 전 publish gate 닫힘 유지), dashboard(5160) 200, save_plan→compose로 최종 mp4 생성. 남은 운영자 증명(Grok/Gemini 로그인, 폰 리뷰, 업로드 증거)은 SEMI-AUTO-QUALITY-LOOP가 추적."
   milestones_ko:
     - { id: M0, label_ko: "정적 우회 감사와 실패 테스트 맵" }
     - { id: M1, label_ko: "소스 및 가져오기 증거 검증 강화" }
@@ -24,8 +23,7 @@ ko_translation:
     - { id: M3, label_ko: "대시보드 truth-source 및 stale 상태 수정" }
     - { id: M4, label_ko: "정적 품질 게이트 묶음과 GitHub 로컬 체크리스트" }
   decisions_pending_ko: []
-  blockers_ko:
-    - "Windows 로컬 bridge/dashboard 런타임 증명은 실행하지 못했다."
+  blockers_ko: []
 ---
 
 # Plan — Local Gate Hardening
@@ -111,8 +109,14 @@ static gate coding.
 
 ### Remaining Runtime Or Environment Blockers
 
-- [ ] Windows-local bridge/dashboard runtime proof must still be run by the
-  operator.
+- [x] Windows-local bridge/dashboard runtime proof — RUN 2026-07-09 (CC): bridge
+  on 5161 answered `/api/health` (bridge ok, planner gemini, zero-paid policy
+  active), `/api/production/status` (ok, active packet truthfully blocked,
+  capcutHandoffRequired=true / ffmpegOnlyFinalAllowed=false), and
+  `/api/production/thin-loop/status` (ok, publish gate held closed pending phone
+  review); Vite dashboard on 5160 served 200; `save_plan` → `compose` produced
+  `storage/renders/20260709-234711-runtime-smoke-sample/runtime-smoke-sample.mp4`.
+  Servers torn down by port-tree kill afterward.
 - [ ] Signed-in Grok/Gemini generate/import proof remains operator-owned runtime
   proof.
 - [ ] Phone full-watch review, publish packet inspection, and upload/platform
@@ -142,7 +146,7 @@ Verification evidence:
 - `pytest -q tests/test_production_status_routes.py tests/test_thin_production_loop.py tests/test_production_gate_orchestrator.py` passed: 14 tests.
 - `./node_modules/.bin/tsc --noEmit` passed.
 - `npm run build` passed after restoring Rollup's optional native package `@rollup/rollup-linux-x64-gnu` in current `node_modules`.
-- Windows-local bridge/dashboard runtime proof was not run.
+- Windows-local bridge/dashboard runtime proof was not run at static-slice close; it was RUN 2026-07-09 — see "Remaining Runtime Or Environment Blockers" for the evidence. SEMI-AUTO M0's canonical-render-path question got its answer from the live `/api/production/status`: the real render path requires CapCut handoff (`capcutHandoffRequired=true`, `ffmpegOnlyFinalAllowed=false`).
 
 > 2026-07-07 (gap-sweep): Reciprocal link — `PLAN-VIDEO-STUDIO-SEMI-AUTO-QUALITY-LOOP.md` (2026-07-04) supersedes this plan's "gates as quality proof" premise: its M3 editorial sign-off gate becomes primary acceptance and its M4 perceptual floor replaces manifest-only checks (that plan already records this one-way; noted here so this plan is not read as the final quality-gate word). The remaining Windows-local bridge/dashboard runtime proof blocker here overlaps SEMI-AUTO M0's canonical-render-path question — running that runtime smoke should also capture which endpoint the user's real render comes from. Board row `VIDEO-STUDIO-LOCAL-GATE-HARDENING-20260626-01` has sat in `review` with no QA sidecar since 06-26 (audit-v2 board finding); closure is gated on the same runtime proof.
 
