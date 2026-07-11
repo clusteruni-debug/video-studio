@@ -65,4 +65,27 @@ def test_news_prompt_keeps_tts_script_contract():
 
     assert "full spoken text for TTS" in prompt
     assert "Every narration MUST contain" in prompt
-    assert "visual_action" not in prompt
+    assert "visual_action" in prompt
+    assert "English image search query for Google Images" in prompt
+    assert "image_prompt is used for Google Image Search" in prompt
+    assert "Never feed a raw Google image search query into visual_action." in prompt
+    assert "CONTROLLED CAMERA/STYLE LEXICON" in prompt
+
+
+def test_normalize_scenes_adds_visual_action_without_overwriting_search_prompt():
+    image_query = "Nike Air Max 1/97 Sean Wotherspoon sneaker"
+    scenes = [{
+        "scene_num": 1,
+        "narration": "출시가가 16만원이었는데 지금 리셀가는 500만원을 넘겼어요.",
+        "display_text": "500만원",
+        "image_prompt": image_query,
+    }]
+
+    normalized = normalize_scenes(scenes, "세계에서 가장 비싼 운동화", "news_explainer")
+    scene = normalized[0]
+
+    assert scene["image_prompt"] == image_query
+    assert scene["visual_action"]
+    assert "first second motion" in scene["visual_action"]
+    assert "phone-camera" in scene["visual_action"]
+    assert image_query not in scene["visual_action"]

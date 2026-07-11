@@ -2,9 +2,9 @@
 plan_id: VIDEO-STUDIO-SEMI-AUTO-QUALITY-LOOP
 project: video-studio
 status: IN_PROGRESS
-status_reason: "PROPOSED->IN_PROGRESS per WORKSPACE-AUDIT-V2 M2: 32/41 body items already done; PROPOSED no longer reflects reality"
+status_reason: M0 foundation complete; M1 source/prompt quality is next.
 milestones:
-  - { id: M0, label: "Foundation — confirm canonical render path + narrow CRITICAL security guards + minimal hygiene prerequisites", done: false }
+  - { id: M0, label: "Foundation — confirm canonical render path + narrow CRITICAL security guards + minimal hygiene prerequisites", done: true }
   - { id: M1, label: "Source & prompt quality FIRST — controlled camera/style lexicon, fix search-query seeds, one-click handoff, preregistered A/B vs manual Grok", done: false }
   - { id: M2, label: "Render hotfixes on the Grok-MP4 path (measured) — BGM gain from LUFS/true-peak, subtitle cue allocator; proven on an imported Grok MP4 render", done: false }
   - { id: M3, label: "Editorial acceptance gate — promote existing human review fields (hook/continuity/caption/thumbnail/audio) to PRIMARY sign-off gate", done: false }
@@ -15,7 +15,7 @@ decisions_pending: []
 blockers: []
 depends_on: []
 git_strategy: sub-repo
-last_verified: 2026-07-05
+last_verified: 2026-07-09
 ko_translation:
   status_reason_ko: "WORKSPACE-AUDIT-V2 M2에 따라 PROPOSED->IN_PROGRESS 전환: 본문 41개 항목 중 32개 이미 완료, PROPOSED는 더 이상 실상을 반영하지 않음"
   milestones_ko:
@@ -96,12 +96,34 @@ render polish on a branch the user never hits. Local-video is out (separate plan
   `apiRenderSmoke`). Determine which path the user's actual uploaded videos come from; document it as
   canonical. **M2 render fixes target that path**; if CapCut is canonical, BGM/subtitle fixes must land in
   the CapCut handoff, not `compose_ffmpeg.py`. This gates whether any render fix reaches the user.
+  - 2026-07-09 Codex M0 slice: documented the route split and active packet boundary in
+    `docs/CANONICAL-RENDER-PATH.md`. Current evidence separates the generic dashboard FFmpeg smoke path
+    from the active `kr-curiosity` CapCut draft packet; M2 must select the path per packet before render fixes.
 - **Narrow CRITICAL security guards** (browser handoff/import is actively exercised): `routes_grok.py:6222`
   `_launch_cdp_browser` executable allowlist; `routes_grok.py:12611` `bookmarklet-import` Downloads
   restriction + POST-not-GET; `content.js:670,614` route Grok fetch through the origin-guarded background.
   Separate reviewer pass (author≠reviewer, Rule #14) before merge. (Broad CORS/sender cleanup → M6.)
+  - 2026-07-09 Codex M0 slice: implemented the executable-name allowlist, POST-only bookmarklet import with
+    default-Downloads containment, and Grok content-script command/event routing through the background origin
+    guard. Independent review remains required for this security-sensitive slice.
+  - 2026-07-09 Codex review attempt: headless Claude Code probe timed out, but the follow-up interactive
+    Claude Code security review passed with 0 HIGH / 0 MEDIUM newly-added vulnerabilities and was recorded in
+    `memory/reviews/cc-review-VIDEO-STUDIO-M0-CANONICAL-SECURITY-20260709-01.md`; Rule #14 is satisfied.
 - **Minimal hygiene only** (low-risk, does not burn quality budget): `git rm --cached` the 178 MB tracked
   BGM; add `logs/` to `.gitignore`; delete root junk jpg. (Broad docs/lint/refactor → M6.)
+  - 2026-07-09 Codex M0 hygiene closeout: untracked 43 BGM MP3 binaries from the git index
+    (178.5 MiB), added `logs/` to `.gitignore`, and deleted the ignored root junk jpg
+    `HEdbg0vaEAASMCQ.jpg`. Audio files remain on disk for local use.
+- **Build closeout**:
+  - 2026-07-09 Codex M0 build fix: `npm run build` now exits 0 by keeping the Vite UI root on the
+    realpath-resolved app path while writing `outDir` to the workspace alias `C:/vibe/projects/video-studio/dist`.
+    The previous native crash reproduced when both root and outDir resolved to the Desktop mirror with
+    `emptyOutDir=true`.
+- **M0 closeout**:
+  - 2026-07-09: M0 foundation is complete. Canonical path documentation, narrow security guards, minimal hygiene,
+    Vite build recovery, focused static checks, and independent CC security review are all recorded. The remaining
+    wildcard-CORS/tokenless local bridge risk is pre-existing and deferred to a follow-up hardening slice, not an
+    M0 blocker.
 - **Acceptance**: a one-line doc names the canonical render path with evidence (which endpoint the user's
   last real upload came from); a request with a non-allowlisted `browserExecutable` returns 4xx and spawns
   nothing (test asserts no `Popen`); `bookmarklet-import` outside Downloads returns 4xx; git-tracked size
@@ -115,9 +137,19 @@ render polish on a branch the user never hits. Local-video is out (separate plan
 - Fix the 13/17 templates whose "visual seed" is a Google-image-search query (`image_prompt`) being fed
   verbatim into a video prompt — populate a real `visual_action` for video prompts.
 - Fix `_prompt_join()` silent-drop past 500 chars → shorten-or-warn so camera/continuity never vanishes silently.
+  - 2026-07-09 Codex M1 first source/prompt slice: normal templates now require `visual_action`, the
+    normalizer backfills a video-oriented `visual_action` without copying `image_prompt`, Grok handoff skips
+    raw search-query `image_prompt` seeds unless they contain video/action cues, `promptQuality` records a
+    controlled camera/style check, and `_prompt_join()` truncates long clauses instead of silently dropping
+    late camera/continuity context. Static verification passed; preregistered A/B render proof remains.
 - One-click handoff: app produces the prompt + one-click copy; import auto-detects the returned MP4.
 - **Preregistered A/B** (anti-cherry-pick): before running, LOCK topics (3), take-budget per topic, the exact
   manual-vs-app prompt inputs, the scoring rubric/dimensions, and preserve ALL accepted AND rejected takes.
+  - 2026-07-10 Codex M1 preregistration slice: Grok handoff now emits `abPreregistration` in the create
+    response, manifest, status, manual-primary path, extension command payload, worksheet, production queue,
+    and review packet. The packet records locked topics, take budget, comparison arms, scoring rubric, archive
+    target, and preserve-accepted/rejected-takes rules. Static verification passed; actual Grok A/B MP4
+    generation, archive inspection, and creative verdict remain runtime/user proof.
 - **Acceptance**: on the 3 preregistered topics, the app-generated Grok prompt (i) preserves camera/style
   direction via the controlled lexicon, (ii) contains no raw search-query seed, (iii) never silently drops a
   clause; and the app-prompt render wins or ties the manual-Grok render on the preregistered rubric, with all
@@ -234,7 +266,9 @@ render polish on a branch the user never hits. Local-video is out (separate plan
 - A/B preregistered (Codex anti-cherry-pick).
 
 ### Missing Questions
-- [ ] M0: which endpoint does the user's actual last real upload come from — compose or CapCut? (Resolve at M0 start; gates M2 targeting.)
+- [x] M0: which endpoint does the user's actual last real upload come from — compose or CapCut? Resolved as
+  packet-dependent: the active `kr-curiosity-bottled-water-20260616` production attempt is CapCut, while generic
+  dashboard smoke remains FFmpeg/compose. M2 must target the selected packet path.
 - [ ] M1: exact scoring rubric dimensions for the preregistered A/B (define with the user before running).
 
 ### Undefined Guardrails
@@ -251,7 +285,8 @@ render polish on a branch the user never hits. Local-video is out (separate plan
 
 ### Unvalidated Assumptions
 - [ ] The controlled camera/style lexicon improves Grok output vs both the current strip and a naive re-allow — validated by the M1 preregistered A/B.
-- [ ] The canonical render path is compose (vs CapCut) — verified in M0, not assumed.
+- [x] The canonical render path is compose (vs CapCut) — rejected as a global assumption in M0; path selection is
+  packet-dependent and the active `kr-curiosity` packet is CapCut.
 
 ### Missing Acceptance Criteria
 - [x] Each milestone measurable; A/B preregistered; editorial gate primary.

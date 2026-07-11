@@ -895,7 +895,10 @@ export default function GatesPanel() {
         })}
       </div>
 
-      <ProductionWorkflowGatePanel focus="topic" />
+      <details className="gate-disclosure-panel gate-workflow-disclosure">
+        <summary>제작 게이트 상태</summary>
+        <ProductionWorkflowGatePanel focus="topic" />
+      </details>
 
       {mode === "discover" ? (
         <div className="gate-main-grid">
@@ -1019,24 +1022,29 @@ export default function GatesPanel() {
                   </a>
                 ))}
               </div>
-              <TopicSourceLedgerDraft
-                candidateId={selectedCandidate.id}
-                candidateTitle={selectedCandidate.title}
-                links={selectedResearchLinks}
-                capturedAt={isoToday()}
-                onApply={applyResearchLedgerDrafts}
-              />
-              <MaterialLibraryPanel
-                candidate={selectedCandidate}
-                topicPacket={selectedTopicPacket}
-                topicGateResult={topicResult}
-                onUseProductionHandoff={useProductionHandoff}
-              />
-              <ol>
-                <li>위 표면에서 실제 URL을 확인합니다.</li>
-                <li>후보 소재 3개 이상과 실제 URL을 기록합니다.</li>
-                <li>선택 이유와 탈락 이유를 분리한 뒤 소재 검증을 실행합니다.</li>
-              </ol>
+              <div className="gate-next-action-card">
+                <span>다음 액션</span>
+                <strong>실제 URL을 확인한 뒤 소재 검증으로 넘기기</strong>
+                <p>후보와 검증 링크만 먼저 보고, sourceLedger와 소재 DB 저장은 필요할 때 펼칩니다.</p>
+              </div>
+              <details className="gate-disclosure-panel">
+                <summary>출처 초안과 소재 DB</summary>
+                <div className="gate-disclosure-body">
+                  <TopicSourceLedgerDraft
+                    candidateId={selectedCandidate.id}
+                    candidateTitle={selectedCandidate.title}
+                    links={selectedResearchLinks}
+                    capturedAt={isoToday()}
+                    onApply={applyResearchLedgerDrafts}
+                  />
+                  <MaterialLibraryPanel
+                    candidate={selectedCandidate}
+                    topicPacket={selectedTopicPacket}
+                    topicGateResult={topicResult}
+                    onUseProductionHandoff={useProductionHandoff}
+                  />
+                </div>
+              </details>
             </div>
           </section>
         </div>
@@ -1061,12 +1069,17 @@ export default function GatesPanel() {
           ) : null}
 
           {mode === "topic" ? (
-            <MaterialLibraryPanel
-              candidate={selectedCandidate}
-              topicPacket={parsedTopicPacket}
-              topicGateResult={topicResult}
-              onUseProductionHandoff={useProductionHandoff}
-            />
+            <details className="gate-disclosure-panel" open={topicResult?.ready === true}>
+              <summary>소재 DB 저장 / 제작 handoff</summary>
+              <div className="gate-disclosure-body">
+                <MaterialLibraryPanel
+                  candidate={selectedCandidate}
+                  topicPacket={parsedTopicPacket}
+                  topicGateResult={topicResult}
+                  onUseProductionHandoff={useProductionHandoff}
+                />
+              </div>
+            </details>
           ) : null}
 
           <button className="generate-button gate-primary-action" onClick={runGate} disabled={running !== null}>

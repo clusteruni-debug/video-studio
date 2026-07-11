@@ -364,7 +364,7 @@ button { cursor: pointer; }
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
     background: var(--bg-elevated);
-    overflow: hidden;
+    overflow: visible;
 }
 
 .gate-action-card {
@@ -643,6 +643,71 @@ button { cursor: pointer; }
 .gate-primary-action {
     margin: 2px 0 0;
     width: 100%;
+}
+
+.gate-next-action-card {
+    display: grid;
+    gap: 5px;
+    padding: 12px;
+    border: 1px solid rgba(52, 199, 123, 0.28);
+    border-radius: var(--radius-sm);
+    background: var(--success-dim);
+}
+
+.gate-next-action-card span {
+    color: var(--success);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.gate-next-action-card strong {
+    color: var(--text-primary);
+    font-size: 0.86rem;
+}
+
+.gate-next-action-card p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+    line-height: 1.42;
+}
+
+.gate-disclosure-panel,
+.grok-action-disclosure,
+.render-action-disclosure {
+    min-width: 0;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.025);
+    overflow: hidden;
+}
+
+.gate-disclosure-panel > summary,
+.grok-action-disclosure > summary,
+.render-action-disclosure > summary {
+    padding: 9px 11px;
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.gate-disclosure-panel[open] > summary,
+.grok-action-disclosure[open] > summary,
+.render-action-disclosure[open] > summary {
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.gate-disclosure-body {
+    display: grid;
+    gap: 10px;
+    padding: 10px;
+}
+
+.gate-workflow-disclosure {
+    margin: 0 18px;
 }
 
 .gate-editor-toolbar {
@@ -3161,9 +3226,26 @@ button { cursor: pointer; }
 }
 
 .grok-primary-action-buttons {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
     gap: 6px;
+}
+
+.grok-action-stack {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+}
+
+.grok-primary-visible-actions {
+    align-items: stretch;
+}
+
+.grok-primary-action-buttons .chip,
+.grok-production-actions .chip,
+.grok-primary-visible-actions .chip {
+    width: 100%;
+    justify-content: flex-start;
 }
 
 .grok-production-steps {
@@ -3208,8 +3290,8 @@ button { cursor: pointer; }
 }
 
 .grok-production-actions {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
     gap: 6px;
 }
 
@@ -3916,6 +3998,12 @@ button { cursor: pointer; }
     gap: 6px;
     font-size: 0.72rem;
     font-weight: 700;
+    line-height: 1.2;
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: left;
 }
 
 .render-publish-btn:hover:not(:disabled) {
@@ -3951,16 +4039,21 @@ button { cursor: pointer; }
 }
 
 .grok-direct-import-actions {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
     align-items: center;
     gap: 6px;
     margin-top: 8px;
 }
 
 .grok-direct-import-actions .render-publish-btn {
+    justify-content: flex-start;
     min-width: 0;
     max-width: 100%;
+}
+
+.render-action-disclosure {
+    grid-column: 1 / -1;
 }
 
 .grok-direct-import-actions small {
@@ -4655,8 +4748,18 @@ textarea {
     border-radius: var(--radius-sm);
     padding: 5px 10px;
     font-size: 0.75rem;
-    white-space: nowrap;
-    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 30px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: center;
+    line-height: 1.2;
+    flex: 0 1 auto;
 }
 
 .chip:hover, .subtle-button:hover {
@@ -4667,6 +4770,8 @@ textarea {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+    align-items: stretch;
+    min-width: 0;
 }
 
 /* ─── Route badges ─── */

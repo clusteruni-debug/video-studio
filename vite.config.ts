@@ -7,10 +7,9 @@ function fileUrlToWindowsPath(value: string): string {
 }
 
 const realUiRoot = fileUrlToWindowsPath("./app/ui");
-const realDistRoot = fileUrlToWindowsPath("./dist");
-const devProjectRoot = "C:/vibe/projects/video-studio";
-const devUiRoot = `${devProjectRoot}/app/ui`;
-const devCacheRoot = `${devProjectRoot}/node_modules/.vite`;
+const workspaceProjectRoot = "C:/vibe/projects/video-studio";
+const workspaceDistRoot = `${workspaceProjectRoot}/dist`;
+const devCacheRoot = `${workspaceProjectRoot}/node_modules/.vite`;
 const requiredDevOptimizedDeps = [
     "react",
     "react-dom",
@@ -39,7 +38,7 @@ export default defineConfig(({ command }) => ({
         strictPort: true,
     },
     build: {
-        outDir: realDistRoot,
+        outDir: workspaceDistRoot,
         emptyOutDir: true,
     },
 }));

@@ -2351,65 +2351,72 @@ export default function SceneDetailPanel() {
                   <small>
                     Grok 생성은 기존 로그인 Chrome 직접 제어를 기본으로 봅니다. 최종 소스는 cache/currentSrc proof가 아니라 사용자가 저장/다운로드 후 반입했거나 명시적으로 업로드한 Grok MP4여야 합니다.
                   </small>
-                  <div className="grok-primary-action-buttons">
-                    <button
-                      className="chip primary"
-                      onClick={handleCopyGrokPrimaryPromptPacket}
-                      disabled={!grokHasPacket || loadingGrokFallbackAction === "primary-grok-prompt-packet"}
-                      title="현재 scene의 Grok prompt, reject rule, 저장 대상 파일명을 한 번에 복사합니다."
-                    >
-                      {loadingGrokFallbackAction === "primary-grok-prompt-packet"
-                        ? <RefreshCw size={12} className="spin" />
-                        : <Copy size={12} />}
-                      Prompt packet
-                    </button>
-                    <button
-                      className="chip"
-                      onClick={() => window.open(grokProductionQueueUrl, "_blank", "noreferrer")}
-                      disabled={!grokProductionQueueUrl}
-                      title="전체 scene별 2-take Grok 생성 큐를 엽니다."
-                    >
-                      <Clapperboard size={12} />
-                      Production queue
-                    </button>
-                    <button
-                      className="chip"
-                      onClick={() => handleOpenGrok("grok", "chrome")}
-                      disabled={!grokHasPacket || openingGrok}
-                      title="기존 로그인 Chrome에서 Grok을 열어 app/web 생성 흐름을 이어갑니다."
-                    >
-                      {openingGrok ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
-                      Open Grok
-                    </button>
-                    <button
-                      className="chip"
-                      onClick={handleStartGrokManualWatchAll}
-                      disabled={nativeGrokDownloadFallbackBlocked || !grokHasPacket || startingGrokManualWatchAll || isGrokManualWatchPolling || renderingGrok || !grokEffectiveDownloadDir}
-                      title={nativeGrokDownloadFallbackTitle}
-                    >
-                      {startingGrokManualWatchAll || isGrokManualWatchPolling
-                        ? <RefreshCw size={12} className="spin" />
-                        : <Play size={12} />}
-                      Watch blocked
-                    </button>
-                    <button
-                      className="chip"
-                      onClick={handleImportGrokDownloads}
-                      disabled={!grokHasPacket || importingGrokDownloads || !grokEffectiveDownloadDir}
-                      title="Operator-owned local MP4 files only. This does not press Grok Download/Save/Export."
-                    >
-                      {importingGrokDownloads ? <RefreshCw size={12} className="spin" /> : <Upload size={12} />}
-                      Import local MP4s
-                    </button>
-                    <button
-                      className="chip"
-                      onClick={handleOpenGrokReviewPacket}
-                      disabled={!grokReviewPacketUrl || !grokHasCurrentMp4}
-                      title="반입된 Grok MP4 후보를 provenance, motion, hook, layout 기준으로 검수합니다."
-                    >
-                      <Captions size={12} />
-                      Review take
-                    </button>
+                  <div className="grok-action-stack">
+                    <div className="grok-primary-action-buttons grok-primary-visible-actions">
+                      <button
+                        className="chip primary"
+                        onClick={handleCopyGrokPrimaryPromptPacket}
+                        disabled={!grokHasPacket || loadingGrokFallbackAction === "primary-grok-prompt-packet"}
+                        title="현재 scene의 Grok prompt, reject rule, 저장 대상 파일명을 한 번에 복사합니다."
+                      >
+                        {loadingGrokFallbackAction === "primary-grok-prompt-packet"
+                          ? <RefreshCw size={12} className="spin" />
+                          : <Copy size={12} />}
+                        Prompt packet
+                      </button>
+                      <button
+                        className="chip"
+                        onClick={() => window.open(grokProductionQueueUrl, "_blank", "noreferrer")}
+                        disabled={!grokProductionQueueUrl}
+                        title="전체 scene별 2-take Grok 생성 큐를 엽니다."
+                      >
+                        <Clapperboard size={12} />
+                        Production queue
+                      </button>
+                      <button
+                        className="chip"
+                        onClick={() => handleOpenGrok("grok", "chrome")}
+                        disabled={!grokHasPacket || openingGrok}
+                        title="기존 로그인 Chrome에서 Grok을 열어 app/web 생성 흐름을 이어갑니다."
+                      >
+                        {openingGrok ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
+                        Open Grok
+                      </button>
+                    </div>
+                    <details className="grok-action-disclosure">
+                      <summary>반입 / 감시 / 검수 보조 작업</summary>
+                      <div className="grok-primary-action-buttons">
+                        <button
+                          className="chip"
+                          onClick={handleStartGrokManualWatchAll}
+                          disabled={nativeGrokDownloadFallbackBlocked || !grokHasPacket || startingGrokManualWatchAll || isGrokManualWatchPolling || renderingGrok || !grokEffectiveDownloadDir}
+                          title={nativeGrokDownloadFallbackTitle}
+                        >
+                          {startingGrokManualWatchAll || isGrokManualWatchPolling
+                            ? <RefreshCw size={12} className="spin" />
+                            : <Play size={12} />}
+                          Watch blocked
+                        </button>
+                        <button
+                          className="chip"
+                          onClick={handleImportGrokDownloads}
+                          disabled={!grokHasPacket || importingGrokDownloads || !grokEffectiveDownloadDir}
+                          title="Operator-owned local MP4 files only. This does not press Grok Download/Save/Export."
+                        >
+                          {importingGrokDownloads ? <RefreshCw size={12} className="spin" /> : <Upload size={12} />}
+                          Import local MP4s
+                        </button>
+                        <button
+                          className="chip"
+                          onClick={handleOpenGrokReviewPacket}
+                          disabled={!grokReviewPacketUrl || !grokHasCurrentMp4}
+                          title="반입된 Grok MP4 후보를 provenance, motion, hook, layout 기준으로 검수합니다."
+                        >
+                          <Captions size={12} />
+                          Review take
+                        </button>
+                      </div>
+                    </details>
                   </div>
                 </div>
                 {grokMainPathStatus && (
@@ -2799,94 +2806,101 @@ export default function SceneDetailPanel() {
                     </div>
                   </div>
                 )}
-                <div className="grok-production-actions">
-                  <button className="chip" onClick={handleCreateGrokHandoff} disabled={creatingGrokHandoff}>
-                    {creatingGrokHandoff ? <RefreshCw size={12} className="spin" /> : <Clapperboard size={12} />}
-                    패킷 준비
-                  </button>
-                  <button
-                    className="chip"
-                    onClick={() => window.open(grokProductionQueueUrl, "_blank", "noreferrer")}
-                    disabled={!grokProductionQueueUrl}
-                    title="전체 씬을 Grok에서 생성하고 MP4를 씬별 take 묶음 순서로 일괄 반입하기 위한 생산 큐를 엽니다."
-                  >
-                    <Clapperboard size={12} />
-                    생산 큐
-                  </button>
-                  <button
-                    className="chip"
-                    onClick={handleOpenExistingChromeGrok}
-                    disabled={openingGrok}
-                    title="기존 로그인 Chrome에서 Grok을 열고 현재 씬 프롬프트를 복사합니다."
-                  >
-                    {openingGrok ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
-                    기존 Chrome + prompt
-                  </button>
-                  <button
-                    className="chip"
-                    onClick={() => {
-                      grokUploadBatchModeRef.current = "scene-grouped-takes";
-                      fileInputRef.current?.click();
-                    }}
-                    disabled={!grokHasPacket || uploadingGrokMp4}
-                    title="scene명이 없는 Grok downloads도 선택 순서대로 scene-01 takes, scene-02 takes... 묶음 후보로 보존합니다."
-                  >
-                    {uploadingGrokMp4 ? <RefreshCw size={12} className="spin" /> : <Upload size={12} />}
-                    Grok MP4 일괄 반입
-                  </button>
-                  <button
-                    className="chip"
-                    onClick={handleImportGrokDownloads}
-                    disabled={!grokHasPacket || importingGrokDownloads || !grokEffectiveDownloadDir}
-                    title="이미 operator가 소유한 로컬 Grok MP4만 scene 순서로 반입합니다. Grok Download/Save/Export는 누르지 않습니다."
-                  >
-                    {importingGrokDownloads ? <RefreshCw size={12} className="spin" /> : <Upload size={12} />}
-                    로컬 MP4 반입
-                  </button>
-                  <button
-                    className="chip"
-                    onClick={handleWatchGrokDownloads}
-                    disabled={nativeGrokDownloadFallbackBlocked || !grokHasPacket || watchingGrokDownloads || renderingGrok || !grokEffectiveDownloadDir}
-                    title={nativeGrokDownloadFallbackTitle}
-                  >
-                    {watchingGrokDownloads ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
-                    감시 차단
-                  </button>
-                  <button
-                    className="chip"
-                    onClick={handleStartGrokManualWatch}
-                    disabled={nativeGrokDownloadFallbackBlocked || !grokHasPacket || startingGrokManualWatch || isGrokManualWatchPolling || renderingGrok || !grokEffectiveDownloadDir}
-                    title={nativeGrokDownloadFallbackTitle}
-                  >
-                    {startingGrokManualWatch || isGrokManualWatchPolling ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
-                    수동 감시 차단
-                  </button>
-                  <button
-                    className="chip"
-                    onClick={handleStartGrokManualWatchAll}
-                    disabled={nativeGrokDownloadFallbackBlocked || !grokHasPacket || startingGrokManualWatchAll || isGrokManualWatchPolling || renderingGrok || !grokEffectiveDownloadDir}
-                    title={nativeGrokDownloadFallbackTitle}
-                  >
-                    {startingGrokManualWatchAll || isGrokManualWatchPolling ? <RefreshCw size={12} className="spin" /> : <Clapperboard size={12} />}
-                    전체 감시 차단
-                  </button>
-                  <button className="chip" onClick={handleOpenGrokReviewPacket} disabled={!grokReviewPacketUrl}>
-                    <Captions size={12} />
-                    후보 검수
-                  </button>
-                  <button
-                    className="chip"
-                    onClick={handleRenderGrokPreview}
-                    disabled={!grokPreviewReady || renderingGrok}
-                    title="가져온 Grok MP4만 먼저 이어 붙여 빠르게 레이아웃/자막/BGM 품질을 확인합니다. 최종 렌더 게이트는 그대로 유지됩니다."
-                  >
-                    {renderingGrok ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
-                    Grok 미리 렌더
-                  </button>
-                  <button className="chip" onClick={handleRenderGrok} disabled={!grokMainReady || renderingGrok}>
-                    {renderingGrok ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
-                    Grok-main 렌더
-                  </button>
+                <div className="grok-action-stack">
+                  <div className="grok-production-actions grok-primary-visible-actions">
+                    <button className="chip primary" onClick={handleCreateGrokHandoff} disabled={creatingGrokHandoff}>
+                      {creatingGrokHandoff ? <RefreshCw size={12} className="spin" /> : <Clapperboard size={12} />}
+                      패킷 준비
+                    </button>
+                    <button
+                      className="chip"
+                      onClick={() => window.open(grokProductionQueueUrl, "_blank", "noreferrer")}
+                      disabled={!grokProductionQueueUrl}
+                      title="전체 씬을 Grok에서 생성하고 MP4를 씬별 take 묶음 순서로 일괄 반입하기 위한 생산 큐를 엽니다."
+                    >
+                      <Clapperboard size={12} />
+                      생산 큐
+                    </button>
+                    <button
+                      className="chip"
+                      onClick={handleOpenExistingChromeGrok}
+                      disabled={openingGrok}
+                      title="기존 로그인 Chrome에서 Grok을 열고 현재 씬 프롬프트를 복사합니다."
+                    >
+                      {openingGrok ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
+                      기존 Chrome + prompt
+                    </button>
+                    <button className="chip" onClick={handleOpenGrokReviewPacket} disabled={!grokReviewPacketUrl}>
+                      <Captions size={12} />
+                      후보 검수
+                    </button>
+                    <button
+                      className="chip"
+                      onClick={handleRenderGrokPreview}
+                      disabled={!grokPreviewReady || renderingGrok}
+                      title="가져온 Grok MP4만 먼저 이어 붙여 빠르게 레이아웃/자막/BGM 품질을 확인합니다. 최종 렌더 게이트는 그대로 유지됩니다."
+                    >
+                      {renderingGrok ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
+                      Grok 미리 렌더
+                    </button>
+                    <button className="chip" onClick={handleRenderGrok} disabled={!grokMainReady || renderingGrok}>
+                      {renderingGrok ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
+                      Grok-main 렌더
+                    </button>
+                  </div>
+                  <details className="grok-action-disclosure">
+                    <summary>반입 / 감시 보조 작업</summary>
+                    <div className="grok-production-actions">
+                      <button
+                        className="chip"
+                        onClick={() => {
+                          grokUploadBatchModeRef.current = "scene-grouped-takes";
+                          fileInputRef.current?.click();
+                        }}
+                        disabled={!grokHasPacket || uploadingGrokMp4}
+                        title="scene명이 없는 Grok downloads도 선택 순서대로 scene-01 takes, scene-02 takes... 묶음 후보로 보존합니다."
+                      >
+                        {uploadingGrokMp4 ? <RefreshCw size={12} className="spin" /> : <Upload size={12} />}
+                        Grok MP4 일괄 반입
+                      </button>
+                      <button
+                        className="chip"
+                        onClick={handleImportGrokDownloads}
+                        disabled={!grokHasPacket || importingGrokDownloads || !grokEffectiveDownloadDir}
+                        title="이미 operator가 소유한 로컬 Grok MP4만 scene 순서로 반입합니다. Grok Download/Save/Export는 누르지 않습니다."
+                      >
+                        {importingGrokDownloads ? <RefreshCw size={12} className="spin" /> : <Upload size={12} />}
+                        로컬 MP4 반입
+                      </button>
+                      <button
+                        className="chip"
+                        onClick={handleWatchGrokDownloads}
+                        disabled={nativeGrokDownloadFallbackBlocked || !grokHasPacket || watchingGrokDownloads || renderingGrok || !grokEffectiveDownloadDir}
+                        title={nativeGrokDownloadFallbackTitle}
+                      >
+                        {watchingGrokDownloads ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
+                        감시 차단
+                      </button>
+                      <button
+                        className="chip"
+                        onClick={handleStartGrokManualWatch}
+                        disabled={nativeGrokDownloadFallbackBlocked || !grokHasPacket || startingGrokManualWatch || isGrokManualWatchPolling || renderingGrok || !grokEffectiveDownloadDir}
+                        title={nativeGrokDownloadFallbackTitle}
+                      >
+                        {startingGrokManualWatch || isGrokManualWatchPolling ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
+                        수동 감시 차단
+                      </button>
+                      <button
+                        className="chip"
+                        onClick={handleStartGrokManualWatchAll}
+                        disabled={nativeGrokDownloadFallbackBlocked || !grokHasPacket || startingGrokManualWatchAll || isGrokManualWatchPolling || renderingGrok || !grokEffectiveDownloadDir}
+                        title={nativeGrokDownloadFallbackTitle}
+                      >
+                        {startingGrokManualWatchAll || isGrokManualWatchPolling ? <RefreshCw size={12} className="spin" /> : <Clapperboard size={12} />}
+                        전체 감시 차단
+                      </button>
+                    </div>
+                  </details>
                 </div>
                 <small>
                   이 레일이 기본 제작 경로입니다. Grok API나 Codex Chrome 직접 제어에 기대지 않고, Grok 앱/웹 MP4를 메인 소스로 가져온 뒤 scene-01 후보들, scene-02 후보들 순서로 반입해 Video Studio가 후보 선택, 자막/BGM/렌더, 품질 게이트를 맡습니다. Grok 미리 렌더는 현재 확보된 {grokPreviewReadyCount}개 클립만 빠르게 확인하고, 최종 Grok-main 렌더는 전체 gate 통과 후 실행됩니다.
@@ -3081,79 +3095,88 @@ export default function SceneDetailPanel() {
               <small>
                 기본 경로는 기존 signed-in Chrome/Grok 탭에서 browser-control로 생성 proof를 확보한 뒤, operator-owned manual download/save와 로컬 MP4 반입으로 이어가는 방식입니다. Chrome/Grok Download/Save/Export 자동 클릭과 native prompt 자동화는 차단됩니다.
               </small>
-              <div className="button-row">
-                <button className="chip" onClick={handleCreateGrokHandoff} disabled={creatingGrokHandoff}>
-                  {creatingGrokHandoff ? <RefreshCw size={12} className="spin" /> : <Clapperboard size={12} />}
-                  {creatingGrokHandoff ? "패킷 생성 중" : "패킷 준비"}
-                </button>
-                <button className="chip" onClick={() => handleOpenGrok("worksheet")} disabled={openingGrok}>
-                  {openingGrok ? <RefreshCw size={12} className="spin" /> : <Clapperboard size={12} />}
-                  작업 시트
-                </button>
-                <button className="chip" onClick={() => handleOpenGrok("grok")} disabled={openingGrok}>
-                  {openingGrok ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
-                  Grok 열기
-                </button>
-                <button
-                  className="chip"
-                  onClick={handleOpenExistingChromeGrok}
-                  disabled={openingGrok}
-                  title="CDP 없이 로그인된 기존 Chrome 프로필로 Grok을 열고 현재 씬 프롬프트를 클립보드에 복사합니다."
-                >
-                  {openingGrok ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
-                  기존 Chrome 열기
-                </button>
-                <button
-                  className="chip"
-                  onClick={handleFocusGrokOperator}
-                  disabled={!grokHandoff?.projectId || focusingGrokOperator}
-                  title="승인된 로컬 CDP 세션에서 현재 Grok/xAI 로그인 또는 Imagine 탭을 앞으로 가져옵니다."
-                >
-                  {focusingGrokOperator ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
-                  로그인 탭 포커스
-                </button>
-                <button
-                  className="chip"
-                  onClick={handleCleanupGrokTabs}
-                  disabled={!grokHandoff?.projectId || cleaningGrokTabs}
-                  title="승인된 로컬 CDP 세션에서 중복 Grok/xAI 탭을 닫고 로그인 대상 하나만 남깁니다."
-                >
-                  {cleaningGrokTabs ? <RefreshCw size={12} className="spin" /> : <X size={12} />}
-                  중복 탭 정리
-                </button>
-                <button className="chip" onClick={handleSyncGrok} disabled={!grokHandoff?.projectId || syncingGrok}>
-                  {syncingGrok ? <RefreshCw size={12} className="spin" /> : <RefreshCw size={12} />}
-                  MP4 동기화
-                </button>
-                <button className="chip" onClick={handleOpenGrokAutomationPlan} disabled={!grokHandoff?.projectId || loadingGrokPlan}>
-                  {loadingGrokPlan ? <RefreshCw size={12} className="spin" /> : <Clapperboard size={12} />}
-                  자동화 플랜
-                </button>
-                <button className="chip" onClick={handleOpenGrokReviewPacket} disabled={!grokHandoff?.reviewPacketUrl}>
-                  <Captions size={12} />
-                  Grok 검수
-                </button>
-                <button
-                  className="chip"
-                  onClick={handleRenderGrokPreview}
-                  disabled={!grokPreviewReady || renderingGrok}
-                  title="현재 반입된 Grok MP4만 먼저 렌더해 품질을 빠르게 확인합니다."
-                >
-                  {renderingGrok ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
-                  미리 렌더
-                </button>
-                <button className="chip" onClick={handleRenderGrok} disabled={!grokMainReady || renderingGrok}>
-                  {renderingGrok ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
-                  Grok 렌더
-                </button>
+              <div className="grok-action-stack">
+                <div className="button-row grok-primary-visible-actions">
+                  <button className="chip primary" onClick={handleCreateGrokHandoff} disabled={creatingGrokHandoff}>
+                    {creatingGrokHandoff ? <RefreshCw size={12} className="spin" /> : <Clapperboard size={12} />}
+                    {creatingGrokHandoff ? "패킷 생성 중" : "패킷 준비"}
+                  </button>
+                  <button className="chip" onClick={() => handleOpenGrok("worksheet")} disabled={openingGrok}>
+                    {openingGrok ? <RefreshCw size={12} className="spin" /> : <Clapperboard size={12} />}
+                    작업 시트
+                  </button>
+                  <button className="chip" onClick={() => handleOpenGrok("grok")} disabled={openingGrok}>
+                    {openingGrok ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
+                    Grok 열기
+                  </button>
+                  <button className="chip" onClick={handleOpenGrokReviewPacket} disabled={!grokHandoff?.reviewPacketUrl}>
+                    <Captions size={12} />
+                    Grok 검수
+                  </button>
+                  <button
+                    className="chip"
+                    onClick={handleRenderGrokPreview}
+                    disabled={!grokPreviewReady || renderingGrok}
+                    title="현재 반입된 Grok MP4만 먼저 렌더해 품질을 빠르게 확인합니다."
+                  >
+                    {renderingGrok ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
+                    미리 렌더
+                  </button>
+                  <button className="chip" onClick={handleRenderGrok} disabled={!grokMainReady || renderingGrok}>
+                    {renderingGrok ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
+                    Grok 렌더
+                  </button>
+                </div>
+                <details className="grok-action-disclosure">
+                  <summary>Chrome 탭 / 동기화 고급 작업</summary>
+                  <div className="button-row">
+                    <button
+                      className="chip"
+                      onClick={handleOpenExistingChromeGrok}
+                      disabled={openingGrok}
+                      title="CDP 없이 로그인된 기존 Chrome 프로필로 Grok을 열고 현재 씬 프롬프트를 클립보드에 복사합니다."
+                    >
+                      {openingGrok ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
+                      기존 Chrome 열기
+                    </button>
+                    <button
+                      className="chip"
+                      onClick={handleFocusGrokOperator}
+                      disabled={!grokHandoff?.projectId || focusingGrokOperator}
+                      title="승인된 로컬 CDP 세션에서 현재 Grok/xAI 로그인 또는 Imagine 탭을 앞으로 가져옵니다."
+                    >
+                      {focusingGrokOperator ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
+                      로그인 탭 포커스
+                    </button>
+                    <button
+                      className="chip"
+                      onClick={handleCleanupGrokTabs}
+                      disabled={!grokHandoff?.projectId || cleaningGrokTabs}
+                      title="승인된 로컬 CDP 세션에서 중복 Grok/xAI 탭을 닫고 로그인 대상 하나만 남깁니다."
+                    >
+                      {cleaningGrokTabs ? <RefreshCw size={12} className="spin" /> : <X size={12} />}
+                      중복 탭 정리
+                    </button>
+                    <button className="chip" onClick={handleSyncGrok} disabled={!grokHandoff?.projectId || syncingGrok}>
+                      {syncingGrok ? <RefreshCw size={12} className="spin" /> : <RefreshCw size={12} />}
+                      MP4 동기화
+                    </button>
+                    <button className="chip" onClick={handleOpenGrokAutomationPlan} disabled={!grokHandoff?.projectId || loadingGrokPlan}>
+                      {loadingGrokPlan ? <RefreshCw size={12} className="spin" /> : <Clapperboard size={12} />}
+                      자동화 플랜
+                    </button>
+                  </div>
+                </details>
               </div>
-              <div className="button-row" style={{ marginTop: 8 }}>
-                <input
-                  className="editable-input"
-                  value={grokDownloadDir}
-                  onChange={(e) => setGrokDownloadDir(e.target.value)}
-                  placeholder={grokHandoff?.defaultDownloadDir || "C:\\Users\\...\\Downloads"}
-                />
+              <details className="grok-action-disclosure" style={{ marginTop: 8 }}>
+                <summary>다운로드 경로 / 자동 생성 고급 작업</summary>
+                <div className="button-row">
+                  <input
+                    className="editable-input"
+                    value={grokDownloadDir}
+                    onChange={(e) => setGrokDownloadDir(e.target.value)}
+                    placeholder={grokHandoff?.defaultDownloadDir || "C:\\Users\\...\\Downloads"}
+                  />
                 {grokHandoff?.defaultDownloadDir && (
                   <button
                     className="chip"
@@ -3269,15 +3292,16 @@ export default function SceneDetailPanel() {
                   {attachingDefaultChromeGrok ? <RefreshCw size={12} className="spin" /> : <Clapperboard size={12} />}
                   로그인 Chrome attach
                 </button>
-                <button
-                  className="chip"
-                  onClick={handleResumeGrokBrowserAutomation}
-                  disabled={!grokHandoff?.automationReplay || resumingGrokAutomation || renderingGrok}
-                >
-                  {resumingGrokAutomation ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
-                  승인 재개
-                </button>
-              </div>
+                  <button
+                    className="chip"
+                    onClick={handleResumeGrokBrowserAutomation}
+                    disabled={!grokHandoff?.automationReplay || resumingGrokAutomation || renderingGrok}
+                  >
+                    {resumingGrokAutomation ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
+                    승인 재개
+                  </button>
+                </div>
+              </details>
               {grokHandoff?.projectId && (
                 <div className="grok-handoff-review" style={{ marginTop: 8 }}>
                   {!!grokCandidateAssets.length && (

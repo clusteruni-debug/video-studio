@@ -594,6 +594,7 @@
   function autostartEventTarget(request) {
     try {
       const commandUrl = new URL(request.commandUrl);
+      if (!["http://127.0.0.1:5161", "http://localhost:5161"].includes(commandUrl.origin)) return null;
       const parts = commandUrl.pathname.split("/").filter(Boolean);
       const handoffIndex = parts.indexOf("grok-handoff");
       const projectId = handoffIndex >= 0 ? parts[handoffIndex + 1] : "";
@@ -607,24 +608,28 @@
     }
   }
 
+  async function postBridgeEvent(endpoint, payload) {
+    const result = await chrome.runtime.sendMessage({
+      type: "bridge-post-event",
+      endpoint,
+      payload
+    });
+    if (!result?.ok) {
+      throw new Error(result?.error || "bridge event post failed");
+    }
+    return result;
+  }
+
   async function reportAutostartRequest(request, event) {
     const target = autostartEventTarget(request);
     if (!target) return;
-    try {
-      await fetch(target.endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          operatorApproved: true,
-          extensionApproved: true,
-          source: "chrome-companion",
-          sceneId: target.sceneId,
-          ...event
-        })
-      });
-    } catch (error) {
-      console.warn("Video Studio Grok companion direct autostart report failed", error);
-    }
+    await postBridgeEvent(target.endpoint, {
+      operatorApproved: true,
+      extensionApproved: true,
+      source: "chrome-companion",
+      sceneId: target.sceneId,
+      ...event
+    }).catch((error) => console.warn("Video Studio Grok companion direct autostart event failed", error));
   }
 
   function extensionVersion() {
@@ -667,11 +672,28 @@
   }
 
   async function loadAutostartCommand(request) {
-    const response = await fetch(request.commandUrl);
-    const command = await response.json().catch(() => ({}));
-    if (!response.ok || command.ok === false) {
-      throw new Error(command.error || `command load failed: HTTP ${response.status}`);
+    let parsedCommandUrl;
+    try {
+      parsedCommandUrl = new URL(request.commandUrl);
+    } catch (error) {
+      throw new Error(`invalid Grok command URL: ${request.commandUrl}`);
     }
+    if (!request.operatorApproved || parsedCommandUrl.searchParams.get("operatorApproved") !== "true") {
+      throw new Error("operatorApproved=true is required in the Grok autostart URL.");
+    }
+    if (!["http://127.0.0.1:5161", "http://localhost:5161"].includes(parsedCommandUrl.origin)) {
+      throw new Error(`refusing Grok command from non-bridge origin: ${parsedCommandUrl.origin}`);
+    }
+    const loaded = await chrome.runtime.sendMessage({
+      type: "load-command-url",
+      commandUrl: request.commandUrl,
+      action: request.action
+    });
+    if (!loaded?.ok || !loaded.command || loaded.command.ok === false) {
+      throw new Error(loaded?.error || loaded?.command?.error || "command load failed");
+    }
+    const command = loaded.command;
+    assertProviderAction(command, request.action);
     command.commandUrl = request.commandUrl;
     await chrome.runtime.sendMessage({ type: "store-command", command, commandUrl: request.commandUrl });
     return command;
@@ -803,7 +825,8 @@
     window.sessionStorage.setItem(runKey, "started");
     let command = null;
     try {
-      if (!request.operatorApproved || !request.commandUrl.includes("operatorApproved=true")) {
+      const parsedCommandUrl = new URL(request.commandUrl);
+      if (!request.operatorApproved || parsedCommandUrl.searchParams.get("operatorApproved") !== "true") {
         throw new Error("operatorApproved=true is required in the Grok autostart URL.");
       }
       await reportAutostartRequest(request, {

@@ -101,6 +101,47 @@ def _display_text_matches_narration(display_text: str, narration: str) -> bool:
     return any(w in narr_clean for w in words) if words else False
 
 
+def _compact_scene_seed(value: object, limit: int = 140) -> str:
+    text = re.sub(r"\s+", " ", str(value or "").strip())
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0].strip(" ,;:-.")
+    return cut or text[:limit].strip(" ,;:-.")
+
+
+def _visual_action_fallback(scene: dict, topic: str) -> str:
+    """Build a video seed without copying Google-search-oriented image_prompt."""
+    seed = ""
+    for key in (
+        "grok_prompt",
+        "visual_prompt",
+        "shot_description",
+        "visual_description",
+        "narration",
+        "voiceover",
+        "voice_over",
+        "voiceOver",
+        "display_text",
+        "viewer_caption",
+        "viewerCaption",
+        "title",
+    ):
+        seed = _compact_scene_seed(scene.get(key), limit=140)
+        if seed:
+            break
+    topic_seed = _compact_scene_seed(topic, limit=90) or "the topic"
+    if seed:
+        return (
+            f"Vertical phone video about {topic_seed}: a concrete subject starts one visible action "
+            f"in a real place; first second motion shows {seed}. Use natural phone-camera movement "
+            "and practical light."
+        )
+    return (
+        f"Vertical phone video about {topic_seed}: one concrete subject starts a visible action "
+        "in a specific place, with natural phone-camera movement, practical light, and first-second motion."
+    )
+
+
 def _strip_foreign_scripts(text: str) -> str:
     """Remove non-Korean foreign scripts that LLMs sometimes mix into Korean output.
     Strips: CJK ideographs (漢字), Japanese katakana/hiragana, fullwidth Latin."""
@@ -125,6 +166,11 @@ def normalize_scenes(scenes: list[dict], topic: str, template_type: str = "") ->
         visual_action = str(s.get("visual_action") or s.get("visualAction") or "").strip()
         viewer_caption = str(s.get("viewer_caption") or s.get("viewerCaption") or "").strip()
         voiceover = str(s.get("voiceover") or s.get("voice_over") or s.get("voiceOver") or "").strip()
+        if visual_action and not str(s.get("visual_action") or "").strip():
+            s["visual_action"] = visual_action
+        if not visual_action:
+            visual_action = _visual_action_fallback(s, topic)
+            s["visual_action"] = visual_action
         if viewer_caption and not str(s.get("display_text") or "").strip():
             s["display_text"] = viewer_caption
         if voiceover and not str(s.get("narration") or "").strip():

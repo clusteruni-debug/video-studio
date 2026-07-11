@@ -271,6 +271,34 @@ GROK_ABSTRACT_OR_META_PROMPT_TERMS = (
     "어깨",
     "긴장",
 )
+GROK_CONTROLLED_CAMERA_STYLE_TERMS = (
+    "phone mp4",
+    "phone-camera",
+    "phone camera",
+    "camera",
+    "handheld",
+    "locked",
+    "macro",
+    "close",
+    "over-the-shoulder",
+    "slow push",
+    "push-in",
+    "pan",
+    "tilt",
+    "drift",
+    "warm practical light",
+    "warm cafe lighting",
+    "fluorescent",
+    "natural daylight",
+    "evening street light",
+    "subway platform light",
+    "lighting",
+    "light",
+    "same subject",
+    "same prop",
+    "same location",
+    "matching palette",
+)
 GROK_PROMPT_REPAIR_HINTS = {
     "sceneSpecificIntent": "Replace generic hero wording with a concrete subject, place, prop, and visible event.",
     "sourceActionCue": "Name the action in the source scene before compiling the Grok prompt.",
@@ -279,6 +307,7 @@ GROK_PROMPT_REPAIR_HINTS = {
     "singleContinuousShot": "Ask for one continuous 4-6 second shot, not a montage or cutaway sequence.",
     "singlePrimaryAction": "Keep one primary action plus at most one environmental motion cue.",
     "cameraConcrete": "Specify a concrete phone-camera, handheld, locked, close, macro, pan, tilt, push, or drift camera behavior.",
+    "controlledCameraStyle": "Use the controlled camera/style lexicon: a concrete camera, light/place, or continuity term tied to the action.",
     "propContinuityAnchor": "Keep a recurring subject, prop, location, light, or palette anchor in the prompt.",
     "minimalNegativeOnly": "Use only the short no-text/watermark negative clause; move QA rejects to review surfaces.",
     "noAbstractIntent": "Remove mood, intent, quality, AI-slop, and production-language phrasing from the generation prompt.",
@@ -473,6 +502,47 @@ def _grok_prompt_meta_terms(value: object) -> list[str]:
     return hits
 
 
+_VISUAL_SEED_ACTION_RE = re.compile(
+    r"\b(stands?|walks?|steps?|step(?:s|ping)? out|turns?|opens?|closes?|pours?|pouring|holds?|"
+    r"reaches?|looks?|passes?|tightens?|loosens?|twists?|untwists?|moves?|slides?|reveals?|"
+    r"rises?|rising|steams?|steaming|exhales?|runs?|drifts?|push(?:es|ing)?|pans?|tilts?|"
+    r"enters?|leaves?|lifts?|places?|types?|writes?|points?|circles?|scrolls?|pauses?|toggles?|"
+    r"marks?|taps?|swipes?|continues?|cuts?|stirs?|serves?|records?|films?|zooms?)\b",
+    re.IGNORECASE,
+)
+_KOREAN_VISUAL_SEED_ACTION_TERMS = (
+    "걷", "돌", "열", "닫", "붓", "따르", "잡", "들", "놓", "밀", "당기", "움직",
+    "드러", "비추", "보여", "흔들", "들어오", "나가", "타이핑", "기록", "촬영",
+)
+
+
+def _visual_seed_has_action(value: object) -> bool:
+    text = str(value or "")
+    return bool(_VISUAL_SEED_ACTION_RE.search(text)) or any(
+        token in text for token in _KOREAN_VISUAL_SEED_ACTION_TERMS
+    )
+
+
+def _image_prompt_can_seed_video(value: object) -> bool:
+    text = str(value or "").strip().lower()
+    if not text:
+        return False
+    video_context_terms = (
+        "first second",
+        "motion",
+        "video",
+        "mp4",
+        "shot",
+        "camera",
+        "handheld",
+        "pan",
+        "tilt",
+        "push-in",
+        "drift",
+    )
+    return _visual_seed_has_action(text) or any(term in text for term in video_context_terms)
+
+
 def _prompt_term_hits(text: str, terms: tuple[str, ...]) -> list[str]:
     lowered = str(text or "").lower()
     compact = re.sub(r"\s+", "", lowered)
@@ -516,6 +586,8 @@ def _scene_prompt_seed(item: dict) -> tuple[str, list[str]]:
         text = _prompt_excerpt(item.get(key), limit=360)
         if not text:
             continue
+        if key == "image_prompt" and not _image_prompt_can_seed_video(text):
+            continue
         meta_terms = _grok_prompt_meta_terms(text)
         if not meta_terms:
             return text, []
@@ -535,7 +607,7 @@ def _scene_beat_label(item: dict) -> str:
 def _prompt_join(parts: list[object], *, max_chars: int = 1500) -> str:
     selected: list[str] = []
     seen: set[str] = set()
-    for part in parts:
+    for index, part in enumerate(parts):
         text = re.sub(r"\s+", " ", str(part or "").strip())
         if not text:
             continue
@@ -543,8 +615,27 @@ def _prompt_join(parts: list[object], *, max_chars: int = 1500) -> str:
         if normalized in seen:
             continue
         candidate = text if text.endswith((".", "!", "?")) else f"{text}."
+        has_later_part = any(str(later or "").strip() for later in parts[index + 1:])
         joined = " ".join([*selected, candidate]).strip()
+        if not selected and len(candidate) > max_chars:
+            candidate_limit = max_chars - (70 if has_later_part and max_chars > 120 else 0)
+            shortened = _prompt_hard_limit(candidate, max(candidate_limit - 3, 1)).rstrip(".!?")
+            selected.append(f"{shortened}..." if shortened else candidate[:max_chars])
+            seen.add(normalized)
+            continue
         if selected and len(joined) > max_chars:
+            current = " ".join(selected).strip()
+            remaining = max_chars - len(current) - 1
+            candidate_limit = remaining
+            if has_later_part and remaining > 110:
+                candidate_limit = remaining - 70
+            if candidate_limit >= 40:
+                shortened = _prompt_hard_limit(candidate, max(candidate_limit - 3, 1)).rstrip(".!?")
+                if shortened:
+                    truncated = f"{shortened}..."
+                    if len(" ".join([*selected, truncated]).strip()) <= max_chars:
+                        selected.append(truncated)
+                        seen.add(normalized)
             continue
         selected.append(candidate)
         seen.add(normalized)
@@ -1104,6 +1195,353 @@ def _fresh_concept_packet(data: dict, scenes: list[dict]) -> dict:
     }
 
 
+def _ab_preregistration_source(data: dict) -> dict:
+    for key in (
+        "abPreregistration",
+        "ab_preregistration",
+        "abTestPreregistration",
+        "ab_test_preregistration",
+    ):
+        value = data.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def _ab_preregistration_bool(source: dict, *keys: str, default: bool = True) -> bool:
+    for key in keys:
+        if key in source:
+            return source.get(key) is not False
+    return default
+
+
+def _default_ab_preregistration_rubric_dimensions() -> list[dict]:
+    return [
+        {
+            "id": "first-second-hook",
+            "label": "First-second hook",
+            "weight": 25,
+            "passRule": "Visible motion and payoff are readable before captions or narration.",
+        },
+        {
+            "id": "source-fit",
+            "label": "Source fit",
+            "weight": 20,
+            "passRule": "The clip matches the exact topic, scene role, and source intent instead of generic filler.",
+        },
+        {
+            "id": "continuity",
+            "label": "Continuity",
+            "weight": 20,
+            "passRule": "Subject, place, prop, palette, and camera language stay consistent across the scene.",
+        },
+        {
+            "id": "artifact-control",
+            "label": "Artifact control",
+            "weight": 20,
+            "passRule": "No obvious morphing, flicker, watermark, baked text, or unreadable hands/object glitches.",
+        },
+        {
+            "id": "caption-safe-composition",
+            "label": "Caption-safe composition",
+            "weight": 15,
+            "passRule": "The main action remains visible with lower-third captions and right-side Shorts UI space reserved.",
+        },
+    ]
+
+
+def _ab_preregistration_rubric(source: dict) -> dict:
+    raw = source.get("rubric")
+    if not isinstance(raw, dict):
+        raw = {}
+    raw_dimensions = raw.get("dimensions") if isinstance(raw.get("dimensions"), list) else source.get("rubricDimensions")
+    dimensions: list[dict] = []
+    if isinstance(raw_dimensions, list):
+        for index, item in enumerate(raw_dimensions, start=1):
+            if isinstance(item, dict):
+                label = _short_text(item.get("label") or item.get("name") or item.get("id"), fallback=f"Dimension {index}", limit=90)
+                pass_rule = _short_text(item.get("passRule") or item.get("pass_rule") or item.get("rule"), limit=220)
+                dimension_id = _safe_project_id(item.get("id") or label.lower().replace(" ", "-"))
+                weight = _bounded_int(item.get("weight"), default=20, minimum=1, maximum=100)
+            else:
+                label = _short_text(item, fallback=f"Dimension {index}", limit=90)
+                pass_rule = ""
+                dimension_id = _safe_project_id(label.lower().replace(" ", "-"))
+                weight = 20
+            if label:
+                dimensions.append({
+                    "id": dimension_id,
+                    "label": label,
+                    "weight": weight,
+                    "passRule": pass_rule,
+                })
+            if len(dimensions) >= 8:
+                break
+    if not dimensions:
+        dimensions = _default_ab_preregistration_rubric_dimensions()
+    return {
+        "winRule": _short_text(
+            raw.get("winRule")
+            or raw.get("win_rule")
+            or source.get("winRule")
+            or source.get("win_rule"),
+            fallback="App-prompt arm wins only when it beats or ties manual Grok on total score with no hard-fail dimension.",
+            limit=260,
+        ),
+        "evaluator": _short_text(raw.get("evaluator") or source.get("evaluator"), fallback="user creative reviewer", limit=120),
+        "minReviewerCount": _bounded_int(
+            raw.get("minReviewerCount") or raw.get("min_reviewer_count") or source.get("minReviewerCount"),
+            default=1,
+            minimum=1,
+            maximum=5,
+        ),
+        "dimensions": dimensions,
+        "totalWeight": sum(int(item.get("weight") or 0) for item in dimensions),
+    }
+
+
+def _ab_preregistration_topics(source: dict, scenes: list[dict]) -> tuple[list[dict], str]:
+    raw_topics = source.get("lockedTopics") or source.get("locked_topics") or source.get("topics") or source.get("topicList")
+    topics: list[dict] = []
+    if isinstance(raw_topics, list):
+        for index, item in enumerate(raw_topics, start=1):
+            if isinstance(item, dict):
+                label = _short_text(
+                    item.get("label") or item.get("title") or item.get("topic") or item.get("name"),
+                    fallback=f"topic-{index:02d}",
+                    limit=120,
+                )
+                topic_id = _safe_project_id(item.get("id") or item.get("topicId") or item.get("topic_id") or label.lower().replace(" ", "-"))
+                topics.append({
+                    "id": topic_id,
+                    "label": label,
+                    "source": "operator-preregistered",
+                    "sceneId": _short_text(item.get("sceneId") or item.get("scene_id"), limit=80),
+                    "appPromptInput": _short_text(item.get("appPromptInput") or item.get("app_prompt_input") or item.get("appPrompt"), limit=260),
+                    "manualPrompt": _short_text(item.get("manualPrompt") or item.get("manual_prompt") or item.get("baselinePrompt"), limit=260),
+                    "acceptanceNote": _short_text(item.get("acceptanceNote") or item.get("acceptance_note"), limit=220),
+                })
+            else:
+                label = _short_text(item, fallback=f"topic-{index:02d}", limit=120)
+                topics.append({
+                    "id": _safe_project_id(label.lower().replace(" ", "-")),
+                    "label": label,
+                    "source": "operator-preregistered",
+                    "sceneId": "",
+                    "appPromptInput": "",
+                    "manualPrompt": "",
+                    "acceptanceNote": "",
+                })
+            if len(topics) >= 12:
+                break
+    if topics:
+        return topics, "operator"
+
+    for index, scene in enumerate(scenes, start=1):
+        if not isinstance(scene, dict):
+            continue
+        scene_id = str(scene.get("sceneId") or f"scene-{index:02d}")
+        label = _short_text(
+            scene.get("actionBeat")
+            or scene.get("referenceNote")
+            or scene.get("prompt")
+            or scene_id,
+            fallback=scene_id,
+            limit=120,
+        )
+        topics.append({
+            "id": _safe_project_id(scene_id),
+            "label": label,
+            "source": "scene-derived-draft",
+            "sceneId": scene_id,
+            "appPromptInput": _prompt_excerpt(scene.get("prompt"), limit=260),
+            "manualPrompt": "",
+            "acceptanceNote": "Draft topic from the generated scene prompt; operator may replace before final A/B run.",
+        })
+        if len(topics) >= 12:
+            break
+    return topics, "scene-derived-draft"
+
+
+def _ab_preregistration_packet(data: dict, scenes: list[dict], project_id: str) -> dict:
+    source = _ab_preregistration_source(data)
+    required = _ab_preregistration_bool(
+        source,
+        "required",
+        "abPreregistrationRequired",
+        "ab_preregistration_required",
+        default=data.get("abPreregistrationRequired") is not False and data.get("ab_preregistration_required") is not False,
+    )
+    topic_count_required = _bounded_int(
+        source.get("topicCountRequired")
+        or source.get("topic_count_required")
+        or data.get("abTopicCountRequired")
+        or data.get("ab_topic_count_required"),
+        default=3,
+        minimum=1,
+        maximum=12,
+    )
+    topics, topic_source = _ab_preregistration_topics(source, scenes)
+    take_budget_source = source.get("takeBudget") if isinstance(source.get("takeBudget"), dict) else source.get("take_budget")
+    if not isinstance(take_budget_source, dict):
+        take_budget_source = {}
+    take_budget = {
+        "appPromptTakesPerTopic": _bounded_int(
+            take_budget_source.get("appPromptTakesPerTopic") or take_budget_source.get("app_prompt_takes_per_topic"),
+            default=2,
+            minimum=1,
+            maximum=6,
+        ),
+        "manualPromptTakesPerTopic": _bounded_int(
+            take_budget_source.get("manualPromptTakesPerTopic") or take_budget_source.get("manual_prompt_takes_per_topic"),
+            default=2,
+            minimum=1,
+            maximum=6,
+        ),
+        "minimumImportedTakesPerScene": _bounded_int(
+            take_budget_source.get("minimumImportedTakesPerScene") or take_budget_source.get("minimum_imported_takes_per_scene"),
+            default=2,
+            minimum=1,
+            maximum=6,
+        ),
+        "preserveAcceptedTakes": True,
+        "preserveRejectedTakes": True,
+        "doNotOverwriteCandidates": True,
+    }
+    rubric = _ab_preregistration_rubric(source)
+    manual_prompt_complete = all(str(item.get("manualPrompt") or "").strip() for item in topics[:topic_count_required])
+    app_prompt_complete = all(str(item.get("appPromptInput") or "").strip() for item in topics[:topic_count_required])
+    missing: list[str] = []
+    if required and len(topics) < topic_count_required:
+        missing.append("lockedTopics")
+    if not rubric.get("dimensions"):
+        missing.append("rubricDimensions")
+    status = "ready" if required and not missing else "needs-registration" if required else "not-required"
+    archive_path = _short_text(
+        source.get("archivePath") or source.get("archive_path") or source.get("targetPath") or source.get("target_path"),
+        fallback=f"storage/qa/ab-{datetime.now().strftime('%Y%m%d')}-{project_id}/",
+        limit=220,
+    )
+    operator_warnings = []
+    if required and not manual_prompt_complete:
+        operator_warnings.append("manualPromptInputs")
+    if required and not app_prompt_complete:
+        operator_warnings.append("appPromptInputs")
+    return {
+        "schema": "video-studio.grok-ab-preregistration.v1",
+        "required": required,
+        "status": status,
+        "projectId": project_id,
+        "topicCountRequired": topic_count_required,
+        "topicCount": len(topics),
+        "topicSource": topic_source,
+        "lockedTopics": topics,
+        "missing": missing,
+        "operatorWarnings": operator_warnings,
+        "manualPromptInputsComplete": manual_prompt_complete,
+        "appPromptInputsComplete": app_prompt_complete,
+        "takeBudget": take_budget,
+        "comparisonArms": [
+            {
+                "id": "app-prompt",
+                "label": "Video Studio app prompt",
+                "source": "manifest scene prompts and take ladder",
+                "promptInputsLocked": app_prompt_complete,
+            },
+            {
+                "id": "manual-grok",
+                "label": "Manual Grok prompt",
+                "source": "operator-provided baseline prompts",
+                "promptInputsLocked": manual_prompt_complete,
+            },
+        ],
+        "rubric": rubric,
+        "archivePlan": {
+            "preserveAllTakes": True,
+            "preserveAcceptedTakes": True,
+            "preserveRejectedTakes": True,
+            "targetPath": archive_path,
+            "doNotOverwrite": True,
+            "recordRejectedTakeReasons": True,
+        },
+        "operatorChecklist": [
+            f"Lock {topic_count_required} topics before starting Grok generation.",
+            "Generate app-prompt and manual-Grok arms with the recorded take budget.",
+            "Import and preserve accepted and rejected MP4 takes; do not overwrite weak candidates.",
+            "Score each arm against the preregistered rubric before choosing the winner.",
+            "Record the verdict and rejected-take reasons before render.",
+        ],
+        "operatorAction": (
+            "A/B preregistration is ready. Run app-prompt vs manual-Grok arms exactly as registered, preserve every take, and score with the rubric before render."
+            if status == "ready"
+            else f"Lock at least {topic_count_required} A/B topics and keep the take budget/rubric unchanged before running the Grok comparison."
+            if required
+            else "A/B preregistration was explicitly disabled for this handoff.",
+        ),
+    }
+
+
+def _ab_preregistration_text(packet: dict) -> str:
+    if not isinstance(packet, dict) or packet.get("required") is not True:
+        return "- A/B preregistration: not required for this handoff."
+    take_budget = packet.get("takeBudget") if isinstance(packet.get("takeBudget"), dict) else {}
+    rubric = packet.get("rubric") if isinstance(packet.get("rubric"), dict) else {}
+    dimensions = rubric.get("dimensions") if isinstance(rubric.get("dimensions"), list) else []
+    topics = packet.get("lockedTopics") if isinstance(packet.get("lockedTopics"), list) else []
+    topic_lines = [
+        f"  {index}. {item.get('label') or item.get('id')}"
+        for index, item in enumerate(topics[: int(packet.get("topicCountRequired") or 3)], start=1)
+        if isinstance(item, dict)
+    ]
+    dimension_lines = [
+        f"  - {item.get('label')} ({item.get('weight')}): {item.get('passRule')}"
+        for item in dimensions[:6]
+        if isinstance(item, dict)
+    ]
+    return "\n".join([
+        f"- A/B preregistration: {packet.get('status') or 'unknown'}",
+        f"- Topic lock: {packet.get('topicCount') or 0}/{packet.get('topicCountRequired') or 0} ({packet.get('topicSource') or 'unknown'})",
+        f"- Take budget: app {take_budget.get('appPromptTakesPerTopic') or 2} / manual {take_budget.get('manualPromptTakesPerTopic') or 2} per topic; minimum imported takes {take_budget.get('minimumImportedTakesPerScene') or 2}",
+        f"- Preserve rejected takes: {take_budget.get('preserveRejectedTakes') is True}",
+        f"- Archive target: {((packet.get('archivePlan') or {}) if isinstance(packet.get('archivePlan'), dict) else {}).get('targetPath') or ''}",
+        "- Locked topics:",
+        *(topic_lines or ["  - Not locked yet"]),
+        "- Rubric:",
+        *(dimension_lines or ["  - Default Video Studio comparison rubric"]),
+    ])
+
+
+def _ab_preregistration_html(packet: dict, *, heading: str = "h3") -> str:
+    if not isinstance(packet, dict) or packet.get("required") is not True:
+        return ""
+    take_budget = packet.get("takeBudget") if isinstance(packet.get("takeBudget"), dict) else {}
+    rubric = packet.get("rubric") if isinstance(packet.get("rubric"), dict) else {}
+    archive_plan = packet.get("archivePlan") if isinstance(packet.get("archivePlan"), dict) else {}
+    topic_items = "".join(
+        f"<li><strong>{escape(str(item.get('label') or item.get('id') or 'topic'))}</strong>"
+        f"{' / manual baseline locked' if str(item.get('manualPrompt') or '').strip() else ' / manual baseline pending'}"
+        f"{' / app prompt locked' if str(item.get('appPromptInput') or '').strip() else ' / app prompt pending'}</li>"
+        for item in (packet.get("lockedTopics") or [])
+        if isinstance(item, dict)
+    ) or "<li>No locked topics yet.</li>"
+    rubric_items = "".join(
+        f"<li><strong>{escape(str(item.get('label') or item.get('id') or 'dimension'))}</strong> "
+        f"({escape(str(item.get('weight') or ''))}): {escape(str(item.get('passRule') or ''))}</li>"
+        for item in (rubric.get("dimensions") or [])
+        if isinstance(item, dict)
+    )
+    return f"""
+      <{heading}>A/B preregistration</{heading}>
+      <p><strong>Status:</strong> {escape(str(packet.get("status") or "unknown"))} / topics {escape(str(packet.get("topicCount") or 0))}/{escape(str(packet.get("topicCountRequired") or 0))}</p>
+      <p><strong>Take budget:</strong> app {escape(str(take_budget.get("appPromptTakesPerTopic") or 2))} vs manual {escape(str(take_budget.get("manualPromptTakesPerTopic") or 2))} per topic; preserve rejected takes: {escape(str(take_budget.get("preserveRejectedTakes") is True))}</p>
+      <p><strong>Archive:</strong> {escape(str(archive_plan.get("targetPath") or ""))}</p>
+      <p><strong>Operator action:</strong> {escape(str(packet.get("operatorAction") or ""))}</p>
+      <ul>{topic_items}</ul>
+      <p><strong>Win rule:</strong> {escape(str(rubric.get("winRule") or ""))}</p>
+      <ul>{rubric_items}</ul>
+    """
+
+
 def _grok_first_layout_default(scene_index: int, caption_preset: str) -> dict:
     """Choose a viewer-facing Grok MP4 layout, not an internal production label."""
     if scene_index == 0 or caption_preset == "top-hook":
@@ -1273,6 +1711,7 @@ def _scene_prompt_quality(prompt: str, scene: dict, shot_bible: dict | None = No
     source_observable_motion_terms = _prompt_term_hits(source_text, GROK_OBSERVABLE_MOTION_TERMS)
     prompt_observable_motion_terms = _prompt_term_hits(text, GROK_OBSERVABLE_MOTION_TERMS)
     abstract_intent_terms = _prompt_term_hits(combined_visual_text, GROK_ABSTRACT_OR_META_PROMPT_TERMS)
+    controlled_camera_style_terms = _prompt_term_hits(text, GROK_CONTROLLED_CAMERA_STYLE_TERMS)
     negative_instruction_count = _negative_instruction_count(text)
     has_duration = bool(re.search(r"\b4\s*(?:-|to)\s*6\s*seconds?\b", lowered)) or "4-6s" in lowered
     has_minimal_negative = "no visible text" in lowered and "watermark" in lowered
@@ -1300,6 +1739,7 @@ def _scene_prompt_quality(prompt: str, scene: dict, shot_bible: dict | None = No
             "drift",
         )
     )
+    has_controlled_camera_style = bool(controlled_camera_style_terms)
     has_continuity = (
         "keep" in lowered
         and any(token in lowered for token in ("same", "consistent", "recurring", "subject", "prop", "location", "palette"))
@@ -1343,6 +1783,7 @@ def _scene_prompt_quality(prompt: str, scene: dict, shot_bible: dict | None = No
         "singleContinuousShot": has_single_continuous_shot,
         "singlePrimaryAction": has_single_primary_action,
         "cameraConcrete": has_camera_concrete,
+        "controlledCameraStyle": has_controlled_camera_style,
         "propContinuityAnchor": has_prop_continuity_anchor,
         "concise": len(text) <= GROK_GENERATION_PROMPT_MAX_CHARS + 20,
         "positiveShotInstruction": not banned_prompt_terms,
@@ -1372,6 +1813,7 @@ def _scene_prompt_quality(prompt: str, scene: dict, shot_bible: dict | None = No
         "singleContinuousShot",
         "singlePrimaryAction",
         "cameraConcrete",
+        "controlledCameraStyle",
         "propContinuityAnchor",
         "concise",
         "positiveShotInstruction",
@@ -1404,6 +1846,7 @@ def _scene_prompt_quality(prompt: str, scene: dict, shot_bible: dict | None = No
         "sourcePhysicalMotionTerms": source_physical_motion_terms,
         "promptPhysicalMotionTerms": prompt_physical_motion_terms,
         "abstractIntentTerms": abstract_intent_terms,
+        "controlledCameraStyleTerms": controlled_camera_style_terms,
         "negativeInstructionCount": negative_instruction_count,
         "primaryActionCount": primary_action_count,
         "weakSourcePrompt": weak_source,
@@ -1416,14 +1859,14 @@ def _scene_prompt_quality(prompt: str, scene: dict, shot_bible: dict | None = No
             "Prompt source must name a scene-specific visible action. The generated Grok prompt must be "
             f"a concise positive shot instruction under `{GROK_GENERATION_PROMPT_RULESET_VERSION}`: one large "
             "observable physical change in the first second, one continuous vertical 9:16 4-6 second phone MP4, "
-            "concrete camera behavior, continuity/prop anchors, simple lower-right composition room, and only "
+            "controlled camera/style lexicon terms tied to the action, continuity/prop anchors, simple lower-right composition room, and only "
             "minimal no-text/watermark negative language. Mood, intent, AI-slop, production, TTS, caption, layout, "
             "checklist, or rejection notes cannot be used as the visual seed or copied into the generation prompt."
         ),
         "operatorAction": (
             "Rewrite the scene Grok prompt as 1-3 short positive shot sentences with concrete subject + "
-            "place + prop + one large first-second physical action + camera cue, then remove mood/intent/"
-            "AI-slop/TTS/caption/rejection meta wording before generating in Grok."
+            "place + prop + one large first-second physical action + a controlled camera/light/continuity cue, "
+            "then remove mood/intent/AI-slop/TTS/caption/rejection meta wording before generating in Grok."
             if weak_source or missing
             else "Prompt is concise enough for Grok handoff; still reject weak MP4 output in the review packet."
         ),
@@ -3695,6 +4138,7 @@ def _extension_queue_payload(
         })
     return {
         **queue_status,
+        "abPreregistration": manifest.get("abPreregistration") if isinstance(manifest.get("abPreregistration"), dict) else {},
         "queueCommandUrl": _extension_command_url(project_id),
         "nextRecommendedTakeNumber": next_take_number if next_scene_id else None,
         "nextCommandUrl": _extension_command_url(project_id, next_scene_id, next_take_number) if next_scene_id else "",
@@ -5132,8 +5576,11 @@ def _bounded_int(value: object, default: int, minimum: int, maximum: int) -> int
 
 def _find_browser_executable(candidate: object = None) -> str | None:
     raw = str(candidate or "").strip().strip('"')
-    if raw and Path(raw).exists():
-        return raw
+    if raw:
+        path = Path(raw)
+        if path.exists() and _is_allowed_cdp_browser_executable(path):
+            return str(path)
+        return None
     env_candidates = [
         os.environ.get("PROGRAMFILES"),
         os.environ.get("PROGRAMFILES(X86)"),
@@ -5151,6 +5598,10 @@ def _find_browser_executable(candidate: object = None) -> str | None:
         if path.exists():
             return str(path)
     return None
+
+
+def _is_allowed_cdp_browser_executable(path: Path) -> bool:
+    return path.name.lower() in {"chrome.exe", "msedge.exe"}
 
 
 def _default_chrome_user_data_dir(browser_executable: str) -> Path | None:
@@ -6922,6 +7373,9 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
     project_id = str(manifest.get("projectId") or handoff_dir.name)
     scenes = [scene for scene in (manifest.get("scenes") or []) if isinstance(scene, dict)]
     shot_bible = manifest.get("shotBible") if isinstance(manifest.get("shotBible"), dict) else {}
+    ab_preregistration = manifest.get("abPreregistration") if isinstance(manifest.get("abPreregistration"), dict) else {}
+    ab_preregistration_panel = _ab_preregistration_html(ab_preregistration, heading="h2")
+    ab_preregistration_prompt_text = _ab_preregistration_text(ab_preregistration)
     required_count = manifest.get("minGrokMainScenes") or max(1, (len(scenes) + 1) // 2)
     assets = _apply_source_recovery_render_replacements(handoff_dir, _match_downloaded_assets(handoff_dir, manifest))
     scene_queue = _scene_queue_status(handoff_dir, manifest, assets)
@@ -7304,6 +7758,9 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
                 "Anti-slop reject if:",
                 anti_slop_text,
                 "",
+                "A/B preregistration:",
+                ab_preregistration_prompt_text,
+                "",
                 "Fresh concept notes:",
                 fresh_scene_text or "- No fresh concept notes were provided for this scene.",
                 "",
@@ -7455,6 +7912,9 @@ def _write_production_queue(handoff_dir: Path, manifest: dict) -> Path:
         </div>
       </div>
       <p class="muted">Use Codex/Claude browser-control on the existing signed-in Grok Imagine tab. The operator owns MP4 download/save and Video Studio local import.</p>
+    </section>
+    <section class="panel">
+      {ab_preregistration_panel}
     </section>
     {grok_source_state_panel}
     {chrome_profile_alignment_panel}
@@ -7619,6 +8079,8 @@ def _write_operator_worksheet(handoff_dir: Path, manifest: dict) -> Path:
     )
     target_selection = manifest.get("grokTargetSelection") if isinstance(manifest.get("grokTargetSelection"), dict) else {}
     fresh_concept = manifest.get("freshConceptPacket") if isinstance(manifest.get("freshConceptPacket"), dict) else {}
+    ab_preregistration = manifest.get("abPreregistration") if isinstance(manifest.get("abPreregistration"), dict) else {}
+    ab_preregistration_block = _ab_preregistration_html(ab_preregistration, heading="h3")
     fresh_concept_block = ""
     if fresh_concept.get("required") is True:
         fresh_scene_items = "".join(
@@ -7773,6 +8235,7 @@ def _write_operator_worksheet(handoff_dir: Path, manifest: dict) -> Path:
       <p><strong>Negative prompts:</strong> {escape(negative_prompts)}</p>
       <p><strong>Grok target selection:</strong> {escape(str(target_selection.get("mode") or ""))} / minimum {escape(str(target_selection.get("minGrokMainScenes") or ""))}/{escape(str(target_selection.get("sourceMixTotalScenes") or ""))}</p>
       {auto_expansion_note}
+      {ab_preregistration_block}
       {fresh_concept_block}
       <h3>Scene intents</h3>
       <ul>{scene_intents}</ul>
@@ -7942,6 +8405,8 @@ def _write_review_packet(handoff_dir: Path, manifest: dict) -> Path:
     )
     target_selection = manifest.get("grokTargetSelection") if isinstance(manifest.get("grokTargetSelection"), dict) else {}
     fresh_concept = manifest.get("freshConceptPacket") if isinstance(manifest.get("freshConceptPacket"), dict) else {}
+    ab_preregistration = manifest.get("abPreregistration") if isinstance(manifest.get("abPreregistration"), dict) else {}
+    ab_preregistration_block = _ab_preregistration_html(ab_preregistration, heading="h3")
     fresh_concept_block = ""
     if fresh_concept.get("required") is True:
         fresh_scene_items = "".join(
@@ -8373,6 +8838,7 @@ def _write_review_packet(handoff_dir: Path, manifest: dict) -> Path:
       <p><strong>Negative prompts:</strong> {escape(negative_prompts)}</p>
       <p><strong>Grok target selection:</strong> {escape(str(target_selection.get("mode") or ""))} / minimum {escape(str(target_selection.get("minGrokMainScenes") or ""))}/{escape(str(target_selection.get("sourceMixTotalScenes") or ""))}</p>
       {auto_expansion_note}
+      {ab_preregistration_block}
       {fresh_concept_block}
       <h3>Global review checklist</h3>
       <ul>{review_items}</ul>
@@ -9967,6 +10433,7 @@ def _automation_plan_from_manifest(handoff_dir: Path, manifest: dict) -> dict:
         "reviewChecklist": shot_bible.get("reviewChecklist") or [],
         "mainSourceGate": main_source_gate,
         "grokTargetSelection": manifest.get("grokTargetSelection") if isinstance(manifest.get("grokTargetSelection"), dict) else {},
+        "abPreregistration": manifest.get("abPreregistration") if isinstance(manifest.get("abPreregistration"), dict) else {},
         "browserControlPrimaryRail": browser_control_primary_rail,
         "manualPrimaryPath": manual_primary_path,
         "mainPathStatus": main_path_status,
@@ -10330,6 +10797,7 @@ def _manual_primary_path(
         "requiredAcceptedScenes": main_source_gate.get("minAcceptedScenes") if gate_required else 0,
         "additionalAcceptedScenesNeeded": additional_accepted,
         "mainSourceGate": main_source_gate,
+        "abPreregistration": manifest.get("abPreregistration") if isinstance(manifest.get("abPreregistration"), dict) else {},
         "endpoints": {
             "importDownloads": download_import.get("endpoint"),
             "watchDownloads": download_import.get("watchEndpoint"),
@@ -10347,6 +10815,7 @@ def _manual_primary_path(
             "Stay in the existing signed-in Chrome profile; do not switch to Edge or a new Chrome profile for production Grok generation.",
             "Fill the current scene prompt from Video Studio and generate a short raw 9:16 MP4 in Grok.",
             "Operator downloads/saves the result; naming it scene-XX.grok.mp4 helps, but it is not required.",
+            "Check the A/B preregistration packet before the comparison run; lock topics, take budget, rubric, and preserve-rejected-takes rules before generating comparison arms.",
             "Batch-upload unnamed MP4 files grouped by scene row, or import from Downloads with newest-file fallback.",
             "Use the Grok review packet to reject artifacts, watermark, baked-in text, weak motion, or continuity breaks.",
             "Render only after enough accepted Grok MP4 scenes satisfy the Grok-main source gate.",
@@ -11616,6 +12085,7 @@ def create_grok_handoff_route():
         scenes.append(scene_record)
 
     fresh_concept_packet = _fresh_concept_packet(data, scenes)
+    ab_preregistration = _ab_preregistration_packet(data, scenes, project_id)
     manifest = {
         "projectId": project_id,
         "createdAt": datetime.now().isoformat(timespec="seconds"),
@@ -11634,6 +12104,7 @@ def create_grok_handoff_route():
         "draftScenes": _safe_draft_scenes(draft_scenes),
         "shotBible": shot_bible,
         "freshConceptPacket": fresh_concept_packet,
+        "abPreregistration": ab_preregistration,
         "scenes": scenes,
         "automationContract": {
             "usesPaidApi": False,
@@ -11725,6 +12196,7 @@ def create_grok_handoff_route():
         "codexChromeObservation": generation_observation,
         "grokTargetSelection": target_selection,
         "freshConceptPacket": fresh_concept_packet,
+        "abPreregistration": ab_preregistration,
         "shotBible": shot_bible,
         "scenes": scenes,
     })
@@ -12043,6 +12515,7 @@ def grok_handoff_status_route(project_id: str):
         "observedPostImportPlan": main_path_status.get("observedPostImportPlan") or {},
         "grokAssetAcquisition": main_path_status.get("assetAcquisition") or {},
         "freshConceptPacket": manifest.get("freshConceptPacket") if isinstance(manifest.get("freshConceptPacket"), dict) else {},
+        "abPreregistration": manifest.get("abPreregistration") if isinstance(manifest.get("abPreregistration"), dict) else {},
         "browserControlPrimaryRail": browser_control_primary_rail,
         "grokMainSourceDiagnosis": {
             "modelBlocked": False,
@@ -12602,13 +13075,38 @@ def _bookmarklet_json_response(payload: dict, status: int = 200):
     response.status_code = status
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Private-Network"] = "true"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     response.headers["Cache-Control"] = "no-store"
     return response
 
 
-@grok_bp.route("/api/grok-handoff/<project_id>/bookmarklet-import", methods=["GET", "OPTIONS"])
+def _is_path_inside(candidate: Path, parent: Path) -> bool:
+    try:
+        candidate.resolve().relative_to(parent.resolve())
+        return True
+    except ValueError:
+        return False
+    except OSError:
+        return False
+
+
+def _bookmarklet_import_download_dir(payload: dict, manifest: dict) -> tuple[Path | None, str | None]:
+    defaults = _download_defaults_for_manifest(manifest)
+    requested_dir = payload.get("downloadDir") or defaults.get("defaultDownloadDir")
+    download_dir, error = _download_dir_from_request(requested_dir)
+    if error or download_dir is None:
+        return None, error
+
+    downloads_root, root_error = _download_dir_from_request(defaults.get("defaultDownloadDir"))
+    if root_error or downloads_root is None:
+        return None, f"default Downloads folder is unavailable: {root_error}"
+    if not _is_path_inside(download_dir, downloads_root):
+        return None, "bookmarklet-import downloadDir must stay inside the default Downloads folder"
+    return download_dir, None
+
+
+@grok_bp.route("/api/grok-handoff/<project_id>/bookmarklet-import", methods=["POST", "OPTIONS"])
 def grok_handoff_bookmarklet_import_route(project_id: str):
     """Import a just-downloaded Grok MP4 from Downloads for the bookmarklet queue fallback."""
     if flask_request.method == "OPTIONS":
@@ -12616,16 +13114,14 @@ def grok_handoff_bookmarklet_import_route(project_id: str):
     handoff_dir, manifest = _load_manifest(project_id)
     if not handoff_dir or not manifest:
         return _bookmarklet_json_response({"ok": False, "error": "Grok handoff manifest not found"}, 404)
-    if str(flask_request.args.get("operatorApproved") or "").lower() != "true":
+    data = flask_request.get_json(silent=True) or {}
+    if data.get("operatorApproved") is not True:
         return _bookmarklet_json_response({
             "ok": False,
             "error": "operatorApproved=true is required before reading a local download folder",
         }, 403)
 
-    defaults = _download_defaults_for_manifest(manifest)
-    download_dir, error = _download_dir_from_request(
-        flask_request.args.get("downloadDir") or defaults.get("defaultDownloadDir")
-    )
+    download_dir, error = _bookmarklet_import_download_dir(data, manifest)
     if error or download_dir is None:
         return _bookmarklet_json_response({"ok": False, "error": error}, 400)
 
@@ -12633,11 +13129,11 @@ def grok_handoff_bookmarklet_import_route(project_id: str):
         handoff_dir,
         manifest,
         download_dir,
-        allow_newest_fallback=str(flask_request.args.get("allowNewestFallback") or "true").lower() != "false",
-        overwrite=str(flask_request.args.get("overwrite") or "").lower() == "true",
-        since_handoff=str(flask_request.args.get("sinceHandoff") or "true").lower() != "false",
-        scene_id_filter=str(flask_request.args.get("sceneId") or "").strip() or None,
-        preserve_candidates=str(flask_request.args.get("preserveCandidates") or "true").lower() != "false",
+        allow_newest_fallback=data.get("allowNewestFallback", True) is not False,
+        overwrite=data.get("overwrite") is True,
+        since_handoff=data.get("sinceHandoff", True) is not False,
+        scene_id_filter=str(data.get("sceneId") or "").strip() or None,
+        preserve_candidates=data.get("preserveCandidates", True) is not False,
     )
     _write_review_packet(handoff_dir, manifest)
     return _bookmarklet_json_response({

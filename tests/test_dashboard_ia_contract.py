@@ -54,6 +54,34 @@ def test_advanced_raw_panels_require_explicit_disclosure():
     assert "Dashboard smoke" not in advanced
 
 
+def test_ux_rescue_keeps_primary_actions_separate_from_advanced_controls():
+    gates = _read("app/ui/src/components/GatesPanel.tsx")
+    scene_detail = _read("app/ui/src/components/SceneDetailPanel.tsx")
+    render_review = _read("app/ui/src/components/RenderReviewPanel.tsx")
+    styles = _read("app/ui/src/styles.css")
+
+    for required in [
+        "gate-disclosure-panel gate-workflow-disclosure",
+        "출처 초안과 소재 DB",
+        "gate-next-action-card",
+    ]:
+        assert required in gates
+
+    for required in [
+        "grok-action-stack",
+        "grok-primary-visible-actions",
+        "Chrome 탭 / 동기화 고급 작업",
+        "다운로드 경로 / 자동 생성 고급 작업",
+    ]:
+        assert required in scene_detail
+
+    assert "render-action-disclosure" in render_review
+    assert "source recovery 보조 작업" in render_review
+    assert "grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));" in styles
+    assert "white-space: normal;" in styles
+    assert ".grok-action-disclosure" in styles
+
+
 def test_sidebar_default_guidance_is_korean_production_copy():
     sidebar = _read("app/ui/src/components/Sidebar.tsx")
 

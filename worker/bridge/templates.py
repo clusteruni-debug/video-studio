@@ -138,7 +138,15 @@ def operating_template_for(template_type: str, layout_variant_key: str = "") -> 
         key = _TEMPLATE_TO_OPERATING_TEMPLATE.get(normalized_template, "info_top_hook_lower_info")
     return deepcopy(LIVE_CHANNEL_OPERATING_TEMPLATES[key])
 
-_JSON_FORMAT = """Each element: {{ "scene_num": N, "narration": "full spoken text for TTS (60-100 Korean chars, 3-4 sentences)", "display_text": "KEY phrase extracted FROM narration (max 12 chars/line, max 2 lines)", "image_prompt": "English image search query for Google Images — be SPECIFIC (product name, brand, place name)", "emotion": "neutral|funny|serious|shock|sad", "fallback_prompt": "alt query", "transition": "Dissolve" }}"""
+_CONTROLLED_CAMERA_STYLE_LEXICON = """
+CONTROLLED CAMERA/STYLE LEXICON (use only when tied to a concrete subject + action):
+- camera: handheld phone camera, locked close shot, macro close-up, over-the-shoulder, slow push-in, gentle pan, tilt, natural handheld drift.
+- light/place: warm practical light, fluorescent office light, natural daylight, evening street light, cafe counter light, subway platform light.
+- continuity: same subject, same outfit, same prop, same location, matching palette, visible first-second motion.
+- Do NOT write standalone style words like "cinematic", "mood", "vibe", or "beautiful" unless the sentence also names the subject, action, camera/light, and first-second motion.
+"""
+
+_JSON_FORMAT = """Each element: {{ "scene_num": N, "narration": "full spoken text for TTS (60-100 Korean chars, 3-4 sentences)", "display_text": "KEY phrase extracted FROM narration (max 12 chars/line, max 2 lines)", "visual_action": "concrete Grok/local video shot seed with subject, action, place, camera/light, and first-second motion", "image_prompt": "English image search query for Google Images — be SPECIFIC (product name, brand, place name)", "emotion": "neutral|funny|serious|shock|sad", "fallback_prompt": "alt query", "transition": "Dissolve" }}"""
 
 _VISUAL_LED_TEMPLATE_TYPES = frozenset({
     "authentic_vlog",
@@ -178,6 +186,11 @@ IMAGE_PROMPT RULES:
 - GOOD: "Samsung 3nm chip wafer factory" (specific thing)
 - BAD: "futuristic technology concept with blue glow" (abstract)
 - BAD: "beautiful landscape with mountains" (generic)
+
+VISUAL_ACTION RULES:
+- visual_action is the Grok/local video prompt seed. It is NOT the same as image_prompt.
+- Every scene MUST include visual_action with subject + action + place + camera/light + first-second motion.
+- Never feed a raw Google image search query into visual_action.
 """
 
 _VISUAL_LED_QUALITY_RULES = """
@@ -393,6 +406,7 @@ def build_template_prompt(
         if template_type in _VISUAL_LED_TEMPLATE_TYPES
         else _QUALITY_RULES
     )
+    body += _CONTROLLED_CAMERA_STYLE_LEXICON
     operating_template = operating_template_for(template_type)
     body += (
         "\nLIVE CHANNEL OPERATING TEMPLATE (반드시 준수):"

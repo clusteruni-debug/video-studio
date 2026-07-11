@@ -460,6 +460,57 @@ def test_grok_handoff_uses_visual_action_seed_for_preproduction_prompt(tmp_path)
     assert "same key;" not in take_two["prompt"]
 
 
+def test_grok_prompt_join_truncates_without_dropping_late_context():
+    joined = routes_grok._prompt_join([
+        "A hand opens the same red notebook on a cafe counter; first second: cover moves upward",
+        (
+            "Vertical 9:16 phone MP4, 4-6 seconds, one continuous shot, handheld phone camera "
+            "with a deliberately long camera description that would otherwise consume the whole "
+            "prompt budget before the continuity clause can be written"
+        ),
+        (
+            "Keep same red notebook, same hand, same cafe counter, warm practical light, and "
+            "matching palette; leave an uncluttered lower-right background; no visible text or watermark"
+        ),
+    ], max_chars=260)
+
+    assert len(joined) <= 260
+    assert "Vertical 9:16 phone MP4" in joined
+    assert "Keep same red notebook" in joined
+    assert "..." in joined
+    assert not joined.rstrip().lower().endswith((" no", " no."))
+
+
+def test_grok_handoff_does_not_use_raw_search_query_image_prompt_as_video_seed(tmp_path):
+    client = _grok_test_client(tmp_path)
+    raw_query = "Nike Air Max 1/97 Sean Wotherspoon sneaker"
+
+    response = client.post(
+        "/api/grok-handoff",
+        json={
+            "projectId": "raw-image-query-seed",
+            "templateType": "ranking_list",
+            "draftScenes": [
+                {
+                    "sceneId": "scene-01",
+                    "scene_num": 1,
+                    "image_source": "grok",
+                    "image_prompt": raw_query,
+                    "display_text": "500만원",
+                    "narration": "출시가가 16만원이었는데 지금 리셀가는 500만원을 넘겼어요.",
+                    "duration": 4,
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    scene = response.get_json()["scenes"][0]
+    assert raw_query not in scene["prompt"]
+    assert scene["promptQuality"]["sourcePrompt"] != raw_query
+    assert scene["promptQuality"]["status"] == "needs-rewrite"
+
+
 def test_grok_handoff_records_codex_chrome_generation_observation(tmp_path):
     client = _grok_test_client(tmp_path)
 
@@ -1342,6 +1393,8 @@ def test_grok_handoff_accepts_physical_action_source_prompt(tmp_path):
     assert scene["promptQuality"]["checks"]["observableFirstSecondChange"] is True
     assert scene["promptQuality"]["checks"]["singleContinuousShot"] is True
     assert scene["promptQuality"]["checks"]["cameraConcrete"] is True
+    assert scene["promptQuality"]["checks"]["controlledCameraStyle"] is True
+    assert scene["promptQuality"]["controlledCameraStyleTerms"]
     assert scene["promptQuality"]["checks"]["propContinuityAnchor"] is True
     assert scene["promptQuality"]["repairHints"] == {}
 
@@ -1448,6 +1501,132 @@ def test_grok_handoff_fresh_concept_packet_preserves_reference_action_voice_and_
     status = client.get("/api/grok-handoff/fresh-concept-packet/status")
     assert status.status_code == 200
     assert status.get_json()["freshConceptPacket"]["status"] == "ready"
+
+
+def test_grok_handoff_ab_preregistration_packet_surfaces_locked_rubric_and_take_budget(tmp_path):
+    client = _grok_test_client(tmp_path)
+
+    response = client.post(
+        "/api/grok-handoff",
+        json={
+            "projectId": "ab-prereg-ready",
+            "templateType": "authentic_vlog",
+            "abPreregistration": {
+                "topicCountRequired": 3,
+                "lockedTopics": [
+                    {
+                        "id": "topic-reset-routine",
+                        "label": "퇴근 후 20분 리셋 루틴",
+                        "appPromptInput": "Video Studio prompt uses visible timer, bag drop, and desk reset motion.",
+                        "manualPrompt": "Manual Grok baseline: office worker starts a realistic after-work reset routine.",
+                        "acceptanceNote": "Winner must make the first action readable without captions.",
+                    },
+                    {
+                        "id": "topic-popup-recap",
+                        "label": "성수 팝업 현장 5분 요약",
+                        "appPromptInput": "Video Studio prompt locks line movement, product handoff, and storefront context.",
+                        "manualPrompt": "Manual Grok baseline: busy Seoul popup store recap with crowd movement.",
+                        "acceptanceNote": "Winner must avoid generic shopping b-roll.",
+                    },
+                    {
+                        "id": "topic-sneaker-ranking",
+                        "label": "비싼 운동화 Top 3",
+                        "appPromptInput": "Video Studio prompt locks shoe-box opening, receipt reveal, and hand motion.",
+                        "manualPrompt": "Manual Grok baseline: premium sneaker ranking hero shot.",
+                        "acceptanceNote": "Winner must keep object continuity and no baked text.",
+                    },
+                ],
+                "takeBudget": {
+                    "appPromptTakesPerTopic": 2,
+                    "manualPromptTakesPerTopic": 2,
+                    "minimumImportedTakesPerScene": 2,
+                },
+                "rubric": {
+                    "winRule": "App prompt wins only if total score ties or beats manual with no hard-fail dimension.",
+                    "dimensions": [
+                        {"id": "hook", "label": "Hook clarity", "weight": 30, "passRule": "Action reads in the first second."},
+                        {"id": "source-fit", "label": "Source fit", "weight": 25, "passRule": "Clip fits the locked topic exactly."},
+                        {"id": "artifacts", "label": "Artifact control", "weight": 25, "passRule": "No morphing, watermark, or baked text."},
+                        {"id": "composition", "label": "Caption-safe composition", "weight": 20, "passRule": "Main action stays clear for captions."},
+                    ],
+                },
+                "archivePath": "storage/qa/ab-20260710/",
+            },
+            "draftScenes": [
+                {
+                    "sceneId": "scene-01",
+                    "scene_num": 1,
+                    "image_source": "grok",
+                    "grok_prompt": (
+                        "A Korean office worker in a navy jacket drops a black work bag onto a chair, "
+                        "starts a red kitchen timer, and slides a notebook open as desk light moves across the wall."
+                    ),
+                    "hook_note": "bag drop, timer press, and notebook slide begin immediately",
+                    "continuity_note": "same navy jacket, black work bag, red timer, small desk lamp",
+                    "layout_variant_note": "hands and timer stay upper-middle while lower third remains clean",
+                    "caption_preset": "lower-info",
+                    "duration": 4,
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()
+    packet = data["abPreregistration"]
+    assert packet["schema"] == "video-studio.grok-ab-preregistration.v1"
+    assert packet["required"] is True
+    assert packet["status"] == "ready"
+    assert packet["topicCount"] == 3
+    assert packet["topicCountRequired"] == 3
+    assert packet["missing"] == []
+    assert packet["manualPromptInputsComplete"] is True
+    assert packet["appPromptInputsComplete"] is True
+    assert packet["takeBudget"]["appPromptTakesPerTopic"] == 2
+    assert packet["takeBudget"]["manualPromptTakesPerTopic"] == 2
+    assert packet["takeBudget"]["minimumImportedTakesPerScene"] == 2
+    assert packet["takeBudget"]["preserveRejectedTakes"] is True
+    assert packet["archivePlan"]["preserveRejectedTakes"] is True
+    assert packet["archivePlan"]["targetPath"] == "storage/qa/ab-20260710/"
+    assert [arm["id"] for arm in packet["comparisonArms"]] == ["app-prompt", "manual-grok"]
+    assert packet["comparisonArms"][0]["promptInputsLocked"] is True
+    assert packet["comparisonArms"][1]["promptInputsLocked"] is True
+    assert packet["rubric"]["winRule"].startswith("App prompt wins")
+    assert packet["rubric"]["totalWeight"] == 100
+    assert packet["rubric"]["dimensions"][0]["label"] == "Hook clarity"
+    assert "퇴근 후 20분 리셋 루틴" in packet["lockedTopics"][0]["label"]
+
+    manifest = json.loads(Path(data["manifestPath"]).read_text(encoding="utf-8"))
+    assert manifest["abPreregistration"]["status"] == "ready"
+    assert manifest["abPreregistration"]["takeBudget"]["preserveRejectedTakes"] is True
+    assert data["manualPrimaryPath"]["abPreregistration"]["status"] == "ready"
+    assert any("A/B preregistration packet" in item for item in data["manualPrimaryPath"]["operatorSteps"])
+
+    worksheet = Path(data["worksheetPath"]).read_text(encoding="utf-8")
+    assert "A/B preregistration" in worksheet
+    assert "퇴근 후 20분 리셋 루틴" in worksheet
+    assert "preserve rejected takes: True" in worksheet
+    queue_html = Path(data["productionQueuePath"]).read_text(encoding="utf-8")
+    assert "A/B preregistration" in queue_html
+    assert "storage/qa/ab-20260710/" in queue_html
+    assert "Preserve rejected takes: True" in queue_html
+    review_html = Path(data["reviewPacketPath"]).read_text(encoding="utf-8")
+    assert "A/B preregistration" in review_html
+    assert "Hook clarity" in review_html
+
+    status = client.get("/api/grok-handoff/ab-prereg-ready/status")
+    assert status.status_code == 200
+    status_packet = status.get_json()["abPreregistration"]
+    assert status_packet["status"] == "ready"
+    assert status_packet["archivePlan"]["preserveRejectedTakes"] is True
+
+    extension_command = client.get(
+        "/api/grok-handoff/ab-prereg-ready/extension-command?operatorApproved=true&sceneId=scene-01&take=2"
+    )
+    assert extension_command.status_code == 200
+    command_payload = extension_command.get_json()
+    assert command_payload["abPreregistration"]["status"] == "ready"
+    assert command_payload["abPreregistration"]["takeBudget"]["minimumImportedTakesPerScene"] == 2
 
 
 def test_grok_handoff_fresh_concept_packet_rejects_old_shoulder_release_benchmark(tmp_path):
@@ -3402,6 +3581,8 @@ def test_grok_handoff_observed_asset_manual_runway_page_blocks_native_download_p
 
 
 def test_grok_handoff_chrome_companion_extension_command_and_events(tmp_path, monkeypatch):
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    (tmp_path / "Downloads").mkdir()
     client = _grok_test_client(tmp_path)
     client.post(
         "/api/grok-handoff",
@@ -3605,10 +3786,9 @@ def test_grok_handoff_chrome_companion_extension_command_and_events(tmp_path, mo
     assert "latestExtensionEvent" not in bookmarklet_status
 
     denied_bookmarklet_import = client.get("/api/grok-handoff/chrome-companion/bookmarklet-import")
-    assert denied_bookmarklet_import.status_code == 403
+    assert denied_bookmarklet_import.status_code == 405
 
-    downloads_dir = tmp_path / "downloads"
-    downloads_dir.mkdir()
+    downloads_dir = tmp_path / "Downloads"
     captured_import = {}
 
     def fake_import_downloads(
@@ -3648,9 +3828,24 @@ def test_grok_handoff_chrome_companion_extension_command_and_events(tmp_path, mo
 
     monkeypatch.setattr(routes_grok, "_import_downloads", fake_import_downloads)
     monkeypatch.setattr(routes_grok, "_write_review_packet", lambda handoff_dir, manifest: handoff_dir / "review.html")
-    bookmarklet_import = client.get(
-        "/api/grok-handoff/chrome-companion/bookmarklet-import"
-        f"?operatorApproved=true&sceneId=scene-01&downloadDir={urllib.parse.quote(str(downloads_dir))}"
+    denied_post_import = client.post(
+        "/api/grok-handoff/chrome-companion/bookmarklet-import",
+        json={"downloadDir": str(downloads_dir)},
+    )
+    assert denied_post_import.status_code == 403
+
+    outside_download_dir = tmp_path / "outside"
+    outside_download_dir.mkdir()
+    outside_post_import = client.post(
+        "/api/grok-handoff/chrome-companion/bookmarklet-import",
+        json={"operatorApproved": True, "downloadDir": str(outside_download_dir)},
+    )
+    assert outside_post_import.status_code == 400
+    assert "default Downloads" in outside_post_import.get_json()["error"]
+
+    bookmarklet_import = client.post(
+        "/api/grok-handoff/chrome-companion/bookmarklet-import",
+        json={"operatorApproved": True, "sceneId": "scene-01", "downloadDir": str(downloads_dir)},
     )
     assert bookmarklet_import.status_code == 200
     bookmarklet_import_data = bookmarklet_import.get_json()
@@ -4058,6 +4253,11 @@ def test_ai_web_companion_live_proof_harness_is_provider_gated():
     assert "PROVIDER_CAPABILITIES" in gemini_content
     assert "function isGeminiHost" in gemini_content
     assert "gemini\\.google-[a-z0-9-]+\\.com" in gemini_content
+    assert "load-command-url" in content
+    assert "bridge-post-event" in content
+    assert "fetch(request.commandUrl)" not in content
+    assert 'searchParams.get("operatorApproved") !== "true"' in content
+    assert 'includes("operatorApproved=true")' not in content
     assert "bridge-post-event" in gemini_content
     assert "load-command-url" in gemini_content
     assert "fetch(request.commandUrl)" not in gemini_content
@@ -4866,6 +5066,31 @@ def test_grok_cdp_launch_rejects_default_chrome_profile_on_chrome_136(tmp_path, 
         assert "isolated Video Studio handoff profile" in str(exc)
     else:
         raise AssertionError("default Chrome profile CDP launch should be blocked")
+
+
+def test_grok_cdp_launch_rejects_non_browser_executable(tmp_path, monkeypatch):
+    bad_path = tmp_path / "notepad.exe"
+    bad_path.write_text("fake executable", encoding="utf-8")
+    opened_args: list[list[str]] = []
+
+    monkeypatch.setattr(routes_grok.subprocess, "Popen", lambda args, **kwargs: opened_args.append(list(args)) or object())
+
+    try:
+        routes_grok._launch_cdp_browser(
+            {
+                "launchBrowserApproved": True,
+                "profileApproved": True,
+                "browserExecutable": str(bad_path),
+            },
+            tmp_path / "handoff",
+            9333,
+        )
+    except RuntimeError as exc:
+        assert "Chrome or Edge executable" in str(exc)
+    else:
+        raise AssertionError("non-browser executable should be blocked before Popen")
+
+    assert opened_args == []
 
 
 def test_grok_cdp_launch_uses_isolated_handoff_profile(tmp_path, monkeypatch):

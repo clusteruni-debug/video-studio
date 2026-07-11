@@ -1388,30 +1388,35 @@ export function FinalVideoLibraryPanel({ autoLoad = false }: { autoLoad?: boolea
                               Review packet
                             </a>
                           ) : null}
-                          <button
-                            className="render-publish-btn"
-                            onClick={handleFreshSourceIntake}
-                            disabled={materializingFreshSourceIntake}
-                          >
-                            <Clipboard size={14} />
-                            {materializingFreshSourceIntake ? "Intake 저장 중" : "Fresh intake 저장"}
-                          </button>
-                          <button
-                            className="render-publish-btn"
-                            onClick={handleSourceRecoveryAcceptance}
-                            disabled={materializingSourceRecoveryAcceptance || !sourceRecoveryPlan?.totalScenes}
-                          >
-                            <Clipboard size={14} />
-                            {materializingSourceRecoveryAcceptance ? "Recovery 준비 중" : "Recovery review 준비"}
-                          </button>
-                          <button
-                            className="render-publish-btn"
-                            onClick={handleSourceRecoveryRerenderPlan}
-                            disabled={materializingSourceRecoveryRerenderPlan || !sourceRecoveryPlan?.totalScenes}
-                          >
-                            <FileVideo size={14} />
-                            {materializingSourceRecoveryRerenderPlan ? "Rerender plan 준비 중" : "Rerender plan 준비"}
-                          </button>
+                          <details className="render-action-disclosure">
+                            <summary>source recovery 보조 작업</summary>
+                            <div className="grok-direct-import-actions">
+                              <button
+                                className="render-publish-btn"
+                                onClick={handleFreshSourceIntake}
+                                disabled={materializingFreshSourceIntake}
+                              >
+                                <Clipboard size={14} />
+                                {materializingFreshSourceIntake ? "Intake 저장 중" : "Fresh intake 저장"}
+                              </button>
+                              <button
+                                className="render-publish-btn"
+                                onClick={handleSourceRecoveryAcceptance}
+                                disabled={materializingSourceRecoveryAcceptance || !sourceRecoveryPlan?.totalScenes}
+                              >
+                                <Clipboard size={14} />
+                                {materializingSourceRecoveryAcceptance ? "Recovery 준비 중" : "Recovery review 준비"}
+                              </button>
+                              <button
+                                className="render-publish-btn"
+                                onClick={handleSourceRecoveryRerenderPlan}
+                                disabled={materializingSourceRecoveryRerenderPlan || !sourceRecoveryPlan?.totalScenes}
+                              >
+                                <FileVideo size={14} />
+                                {materializingSourceRecoveryRerenderPlan ? "Rerender plan 준비 중" : "Rerender plan 준비"}
+                              </button>
+                            </div>
+                          </details>
                         </div>
                         {latestGrokHandoff.freshSourceIntakeTemplatePath ? (
                           <p>fresh intake template: {latestGrokHandoff.freshSourceIntakeTemplatePath}</p>
