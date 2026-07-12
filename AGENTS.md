@@ -1,4 +1,4 @@
-# Video Studio App — AGENTS.md
+﻿# Video Studio App — AGENTS.md
 
 > Global rules: see root AGENTS.md (role definitions, delegation, git permissions)
 
@@ -41,3 +41,9 @@
 - `docs/ARCHITECTURE.md`
 - `docs/MODEL-ROUTING.md`
 - `docs/OPERATOR-CHECKLIST.md`
+<!-- BEGIN: WORKSPACE_POLICY_INHERITANCE -->
+## Workspace Policy Inheritance
+
+Git/commit/push, task/lock, review, and handoff rules come from root
+`AGENTS.md`; project rules only add stricter local constraints.
+<!-- END: WORKSPACE_POLICY_INHERITANCE -->
